@@ -1,0 +1,16 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ImmeubleCad.Core/ImmeubleCad.Core.csproj" />
+    <Project Path="src/ImmeubleCad.Desktop/ImmeubleCad.Desktop.csproj" />
+    <Project Path="src/ImmeubleCad.Geo/ImmeubleCad.Geo.csproj" />
+    <Project Path="src/ImmeubleCad.Mcp/ImmeubleCad.Mcp.csproj" />
+    <Project Path="src/ImmeubleCad.Plan/ImmeubleCad.Plan.csproj" />
+    <Project Path="src/ImmeubleCad.Scene/ImmeubleCad.Scene.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ImmeubleCad.Core.Tests/ImmeubleCad.Core.Tests.csproj" />
+    <Project Path="tests/ImmeubleCad.Mcp.Tests/ImmeubleCad.Mcp.Tests.csproj" />
+    <Project Path="tests/ImmeubleCad.Plan.Tests/ImmeubleCad.Plan.Tests.csproj" />
+    <Project Path="tests/ImmeubleCad.Scene.Tests/ImmeubleCad.Scene.Tests.csproj" />
+  </Folder>
+</Solution>

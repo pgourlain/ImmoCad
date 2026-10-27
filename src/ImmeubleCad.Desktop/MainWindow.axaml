@@ -1,0 +1,28 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:ImmeubleCad.Desktop" xmlns:m="using:ImmeubleCad.Core.Model" x:Class="ImmeubleCad.Desktop.MainWindow"
+        x:DataType="vm:MainViewModel" Title="ImmeubleCad" Width="1200" Height="800">
+  <DockPanel>
+    <Menu DockPanel.Dock="Top">
+      <MenuItem Header="_Edit">
+        <MenuItem Header="Undo" Command="{Binding UndoCommand}" HotKey="Ctrl+Z" />
+        <MenuItem Header="Redo" Command="{Binding RedoCommand}" HotKey="Ctrl+Shift+Z" />
+      </MenuItem>
+      <MenuItem Header="_Level"><MenuItem Header="Add level" Command="{Binding AddLevelCommand}" /></MenuItem>
+    </Menu>
+    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="4" Margin="4">
+      <Button Content="2D" Command="{Binding SetModeCommand}" CommandParameter="Plan" />
+      <Button Content="3D" Command="{Binding SetModeCommand}" CommandParameter="Solid" />
+      <Button Content="Wireframe" Command="{Binding SetModeCommand}" CommandParameter="Wireframe" />
+    </StackPanel>
+    <Border DockPanel.Dock="Bottom" Padding="6"><TextBlock Text="{Binding Status}" /></Border>
+    <ItemsControl DockPanel.Dock="Left" ItemsSource="{Binding Levels}" Margin="4">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="m:Level">
+          <Button Content="{Binding Name}" Margin="0,0,0,2" HorizontalAlignment="Stretch"
+                  Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).SelectLevelCommand}" CommandParameter="{Binding}" />
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+    <vm:PlanView x:Name="Plan" Level="{Binding CurrentLevel}" />
+  </DockPanel>
+</Window>
