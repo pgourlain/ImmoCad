@@ -1,7 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:ImmeubleCad.Desktop"
         x:Class="ImmeubleCad.Desktop.MainWindow" x:DataType="vm:MainViewModel"
-        Title="ImmeubleCad" Width="1280" Height="820" MinWidth="800" MinHeight="500">
+        Title="{Binding Title}" Width="1280" Height="820" MinWidth="800" MinHeight="500">
   <Window.Styles>
     <Style Selector="Button.tool, ToggleButton.tool">
       <Setter Property="Width" Value="44" /><Setter Property="Height" Value="44" /><Setter Property="Margin" Value="0,0,0,4" />
@@ -17,34 +17,26 @@
     <Style Selector="TextBlock.caption"><Setter Property="Opacity" Value="0.65" /><Setter Property="FontSize" Value="11" /></Style>
   </Window.Styles>
   <DockPanel>
-    <Menu DockPanel.Dock="Top">
-      <MenuItem Header="_Fichier">
-        <MenuItem Header="Ouvrir…" Click="OnOpen" HotKey="Ctrl+O" />
-        <MenuItem Header="Enregistrer…" Click="OnSave" HotKey="Ctrl+S" />
-        <Separator />
-        <MenuItem Header="Importer un plan (JPG/PNG)…" Click="OnImport" />
-        <MenuItem Header="Exporter">
-          <MenuItem Header="IFC" Click="OnExport" Tag="ifc" />
-          <MenuItem Header="Macro FreeCAD" Click="OnExport" Tag="freecad" />
-          <MenuItem Header="DXF" Click="OnExport" Tag="dxf" />
-          <MenuItem Header="OBJ" Click="OnExport" Tag="obj" />
-          <MenuItem Header="Nomenclature (CSV)" Click="OnExport" Tag="csv" />
-        </MenuItem>
-      </MenuItem>
-      <MenuItem Header="_Édition">
-        <MenuItem Header="Annuler" Command="{Binding UndoCommand}" HotKey="Ctrl+Z" />
-        <MenuItem Header="Rétablir" Command="{Binding RedoCommand}" HotKey="Ctrl+Shift+Z" />
-        <Separator />
-        <MenuItem Header="Tout sélectionner" Command="{Binding SelectAllCommand}" />
-        <MenuItem Header="Supprimer la sélection" Command="{Binding DeleteSelectionCommand}" />
-        <MenuItem Header="Copier la sélection sur tous les niveaux" Command="{Binding CopySelectionToAllLevelsCommand}" />
-      </MenuItem>
-      <MenuItem Header="_Niveau">
-        <MenuItem Header="Ajouter un niveau" Command="{Binding AddLevelCommand}" />
-        <MenuItem Header="Sélection → étage au-dessus" Command="{Binding MoveSelectionUpCommand}" HotKey="Ctrl+PageUp" />
-        <MenuItem Header="Sélection → étage en dessous" Command="{Binding MoveSelectionDownCommand}" HotKey="Ctrl+PageDown" />
-      </MenuItem>
-    </Menu>
+    <ContentControl x:Name="MenuHost" DockPanel.Dock="Top" />
+    <!-- document tabs -->
+    <Border DockPanel.Dock="Top" Classes="bar" Padding="8,4,8,0" IsVisible="{Binding HasDocument}">
+      <ItemsControl ItemsSource="{Binding Tabs}">
+        <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="2" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:TabItem">
+            <Border CornerRadius="6,6,0,0" Padding="10,5,4,5" Classes.active="{Binding IsActive}" Background="{DynamicResource SystemChromeMediumColor}">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <Button Padding="0" Background="Transparent" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).SwitchTabCommand}" CommandParameter="{Binding Index}">
+                  <TextBlock Text="{Binding Title}" FontWeight="{Binding IsActive, Converter={x:Static vm:Converters.BoldIf}}" />
+                </Button>
+                <TextBlock Text="●" IsVisible="{Binding IsDirty}" FontSize="9" VerticalAlignment="Center" Foreground="OrangeRed" />
+                <Button Content="✕" Padding="4,0" FontSize="10" Background="Transparent" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).CloseTabCommand}" CommandParameter="{Binding Index}" />
+              </StackPanel>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </Border>
 
     <!-- status bar -->
     <Border DockPanel.Dock="Bottom" Classes="bar" Padding="12,6">
@@ -126,6 +118,21 @@
             </ItemsControl>
           </ScrollViewer>
         </TabItem>
+        <TabItem Header="Historique">
+          <ScrollViewer>
+            <ItemsControl ItemsSource="{Binding HistoryRows}" Margin="0,6">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:HistoryRow">
+                  <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="8,4" Margin="0,0,0,2" Background="Transparent"
+                          Opacity="{Binding IsFuture, Converter={x:Static vm:Converters.DimIf}}"
+                          Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).JumpToCommand}" CommandParameter="{Binding Index}">
+                    <TextBlock Text="{Binding Name}" FontWeight="{Binding IsCurrent, Converter={x:Static vm:Converters.BoldIf}}" />
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+        </TabItem>
         <TabItem Header="Propriétés">
           <StackPanel Spacing="6" Margin="0,6">
             <TextBlock Text="{Binding SelectionText}" FontWeight="SemiBold" />
@@ -178,6 +185,22 @@
     </Border>
 
     <Grid>
+      <Border x:Name="Welcome" ZIndex="10" IsVisible="{Binding ShowWelcome}" Background="{DynamicResource SystemRegionColor}">
+        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="14" Width="360">
+          <TextBlock Text="ImmeubleCad" FontSize="34" FontWeight="Light" />
+          <TextBlock Text="Modélisez un immeuble à partir de ses plans, puis tracez chauffage, eau et évacuations." TextWrapping="Wrap" Opacity="0.7" />
+          <Button Content="Nouvel immeuble" Command="{Binding NewDocumentCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Classes="accent" />
+          <Button Content="Ouvrir…" Command="{Binding OpenCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+          <Button Content="Ouvrir l'exemple" Command="{Binding OpenSampleCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+          <TextBlock Text="RÉCENTS" Classes="caption" Margin="0,10,0,0" />
+          <ItemsControl ItemsSource="{Binding RecentFiles}">
+            <ItemsControl.ItemTemplate><DataTemplate x:DataType="x:String">
+              <Button Content="{Binding}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Background="Transparent"
+                      Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).OpenRecentCommand}" CommandParameter="{Binding}" />
+            </DataTemplate></ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
       <vm:PlanView x:Name="Plan" IsVisible="{Binding IsPlan}" />
       <vm:ElevationView x:Name="Elev" IsVisible="{Binding IsElevation}" Focusable="True" />
       <vm:Viewport3D x:Name="View3D" IsVisible="{Binding Is3D}" />

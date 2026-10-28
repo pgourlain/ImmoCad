@@ -8,6 +8,7 @@ public static class Program
     public static int Main(string[] args)
     {
         if (args.Contains("--mcp")) return Mcp.McpHost.RunAsync(args).GetAwaiter().GetResult();
+        App.StartupFile = args.FirstOrDefault(a => a.EndsWith(".immeuble", StringComparison.OrdinalIgnoreCase));
         return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 

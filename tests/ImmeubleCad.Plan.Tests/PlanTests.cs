@@ -99,3 +99,12 @@ public class DeskewTests
         Assert.InRange(Math.Abs(a - deg), 0, 0.6); // returns the tilt; rotate the picture by -tilt to straighten it
     }
 }
+
+public class PlanArchitectureTests
+{
+    [Fact] public void Plan_is_BCL_only()
+    {
+        var refs = typeof(PlanWallDetector).Assembly.GetReferencedAssemblies().Select(a => a.Name!).ToList();
+        Assert.All(refs, n => Assert.True(n.StartsWith("System") || n is "netstandard" or "mscorlib" or "Microsoft.Win32.Primitives", $"Plan references {n}"));
+    }
+}

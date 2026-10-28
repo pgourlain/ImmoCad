@@ -48,3 +48,12 @@ public class CameraTests
     [Fact] public void Wire_edges_of_box_are_18_unique()
         => Assert.Equal(18, WireEdges.Of(MeshBuilder.Box(0, 0, 0, 1, 1, 1)).Count);
 }
+
+public class SceneArchitectureTests
+{
+    [Fact] public void Scene_is_BCL_only()
+    {
+        var refs = typeof(MeshBuilder).Assembly.GetReferencedAssemblies().Select(a => a.Name!).ToList();
+        Assert.All(refs, n => Assert.True(n.StartsWith("System") || n is "netstandard" or "mscorlib", $"Scene references {n}"));
+    }
+}

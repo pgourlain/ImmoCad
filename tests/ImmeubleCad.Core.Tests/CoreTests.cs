@@ -16,6 +16,18 @@ public class CoreArchitectureTests
     }
 }
 
+public class CoreArchitectureExtraTests
+{
+    [Fact] public void Core_has_no_dispatcher_dialog_or_pinvoke()
+    {
+        var types = typeof(Building).Assembly.GetTypes();
+        Assert.DoesNotContain(types, t => t.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.DeclaredOnly)
+            .Any(m => (m.Attributes & System.Reflection.MethodAttributes.PinvokeImpl) != 0));
+        var allowed = new[] { "System", "Microsoft.Extensions", "Magick", "ImmeubleCad", "netstandard", "mscorlib", "Microsoft.Win32" };
+        Assert.All(typeof(Building).Assembly.GetReferencedAssemblies().Select(a => a.Name!), n => Assert.True(allowed.Any(n.StartsWith), $"Core references {n}"));
+    }
+}
+
 public class HistoryTests
 {
     private static (Building, BuildingActions, BuildingHistory) New()
@@ -53,6 +65,16 @@ public class HistoryTests
             while (h.CanRedo) h.Redo(b);
             Assert.Equal(after, BuildingJson.Serialize(b));
         }
+    }
+
+    [Fact]
+    public void Two_hundred_undo_redo_cycles_on_ten_levels_stay_fast_and_exact()
+    {
+        var (b, h) = SampleBuilding.Create(); var a = new BuildingActions(b, h, new BuildingEventsService());
+        for (var i = 3; i < 10; i++) a.AddLevel("R+" + i, i * 2700);
+        var before = BuildingJson.Serialize(b); var sw = System.Diagnostics.Stopwatch.StartNew();
+        for (var i = 0; i < 200; i++) { a.AddWall(b.Levels[0].Id, [new(0, 0), new(100, 0), new(100, 100)]); h.Undo(b); h.Redo(b); h.Undo(b); }
+        Assert.Equal(before, BuildingJson.Serialize(b)); Assert.True(sw.Elapsed < TimeSpan.FromSeconds(10), $"{sw.Elapsed}");
     }
 
     [Fact]

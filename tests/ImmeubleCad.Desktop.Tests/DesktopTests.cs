@@ -301,3 +301,114 @@ public class HandleUiTests
         w.Close();
     }, CancellationToken.None);
 }
+
+public class ShellTests
+{
+    private readonly HeadlessFixture f = new();
+    private static string Tmp(string ext = ".immeuble") => Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ext);
+
+    [Fact] public Task Welcome_screen_then_new_open_recent_and_tabs() => f.Session.Dispatch(() =>
+    {
+        var dlg = new FakeDialogService(); var vm = new MainViewModel(startWithSample: false) { Dialogs = dlg, Settings = new() };
+        var w = new MainWindow { DataContext = vm }; w.Show(); w.UpdateLayout();
+        Assert.True(vm.ShowWelcome); Assert.False(vm.HasDocument); Assert.Empty(vm.Tabs);
+        w.CaptureRenderedFrame()!.Save(Path.Combine(AppContext.BaseDirectory, "screenshots", "welcome.png"));
+        vm.NewDocumentCommand.Execute(null); Assert.False(vm.ShowWelcome); Assert.Single(vm.Tabs); Assert.Equal("Sans titre", vm.Tabs[0].Title);
+        var p = Tmp(); vm.SaveTo(p); Assert.Equal(Path.GetFileNameWithoutExtension(p), vm.Tabs[0].Title); Assert.Contains(p, vm.RecentFiles);
+        vm.OpenSampleCommand.Execute(null); Assert.Equal(2, vm.Tabs.Count); Assert.True(vm.Tabs[1].IsActive); Assert.Equal(3, vm.Building.Levels.Count);
+        vm.SwitchTabCommand.Execute(0); Assert.Single(vm.Building.Levels); Assert.True(vm.Tabs[0].IsActive);
+        vm.OpenFile(p); Assert.Equal(2, vm.Tabs.Count);                         // already open → just switches
+        File.Delete(p); w.Close();
+    }, CancellationToken.None);
+
+    [Fact] public Task Dirty_marker_and_save_prompt_on_close_with_each_answer() => f.Session.Dispatch(async () =>
+    {
+        var dlg = new FakeDialogService(); var vm = new MainViewModel(startWithSample: false) { Dialogs = dlg, Settings = new() };
+        vm.NewDocumentCommand.Execute(null); Assert.False(vm.Tabs[0].IsDirty); vm.AddLevelCommand.Execute(null); Assert.True(vm.Tabs[0].IsDirty); Assert.StartsWith("•", vm.Title);
+        dlg.SaveChoices.Enqueue(SaveChoice.Cancel); Assert.False(await vm.CloseDocumentAsync(0)); Assert.Single(vm.Docs);
+        dlg.SaveChoices.Enqueue(SaveChoice.Discard); Assert.True(await vm.CloseDocumentAsync(0)); Assert.True(vm.ShowWelcome);
+        vm.NewDocumentCommand.Execute(null); vm.AddLevelCommand.Execute(null); var p = Tmp();
+        dlg.SaveChoices.Enqueue(SaveChoice.Save); dlg.SaveAnswers.Enqueue(p);
+        Assert.True(await vm.CanQuitAsync()); Assert.True(File.Exists(p)); File.Delete(p);
+        vm.NewDocumentCommand.Execute(null); vm.AddLevelCommand.Execute(null);
+        dlg.SaveChoices.Enqueue(SaveChoice.Save); dlg.SaveAnswers.Enqueue(null);     // user cancels the file picker → document stays open
+        Assert.False(await vm.CloseDocumentAsync(0)); Assert.Single(vm.Docs);
+    }, CancellationToken.None);
+
+    [Fact] public Task Errors_are_reported_through_the_dialog_service_and_logged() => f.Session.Dispatch(async () =>
+    {
+        var dlg = new FakeDialogService(); var vm = new MainViewModel(startWithSample: false) { Dialogs = dlg, Settings = new() }; var logged = new List<string>();
+        vm.OnError += (what, ex) => logged.Add(what);
+        var bad = Tmp(); File.WriteAllText(bad, "not a zip"); dlg.OpenAnswers.Enqueue(bad);
+        await vm.OpenCommand.ExecuteAsync(null);
+        Assert.Single(dlg.Errors); Assert.Contains("ouvrir", dlg.Errors[0]); Assert.Equal(["ouvrir"], logged); Assert.True(vm.ShowWelcome); File.Delete(bad);
+    }, CancellationToken.None);
+
+    [Fact] public Task History_panel_lists_steps_and_click_jumps() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(startWithSample: false) { Settings = new() }; vm.NewDocumentCommand.Execute(null);
+        vm.AddLevelCommand.Execute(null); vm.AddLevelCommand.Execute(null);
+        Assert.Equal(["État initial", "Add level", "Add level", "Add level"], vm.HistoryRows.Select(r => r.Name));
+        Assert.True(vm.HistoryRows[^1].IsCurrent); vm.JumpToCommand.Execute(0);
+        Assert.Single(vm.Building.Levels); Assert.True(vm.HistoryRows[1].IsCurrent); Assert.True(vm.HistoryRows[2].IsFuture);
+        vm.JumpToCommand.Execute(-1); Assert.Empty(vm.Building.Levels);
+    }, CancellationToken.None);
+
+    [Fact] public Task Menus_are_defined_once_and_rendered_with_shortcuts() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(); var specs = MenuFactory.Build(vm, () => { }, () => { }, () => { });
+        Assert.Equal(["_Fichier", "_Édition", "_Niveau", "_Affichage", "_Aide"], specs.Select(s => s.Header));
+        var menu = MenuFactory.ToMenu(specs); Assert.Equal(5, menu.Items.Count);
+        var save = specs[0].Items.First(i => i.Header == "Enregistrer"); Assert.Equal(Avalonia.Input.Key.S, save.Key); Assert.True(save.UseCommandKey);
+        Assert.NotEqual(Avalonia.Input.KeyModifiers.None, MenuFactory.CommandModifiers);
+        Assert.NotNull(MenuFactory.ToNativeMenu(specs));
+        Assert.Contains(specs[4].Items, i => i.Header.StartsWith("Visite") && !i.Command!.CanExecute(null));            // later features: disabled NotYetImplemented command
+    }, CancellationToken.None);
+
+    [Fact] public Task Drag_and_drop_style_open_and_display_toggles() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(); Assert.True(vm.GhostBelow); vm.ToggleGhostBelowCommand.Execute(null); Assert.False(vm.GhostBelow);
+        vm.ToggleCommonOnlyCommand.Execute(null); Assert.True(vm.CommonOnly);
+        vm.SelectWalls(vm.CurrentLevel!.Walls.Select(x => x.Id), false); var steps = vm.History.Items.Count; vm.StraightenSelectionCommand.Execute(null);
+        Assert.Equal(steps + 1, vm.History.Items.Count); Assert.Contains("Redressé", vm.Status);
+    }, CancellationToken.None);
+}
+
+public class LogBehaviourTests
+{
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static void FaultAndForget()
+    {
+        var t = Task.Run(() => throw new InvalidOperationException("task-boom"));
+        ((IAsyncResult)t).AsyncWaitHandle.WaitOne();      // wait for the fault without observing it
+    }
+
+    [Fact] public void Unhandled_task_exception_is_logged_and_debug_level_is_filtered_by_default()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "ilog" + Guid.NewGuid().ToString("N"));
+        using (var p = new AppLogProvider(dir, min: Microsoft.Extensions.Logging.LogLevel.Information))
+        {
+            var l = p.CreateLogger("Test"); using var hook = p.HookGlobalHandlers(l);
+            l.LogDebugPublic("hidden-debug"); l.LogInformationPublic("visible-info");
+            FaultAndForget();
+            var text = ""; var deadline = DateTime.UtcNow.AddSeconds(8);
+            while (DateTime.UtcNow < deadline && !text.Contains("task-boom")) { GC.Collect(); GC.WaitForPendingFinalizers(); Thread.Sleep(50); p.Flush(); text = File.Exists(p.LogPath) ? File.ReadAllText(p.LogPath) : ""; }
+            Assert.Contains("visible-info", text); Assert.DoesNotContain("hidden-debug", text);
+            Assert.Contains("task-boom", text);
+        }
+        Directory.Delete(dir, true);
+    }
+
+    [Fact] public void Level_from_environment_and_system_info()
+    {
+        Environment.SetEnvironmentVariable("IMMEUBLECAD_LOG", "debug"); Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Debug, AppLogProvider.LevelFromEnvironment()); Assert.True(AppLogProvider.MirrorToStderr());
+        Environment.SetEnvironmentVariable("IMMEUBLECAD_LOG", null); Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Information, AppLogProvider.LevelFromEnvironment());
+        Assert.Contains(".NET", AppLogProvider.SystemInfo());
+    }
+}
+
+internal static class LogExt
+{
+    public static void LogDebugPublic(this Microsoft.Extensions.Logging.ILogger l, string m) => Microsoft.Extensions.Logging.LoggerExtensions.LogDebug(l, "{M}", m);
+    public static void LogInformationPublic(this Microsoft.Extensions.Logging.ILogger l, string m) => Microsoft.Extensions.Logging.LoggerExtensions.LogInformation(l, "{M}", m);
+}

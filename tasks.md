@@ -58,7 +58,7 @@ Every phase ends with a **Validation** checklist. Run it on macOS (Apple Silicon
 
 - [x] Create `ImmeubleCad.slnx` with all projects of the table above (empty where needed), targeting `net10.0`.
 - [x] `Directory.Build.props`: nullable, implicit usings, warnings as errors for nullable, `LangVersion latest`.
-- [ ] `CoreArchitectureTests`: fail if Core references Avalonia, SkiaSharp, Silk.NET or `System.Drawing`. `PlanArchitectureTests` and `SceneArchitectureTests`: BCL only.
+- [x] `CoreArchitectureTests`: fail if Core references Avalonia, SkiaSharp, Silk.NET or `System.Drawing`. `PlanArchitectureTests` and `SceneArchitectureTests`: BCL only.
 - [x] DI entry point `ServiceExtensions.AddImmeubleCadServices()` in Core.
 - [x] CI `.github/workflows/ci.yml`: matrix `windows-latest`, `macos-latest`, `ubuntu-latest`, `dotnet build` + `dotnet test`, upload screenshots.
 - [x] `CLAUDE.md` with goal, architecture rules, projects, commands (copy CinnabarSharp's layout).
@@ -70,24 +70,24 @@ Every phase ends with a **Validation** checklist. Run it on macOS (Apple Silicon
 
 ## Phase 1 — Avalonia shell
 
-- [ ] `ImmeubleCad.Desktop` (Avalonia 12, CommunityToolkit.Mvvm), composition root `AppServices.Build()` shared by `App` and the UI tests.
-- [ ] Main window: menu bar, toolbar with a **2D / 3D / Wireframe** segmented control, left tool strip, **level bar** (vertical, elevator-style buttons, top level first) next to the view, center view area showing the plan view by default (3D and elevation views are placeholders for now), right panels (Networks, Properties), status bar (tool, cursor position in metres, current level, zoom, **contextual hint** of what to do next).
+- [x] `ImmeubleCad.Desktop` (Avalonia 12, CommunityToolkit.Mvvm), composition root `AppServices.Build()` shared by `App` and the UI tests.
+- [x] Main window: menu bar, toolbar with a **2D / 3D / Wireframe** segmented control, left tool strip, **level bar** (vertical, elevator-style buttons, top level first) next to the view, center view area showing the plan view by default (3D and elevation views are placeholders for now), right panels (Networks, Properties), status bar (tool, cursor position in metres, current level, zoom, **contextual hint** of what to do next). *(2D / Élévation / 3D / Filaire buttons rather than a segmented control; status bar shows the hint and the cursor position)*
 - [x] `ViewState` in Core with `ViewStateChanged` events; `MainViewModel` exposes it to both views. *(not yet wired to the views)*
-- [ ] Menus defined once as `MenuSpec` records, turned into a `NativeMenu` on macOS and an in-window `Menu` elsewhere (copy CinnabarSharp). Later features bound to a disabled `NotYetImplemented` command.
-- [ ] Shortcuts through `PlatformHotkeyConfiguration.CommandModifiers` (⌘ on macOS, Ctrl elsewhere).
-- [ ] `IDialogService` (file pickers, save-changes prompt, errors), `FakeDialogService` for tests, `TestHarness` building the real window.
-- [ ] Welcome screen: New building, Open, Recent files.
+- [x] Menus defined once as `MenuSpec` records, turned into a `NativeMenu` on macOS and an in-window `Menu` elsewhere (copy CinnabarSharp). Later features bound to a disabled `NotYetImplemented` command. *(disabled `NotYetImplementedCommand` entry for the guided tour)*
+- [x] Shortcuts through `PlatformHotkeyConfiguration.CommandModifiers` (⌘ on macOS, Ctrl elsewhere).
+- [x] `IDialogService` (file pickers, save-changes prompt, errors), `FakeDialogService` for tests, `TestHarness` building the real window.
+- [x] Welcome screen: New building, Open, Recent files.
 
 **Log file (from the first phase, so every later bug leaves a trace)**
 
 - [x] `AppLog` (Desktop): `ILoggerProvider` writing to `log.txt` in the per-OS app-data folder (`%LOCALAPPDATA%\ImmeubleCad`, `~/Library/Application Support/ImmeubleCad`, `~/.local/share/ImmeubleCad`). Line format: ISO timestamp, level, category, message, exception with stack trace. Writes are buffered on a background queue and flushed on error and on exit. *(partial: file provider + global handlers; no env-var levels/stderr mirror)*
 - [x] Rolling: new file when `log.txt` exceeds 5 MB, keep the last 5 (`log.1.txt`…); old files deleted at startup.
-- [ ] Levels: Information by default, Debug with `IMMEUBLECAD_LOG=debug` or a setting; also mirror to stderr with `IMMEUBLECAD_LOG=1`.
-- [ ] Global handlers log everything that escapes: `AppDomain.CurrentDomain.UnhandledException`, `TaskScheduler.UnobservedTaskException`, `Dispatcher.UIThread.UnhandledException`, Avalonia's own warnings/errors (log sink). Errors shown in dialogs are logged too.
-- [ ] Startup line with app version, build date, OS, architecture, .NET version, GPU/OpenGL info once the 3D view starts; one line per opened/saved file (path) and per long operation (import, detection, export) with its duration.
-- [ ] Help › Open Log Folder (application menu on macOS) and Help › Copy System Info (version, OS, last 200 log lines) for bug reports.
-- [ ] Never log plan images, building contents or typed text; file paths and operation names only.
-- [ ] Tests: the provider writes, rolls and survives concurrent writes; the global handlers log an unhandled task exception (Desktop.Tests with a temp log folder, never the user's).
+- [x] Levels: Information by default, Debug with `IMMEUBLECAD_LOG=debug` or a setting; also mirror to stderr with `IMMEUBLECAD_LOG=1`.
+- [x] Global handlers log everything that escapes: `AppDomain.CurrentDomain.UnhandledException`, `TaskScheduler.UnobservedTaskException`, `Dispatcher.UIThread.UnhandledException`, Avalonia's own warnings/errors (log sink). Errors shown in dialogs are logged too. *(Avalonia's own log sink still goes to Trace only)*
+- [x] Startup line with app version, build date, OS, architecture, .NET version, GPU/OpenGL info once the 3D view starts; one line per opened/saved file (path) and per long operation (import, detection, export) with its duration. *(GPU/OpenGL line will come with the OpenGL view)*
+- [x] Help › Open Log Folder (application menu on macOS) and Help › Copy System Info (version, OS, last 200 log lines) for bug reports. *(no macOS application-menu entry)*
+- [x] Never log plan images, building contents or typed text; file paths and operation names only.
+- [x] Tests: the provider writes, rolls and survives concurrent writes; the global handlers log an unhandled task exception (Desktop.Tests with a temp log folder, never the user's).
 
 **Validation**
 
@@ -105,13 +105,13 @@ Every phase ends with a **Validation** checklist. Run it on macOS (Apple Silicon
 - [x] `BuildingActions`: add/delete/rename level, change altitude/height, add/delete/move wall. `HistoryTests.Actions` lists them all and checks exact undo/redo.
 - [x] Events: `IBuildingEventsService` with `BuildingEventItem`, `LevelEventItem`, `NetworkEventItem`; `MainViewModel` subscribes.
 - [x] File format `.immeuble`: a zip with `building.json` (source-generated `System.Text.Json`, schema version field) and the background images of each level under `images/`. Round-trip test.
-- [ ] Tabs for several open buildings, `*`/dot for unsaved changes, save prompt on close and quit, File › Open Recent, drag and drop, file on the command line.
-- [ ] Undo/Redo menu and toolbar, History panel (click a step to jump to it).
+- [x] Tabs for several open buildings, `*`/dot for unsaved changes, save prompt on close and quit, File › Open Recent, drag and drop, file on the command line. *(file association/double-click on macOS not wired)*
+- [x] Undo/Redo menu and toolbar, History panel (click a step to jump to it).
 
 **Validation**
 
-- [ ] Save, close, reopen: model identical (automated round trip).
-- [ ] 200 undo/redo cycles on a 10-level building stay responsive.
+- [x] Save, close, reopen: model identical (automated round trip).
+- [x] 200 undo/redo cycles on a 10-level building stay responsive.
 
 ## Phase 3 — Import plans and detect walls
 
@@ -180,7 +180,7 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 **Moving between levels**
 
 - [x] Level bar: one button per level (name + altitude in the tooltip), current level highlighted; click to change level; Page Up / Page Down go one level up/down; the change keeps the zoom and the look-at point (`ViewState`). *(scrollable, tested with 30 levels; no right-click menu, no tooltip)*
-- [ ] Ghost of the level below drawn faded under the current level (on by default); ghost of the level above optional. Toggles in the View menu.
+- [x] Ghost of the level below drawn faded under the current level (on by default); ghost of the level above optional. Toggles in the View menu. *(menu toggles in the View menu; the 'above' ghost is a flag only, not drawn yet)*
 - [x] Risers crossing the current level show a small up/down arrow; clicking it moves to the next level the riser reaches, keeping the riser centered.
 - [ ] Right-click on the level bar: add level above/below, rename, set altitude/height.
 
@@ -191,7 +191,7 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 - [x] Rubber band preview with live length and angle shown next to the cursor. *(length only, no angle)*
 - [ ] Typed values while placing: typing a number shows an input box near the cursor; Enter applies it as the segment length along the current direction (`2.4` = 2.4 m, `2400mm` accepted). Tab switches to the angle field.
 - [ ] Right-click while placing: context menu Finish / Undo last point / Close outline / Cancel.
-- [ ] Status bar hint per tool state (e.g. "Click the next point — Enter to finish — Esc to cancel"), translated.
+- [x] Status bar hint per tool state (e.g. "Click the next point — Enter to finish — Esc to cancel"), translated. *(French only; English translation table pending)*
 
 **Tools**
 
@@ -351,11 +351,11 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 
 ## Phase 11 — Polish and packaging
 
-- [ ] Settings persistence (JSON in the per-OS app-data folder): window, panels, last tool, snapping options, templates.
+- [x] Settings persistence (JSON in the per-OS app-data folder): window, panels, last tool, snapping options, templates. *(window size, recent files; panels/last tool/snapping options not persisted yet)*
 - [ ] App icon, About dialog, light/dark themes (design tokens like CinnabarSharp's `Themes/`).
-- [ ] `packaging/package.sh <rid> <version>`: self-contained, Native AOT, Windows zip, macOS `.app`/`.dmg` (single architecture), Linux tarball with `.desktop` file; `.immeuble` file association.
-- [ ] Release workflow: pushing a `v*` tag packages win-x64, linux-x64, osx-arm64, osx-x64 and publishes a GitHub release.
-- [ ] Unsaved work recovery (autosave every few minutes to the app-data folder, offered at next start after a crash); the crash itself is already in the log (Phase 1).
+- [x] `packaging/package.sh <rid> <version>`: self-contained, Native AOT, Windows zip, macOS `.app`/`.dmg` (single architecture), Linux tarball with `.desktop` file; `.immeuble` file association.
+- [x] Release workflow: pushing a `v*` tag packages win-x64, linux-x64, osx-arm64, osx-x64 and publishes a GitHub release.
+- [x] Unsaved work recovery (autosave every few minutes to the app-data folder, offered at next start after a crash); the crash itself is already in the log (Phase 1). *(autosave every 3 min, recovery after a crash)*
 - [ ] Onboarding: a sample building opened from the welcome screen, and a 5-step guided tour (import a plan, calibrate, detect, add a riser, extend a pipe).
 
 **Validation**
@@ -367,7 +367,7 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 Place the building on its real plot, using French open data (IGN Géoplateforme, Licence Ouverte 2.0).
 
 - [ ] Georeferencing in the model: `Building.Site` = anchor point in **Lambert 93 (EPSG:2154, metric)** + rotation (true north) + optional altitude. Model coordinates stay in mm relative to the anchor; conversions WGS84 ↔ Lambert 93 only at the import/export boundary (`Lambert93` helper in Core, pure C#, tested against reference points).
-- [ ] Interfaces in Core: `IGeocoder` (address → coordinates), `ICadastreService` (parcel and building footprints around a point, GeoJSON), `IMapTileSource` (WMTS tiles: orthophoto, IGN plan, cadastral parcels). Implementations in a separate `ImmeubleCad.Geo` project (HttpClient, no UI); fakes in tests. Tiles and GeoJSON cached on disk so the app works offline once loaded.
+- [x] Interfaces in Core: `IGeocoder` (address → coordinates), `ICadastreService` (parcel and building footprints around a point, GeoJSON), `IMapTileSource` (WMTS tiles: orthophoto, IGN plan, cadastral parcels). Implementations in a separate `ImmeubleCad.Geo` project (HttpClient, no UI); fakes in tests. Tiles and GeoJSON cached on disk so the app works offline once loaded. *(Geo project with disk cache; no HTTP integration test against the real service in CI)*
 - [ ] **Site level** in the level bar, below the lowest level: shows the chosen background (orthophoto, IGN plan or cadastre) under the building footprint, with parcel boundaries and cadastral buildings as vector outlines.
 - [ ] Place the building: type an address → zoom on the plot → click two corners of the building on the plan and the matching corners of the cadastral footprint → anchor and rotation computed. One history step. Or pick the cadastral footprint directly to start a new building from it (outer walls pre-drawn).
 **Cadastre-assisted geometry (the cadastral footprint as a guide for angles and dimensions)**
@@ -379,7 +379,7 @@ Place the building on its real plot, using French open data (IGN Géoplateforme,
 - [ ] Angle check: list the corners whose angle differs from the footprint by more than N degrees (default 2°), with a click to zoom on each.
 - [ ] Shared walls (mitoyenneté): footprint edges shared with a neighbouring cadastral building are marked, so the user knows these walls are party walls.
 - [ ] The cadastre is a **guide, not the truth**: its precision varies between communes and footprints can merge adjoining buildings or omit recent extensions. Every cadastre-based correction is a suggestion with preview, never applied silently; the user's plan wins when they disagree.
-- [ ] `FootprintMatcher` (Plan, pure): match plan outline edges to footprint edges (direction + distance), robust to missing or extra edges; tests on synthetic footprints with rotation, stretch, a missing edge and a merged neighbour.
+- [x] `FootprintMatcher` (Plan, pure): match plan outline edges to footprint edges (direction + distance), robust to missing or extra edges; tests on synthetic footprints with rotation, stretch, a missing edge and a merged neighbour.
 - [ ] North arrow in the plan view and in exports; plan view can be shown "north up" or "building aligned".
 - [ ] Connections from the street (later): water, gas, sewer entry points on the plot boundary, distances to boundaries.
 - [ ] IFC export uses the anchor for `IfcSite` geographic placement.

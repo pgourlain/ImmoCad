@@ -12,9 +12,9 @@ public sealed class AppLogProvider : ILoggerProvider
     private readonly Thread _t; private readonly object _flush = new();
     private int _pending;
 
-    public AppLogProvider(string? dir = null, long maxBytes = 5_000_000, LogLevel min = LogLevel.Information)
+    public AppLogProvider(string? dir = null, long maxBytes = 5_000_000, LogLevel? min = null)
     {
-        _dir = dir ?? DefaultDir(); _maxBytes = maxBytes; _min = min; Directory.CreateDirectory(_dir);
+        _dir = dir ?? DefaultDir(); _maxBytes = maxBytes; _min = min ?? LevelFromEnvironment(); Directory.CreateDirectory(_dir);
         Cleanup();
         _t = new Thread(Pump) { IsBackground = true, Name = "AppLog" }; _t.Start();
     }
@@ -24,10 +24,20 @@ public sealed class AppLogProvider : ILoggerProvider
         : OperatingSystem.IsMacOS() ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Personal), "Library", "Application Support", "ImmeubleCad")
         : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Personal), ".local", "share", "ImmeubleCad");
 
+    /// <summary>Information by default; Debug with IMMEUBLECAD_LOG=debug.</summary>
+    public static LogLevel LevelFromEnvironment() => string.Equals(Environment.GetEnvironmentVariable("IMMEUBLECAD_LOG"), "debug", StringComparison.OrdinalIgnoreCase) ? LogLevel.Debug : LogLevel.Information;
+    /// <summary>IMMEUBLECAD_LOG=1 (or debug) also mirrors to stderr; stdout is never used (it is the MCP protocol).</summary>
+    public static bool MirrorToStderr() => Environment.GetEnvironmentVariable("IMMEUBLECAD_LOG") is "1" or "debug";
+
     public string LogPath => Path.Combine(_dir, "log.txt");
     public ILogger CreateLogger(string category) => new L(this, category);
 
-    private void Enqueue(string line) { Interlocked.Increment(ref _pending); _q.Add(line); }
+    private void Enqueue(string line)
+    {
+        if (_q.IsAddingCompleted) return;   // logging after dispose must never throw
+        Interlocked.Increment(ref _pending);
+        try { _q.Add(line); } catch (InvalidOperationException) { Interlocked.Decrement(ref _pending); }
+    }
 
     /// <summary>Block until everything queued has been written.</summary>
     public void Flush() { var sw = Environment.TickCount64; while (Volatile.Read(ref _pending) > 0 && Environment.TickCount64 - sw < 5000) Thread.Sleep(5); }
@@ -36,7 +46,7 @@ public sealed class AppLogProvider : ILoggerProvider
     {
         foreach (var line in _q.GetConsumingEnumerable())
         {
-            try { Roll(); File.AppendAllText(LogPath, line + Environment.NewLine, Encoding.UTF8); } catch { /* logging must never throw */ }
+            try { Roll(); File.AppendAllText(LogPath, line + Environment.NewLine, Encoding.UTF8); if (MirrorToStderr()) Console.Error.WriteLine(line); } catch { /* logging must never throw */ }
             Interlocked.Decrement(ref _pending);
         }
     }
@@ -73,9 +83,19 @@ public sealed class AppLogProvider : ILoggerProvider
     }
 
     /// <summary>Route everything that escapes into the log.</summary>
-    public void HookGlobalHandlers(ILogger log)
+    public IDisposable HookGlobalHandlers(ILogger log)
     {
-        AppDomain.CurrentDomain.UnhandledException += (_, e) => { log.LogCritical(e.ExceptionObject as Exception, "Unhandled exception"); Flush(); };
-        TaskScheduler.UnobservedTaskException += (_, e) => { log.LogError(e.Exception, "Unobserved task exception"); e.SetObserved(); };
+        UnhandledExceptionEventHandler a = (_, e) => { log.LogCritical(e.ExceptionObject as Exception, "Unhandled exception"); Flush(); };
+        EventHandler<UnobservedTaskExceptionEventArgs> b = (_, e) => { log.LogError(e.Exception, "Unobserved task exception"); e.SetObserved(); };
+        Avalonia.Threading.DispatcherUnhandledExceptionEventHandler c = (_, e) => { log.LogError(e.Exception, "Unhandled UI exception"); Flush(); e.Handled = true; };
+        AppDomain.CurrentDomain.UnhandledException += a; TaskScheduler.UnobservedTaskException += b; Avalonia.Threading.Dispatcher.UIThread.UnhandledException += c;
+        return new Unhook(() => { AppDomain.CurrentDomain.UnhandledException -= a; TaskScheduler.UnobservedTaskException -= b; Avalonia.Threading.Dispatcher.UIThread.UnhandledException -= c; });
     }
+    private sealed class Unhook(Action a) : IDisposable { public void Dispose() => a(); }
+
+    /// <summary>Last lines of the log, for bug reports.</summary>
+    public string Tail(int lines = 200) { Flush(); try { return File.Exists(LogPath) ? string.Join(Environment.NewLine, File.ReadLines(LogPath).TakeLast(lines)) : ""; } catch { return ""; } }
+
+    public static string SystemInfo() =>
+        $"ImmeubleCad {typeof(AppLogProvider).Assembly.GetName().Version}  built {File.GetLastWriteTimeUtc(typeof(AppLogProvider).Assembly.Location):yyyy-MM-dd}\n{System.Runtime.InteropServices.RuntimeInformation.OSDescription} {System.Runtime.InteropServices.RuntimeInformation.OSArchitecture}  .NET {Environment.Version}";
 }

@@ -5,6 +5,7 @@ using ImmeubleCad.Core;
 using ImmeubleCad.Core.History;
 using ImmeubleCad.Core.Import;
 using ImmeubleCad.Core.IO;
+using ImmeubleCad.Core.Export;
 using ImmeubleCad.Core.Model;
 using ImmeubleCad.Core.Geometry;
 using ImmeubleCad.Core.Catalog;
@@ -17,15 +18,41 @@ public enum ViewMode { Plan, Solid, Wireframe, Elevation }
 public enum ToolKind { Select, DrawWall, Align, Riser, DrawPipe, Place }
 
 /// <summary>One button of the level bar.</summary>
+/// <summary>One open building with its own history, pictures and file.</summary>
+public sealed class Doc
+{
+    public Building Building { get; set; } = new();
+    public BuildingHistory History { get; set; } = new();
+    public BuildingActions Actions { get; set; } = null!;
+    public Dictionary<string, byte[]> Images { get; set; } = new();
+    public string? FilePath { get; set; }
+    public Guid CurrentLevelId { get; set; }
+    public string Title => FilePath != null ? Path.GetFileNameWithoutExtension(FilePath) : (Building.Name.Length > 0 ? Building.Name : "Sans titre");
+}
+public sealed record TabItem(int Index, string Title, bool IsActive, bool IsDirty);
+public sealed record HistoryRow(int Index, string Name, bool IsCurrent, bool IsFuture);
 public sealed record NetworkItem(Guid Id, string Name, string Type, bool Visible, bool Locked, string ColorHex);
 public sealed record PaletteItem(string Id, string Category, string Name, string Glyph);
 public sealed record LevelItem(Guid Id, string Name, string Altitude, bool IsCurrent, int WallCount);
 
 public partial class MainViewModel : ObservableObject
 {
-    public Building Building { get; private set; } = new();
-    public BuildingHistory History { get; private set; } = new();
-    public BuildingActions Actions { get; private set; }
+    public List<Doc> Docs { get; } = new();
+    public int ActiveIndex { get; private set; } = -1;
+    private static Doc MakeEmpty() { var d = new Doc(); d.Actions = new BuildingActions(d.Building, d.History, new BuildingEventsService()); return d; }
+    private readonly Doc _empty = MakeEmpty();   // stands in while no building is open (welcome screen), so views never see null
+    private Doc Active => ActiveIndex >= 0 && ActiveIndex < Docs.Count ? Docs[ActiveIndex] : _empty;
+    public Building Building => Active.Building;
+    public BuildingHistory History => Active.History;
+    public BuildingActions Actions => Active.Actions;
+    public ObservableCollection<TabItem> Tabs { get; } = new();
+    public ObservableCollection<HistoryRow> HistoryRows { get; } = new();
+    public ObservableCollection<string> RecentFiles { get; } = new();
+    public bool HasDocument => ActiveIndex >= 0;
+    public bool ShowWelcome => ActiveIndex < 0;
+    public IDialogService Dialogs { get; set; } = new FakeDialogService();
+    public AppSettings Settings { get; set; } = new();
+    public string? SettingsPath { get; set; }
     public ObservableCollection<LevelItem> Levels { get; } = new();
     public ObservableCollection<NetworkItem> Networks { get; } = new();
     public ObservableCollection<PaletteItem> Palette { get; } = new();
@@ -34,7 +61,7 @@ public partial class MainViewModel : ObservableObject
     public string[] RiserTemplates { get; } = ["Simple", "EF + ECS", "Chauffage aller + retour", "EF + ECS + EU"];
     public HashSet<Guid> SelectedWalls { get; } = new();
     /// <summary>Background pictures by name (stored under images/ in the .immeuble file).</summary>
-    public Dictionary<string, byte[]> Images { get; private set; } = new();
+    public Dictionary<string, byte[]> Images => Active.Images;
 
     [ObservableProperty] private Guid _currentLevelId;
     [ObservableProperty] private ViewMode _mode = ViewMode.Plan;
@@ -213,7 +240,7 @@ public partial class MainViewModel : ObservableObject
         if (res == null) { Status = "Points alignés : choisissez des points non colinéaires"; return false; }
         Status = $"Aligné — erreur max {res.Max():0} mm"; AlignCancel(); Refresh(); return true;
     }
-    public string? FilePath { get; private set; }
+    public string? FilePath => ActiveIndex >= 0 ? Active.FilePath : null;
     public event Action? Changed;
 
     /// <summary>Always resolved by id: undo/redo rebuilds the whole object graph, so references go stale.</summary>
@@ -221,6 +248,7 @@ public partial class MainViewModel : ObservableObject
     public bool Is3D => Mode is ViewMode.Solid or ViewMode.Wireframe;
     public bool IsElevation => Mode == ViewMode.Elevation;
     public bool IsPlan => Mode == ViewMode.Plan;
+    public string Title => ActiveIndex < 0 ? "ImmeubleCad" : $"{(History.IsDirty ? "• " : "")}{Active.Title} — ImmeubleCad";
     public ElevationPlane? Plane { get; private set; }
     public bool IsSelectTool => Tool == ToolKind.Select;
     public bool IsDrawTool => Tool == ToolKind.DrawWall;
@@ -230,12 +258,30 @@ public partial class MainViewModel : ObservableObject
     public bool IsPlaceTool => Tool == ToolKind.Place;
     public string SelectionText => SelectedSegment != null ? "1 tuyau sélectionné" : SelectedWalls.Count == 0 ? "Aucune sélection" : $"{SelectedWalls.Count} mur(s) sélectionné(s)";
 
-    public MainViewModel() { Actions = null!; RebuildPalette(); Load(SampleBuilding.Create()); }
+    public MainViewModel() : this(startWithSample: true) { }
 
-    private void Load((Building B, BuildingHistory H) s)
+    /// <summary>startWithSample=false shows the welcome screen (New / Open / Recent) until a document exists.</summary>
+    public MainViewModel(bool startWithSample)
     {
-        Building = s.B; History = s.H; Actions = new BuildingActions(Building, History, new BuildingEventsService());
-        SelectedWalls.Clear(); CurrentLevelId = Building.Levels.FirstOrDefault()?.Id ?? Guid.Empty; Refresh();
+        RebuildPalette();
+        if (startWithSample) { AddDoc(new Doc { Building = SampleBuilding.Create().Building }); }
+        else Refresh();
+    }
+
+    private void AddDoc(Doc d, bool clean = true)
+    {
+        if (d.History.Items.Count == 0 && clean) { }
+        d.Actions = new BuildingActions(d.Building, d.History, new BuildingEventsService());
+        if (d.CurrentLevelId == Guid.Empty) d.CurrentLevelId = d.Building.Levels.FirstOrDefault()?.Id ?? Guid.Empty;
+        Docs.Add(d); Activate(Docs.Count - 1);
+    }
+
+    private void Activate(int index)
+    {
+        if (ActiveIndex >= 0 && ActiveIndex < Docs.Count) Active.CurrentLevelId = CurrentLevelId;
+        ActiveIndex = index; SelectedWalls.Clear(); SelectedSegment = null;
+        _currentLevelId = Active.CurrentLevelId; OnPropertyChanged(nameof(CurrentLevelId));
+        OnPropertyChanged(nameof(HasDocument)); OnPropertyChanged(nameof(ShowWelcome)); Refresh();
     }
 
     partial void OnModeChanged(ViewMode value) { OnPropertyChanged(nameof(Is3D)); OnPropertyChanged(nameof(IsElevation)); OnPropertyChanged(nameof(IsPlan)); Changed?.Invoke(); }
@@ -249,6 +295,11 @@ public partial class MainViewModel : ObservableObject
     /// <summary>Rebuild derived state after any model change.</summary>
     public void Refresh()
     {
+        Tabs.Clear(); for (var i = 0; i < Docs.Count; i++) Tabs.Add(new TabItem(i, Docs[i].Title, i == ActiveIndex, Docs[i].History.IsDirty));
+        OnPropertyChanged(nameof(Title));
+        if (ActiveIndex < 0) { Levels.Clear(); Networks.Clear(); HistoryRows.Clear(); Changed?.Invoke(); return; }
+        HistoryRows.Clear(); HistoryRows.Add(new HistoryRow(-1, "État initial", History.Pointer == -1, false));
+        for (var i = 0; i < History.Items.Count; i++) HistoryRows.Add(new HistoryRow(i, History.Items[i].Name, i == History.Pointer, i > History.Pointer));
         SelectedWalls.IntersectWith(CurrentLevel?.Walls.Select(w => w.Id) ?? []);
         Levels.Clear();
         foreach (var l in Building.Levels.AsEnumerable().Reverse()) // top level first, like an elevator
@@ -318,6 +369,112 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand] private void Undo() { History.Undo(Building); Refresh(); }
     [RelayCommand] private void Redo() { History.Redo(Building); Refresh(); }
 
+    // ---- Display options ----
+    [ObservableProperty] private bool _ghostBelow = true;
+    [ObservableProperty] private bool _ghostAbove;
+    [ObservableProperty] private bool _commonOnly;
+    [RelayCommand] private void ToggleGhostBelow() { GhostBelow = !GhostBelow; Changed?.Invoke(); }
+    [RelayCommand] private void ToggleGhostAbove() { GhostAbove = !GhostAbove; Changed?.Invoke(); }
+    [RelayCommand] private void ToggleCommonOnly() { CommonOnly = !CommonOnly; Status = CommonOnly ? "Parties communes seulement" : "Tout afficher"; Changed?.Invoke(); }
+
+    /// <summary>Straightens the selected walls (tolerance 30 mm, 5°) as one history step.</summary>
+    [RelayCommand] private void StraightenSelection()
+    {
+        if (CurrentLevel is not { } l || SelectedWalls.Count == 0) { Status = "Sélectionnez des murs à redresser"; return; }
+        var before = l.Walls.Where(w => SelectedWalls.Contains(w.Id)).Sum(w => w.Footprint.Count);
+        Actions.StraightenWalls(l.Id, SelectedWalls.ToList()); var after = CurrentLevel!.Walls.Where(w => SelectedWalls.Contains(w.Id)).Sum(w => w.Footprint.Count);
+        Status = $"Redressé : {before} → {after} segments"; Refresh();
+    }
+
+    // ---- Documents ----
+    [RelayCommand] private void NewDocument()
+    {
+        var d = new Doc(); d.Building.Name = ""; AddDoc(d);
+        Actions.AddLevel("RDC", 0, 2700, LevelKind.Ground); CurrentLevelId = Building.Levels[0].Id; History.MarkClean(); Refresh(); Status = "Nouvel immeuble";
+    }
+    /// <summary>Opens an autosaved building after a crash; it stays dirty so closing asks to save it.</summary>
+    public void AdoptRecovered(Building b) { var d = new Doc { Building = b }; AddDoc(d); Actions.AddLevel("(récupéré)", 0); Status = "Travail récupéré après un arrêt inattendu"; }
+    [RelayCommand] private void OpenSample() { var d = new Doc { Building = SampleBuilding.Create().Building }; d.Building.Name = "Exemple"; AddDoc(d); Status = "Exemple ouvert — essayez d'importer un plan"; }
+    [RelayCommand] private void SwitchTab(int index) { if (index >= 0 && index < Docs.Count) Activate(index); }
+    [RelayCommand] private void JumpTo(int index) { History.JumpTo(Building, index); SelectedWalls.Clear(); Refresh(); }
+
+    [RelayCommand] private async Task OpenAsync()
+    {
+        try { if (await Dialogs.PickOpenAsync("Immeuble", "*.immeuble") is { } p) OpenFile(p); }
+        catch (Exception ex) { await Fail("ouvrir", ex); }
+    }
+    [RelayCommand] private async Task OpenRecentAsync(string path)
+    {
+        try { OpenFile(path); } catch (Exception ex) { Settings.RecentFiles.Remove(path); RecentFiles.Remove(path); await Fail("ouvrir", ex); }
+    }
+    [RelayCommand] private async Task SaveAsync() { await SaveActiveAsync(false); }
+    [RelayCommand] private async Task SaveAsAsync() { await SaveActiveAsync(true); }
+    public async Task<bool> SaveActiveAsync(bool saveAs)
+    {
+        if (ActiveIndex < 0) return false;
+        try
+        {
+            var path = saveAs ? null : FilePath;
+            path ??= await Dialogs.PickSaveAsync("Immeuble", "*.immeuble", Active.Title + ".immeuble"); if (path == null) return false;
+            SaveTo(path); return true;
+        }
+        catch (Exception ex) { await Fail("enregistrer", ex); return false; }
+    }
+
+    /// <summary>Closes a tab; asks to save when there are unsaved changes. Returns false when the user cancels.</summary>
+    public async Task<bool> CloseDocumentAsync(int index)
+    {
+        if (index < 0 || index >= Docs.Count) return true;
+        var d = Docs[index];
+        if (d.History.IsDirty)
+        {
+            Activate(index);
+            switch (await Dialogs.ConfirmSaveAsync(d.Title)) { case SaveChoice.Cancel: return false; case SaveChoice.Save: if (!await SaveActiveAsync(false)) return false; break; }
+        }
+        Docs.RemoveAt(index);
+        ActiveIndex = Docs.Count == 0 ? -1 : Math.Min(index, Docs.Count - 1);
+        if (ActiveIndex >= 0) Activate(ActiveIndex); else { OnPropertyChanged(nameof(HasDocument)); OnPropertyChanged(nameof(ShowWelcome)); Refresh(); }
+        return true;
+    }
+    [RelayCommand] private async Task CloseTabAsync(int index) => await CloseDocumentAsync(index);
+
+    /// <summary>Quit: every dirty document gets its save prompt; false when cancelled.</summary>
+    public async Task<bool> CanQuitAsync() { for (var i = Docs.Count - 1; i >= 0; i--) if (!await CloseDocumentAsync(i)) return false; return true; }
+
+    [RelayCommand] private async Task ImportPlanAsync()
+    {
+        if (ActiveIndex < 0) return;
+        try
+        {
+            if (await Dialogs.PickOpenAsync("Plan", "image") is not { } path) return;
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            if (await Dialogs.RunImportWizardAsync(File.ReadAllBytes(path)) is { } wiz) { var n = ApplyWizard(wiz); OnLog?.Invoke($"Import plan {Path.GetFileName(path)}: {n} shapes in {sw.ElapsedMilliseconds} ms"); }
+        }
+        catch (Exception ex) { await Fail("importer", ex); }
+    }
+    [RelayCommand] private async Task ExportAsync(string format)
+    {
+        if (ActiveIndex < 0) return;
+        try
+        {
+            var ext = format switch { "ifc" => "*.ifc", "freecad" => "*.FCMacro", "dxf" => "*.dxf", "obj" => "*.obj", "glb" => "*.glb", "bom_pdf" => "*.pdf", "svg" => "*.svg", _ => "*.csv" };
+            if (await Dialogs.PickSaveAsync("Export", ext, Active.Title + ext.TrimStart('*')) is not { } path) return;
+            switch (format)
+            {
+                case "csv": File.WriteAllText(path, BomFull.ToCsv(Building, true)); break;
+                case "bom_pdf": File.WriteAllBytes(path, BomFull.ToPdf(Building)); break;
+                case "glb": File.WriteAllBytes(path, GltfExporter.ExportGlb(Building)); break;
+                case "svg": File.WriteAllText(path, SvgExporter.Export(CurrentLevel!)); break;
+                default: Export(format, path); break;
+            }
+            Status = "Exporté " + Path.GetFileName(path); OnLog?.Invoke($"Exported {format} to {path}");
+        }
+        catch (Exception ex) { await Fail("exporter", ex); }
+    }
+    public event Action<string>? OnLog;
+    public event Action<string, Exception>? OnError;
+    private async Task Fail(string what, Exception ex) { OnError?.Invoke(what, ex); Status = $"Erreur ({what}) : {ex.Message}"; await Dialogs.ShowErrorAsync("ImmeubleCad", $"Impossible de {what} : {ex.Message}"); }
+
     [RelayCommand] private void AddLevel()
     {
         var top = Building.Levels.Count == 0 ? 0 : Building.Levels.Max(l => l.AltitudeMm + l.HeightMm);
@@ -341,12 +498,22 @@ public partial class MainViewModel : ObservableObject
         Actions.ImportWalls(lv.Id, rects); Status = $"{rects.Count} mur(s) ajouté(s)"; Refresh();
     }
 
-    public void SaveTo(string path) { BuildingFile.Save(Building, path, Images); History.MarkClean(); FilePath = path; Status = "Enregistré " + Path.GetFileName(path); }
-    public void LoadFrom(string path)
+    public void SaveTo(string path)
     {
-        var (b, imgs) = BuildingFile.Load(path); var h = new BuildingHistory();
-        Load((b, h)); Images = imgs; FilePath = path; Status = "Ouvert " + Path.GetFileName(path);
+        BuildingFile.Save(Building, path, Images); History.MarkClean(); Active.FilePath = path; Status = "Enregistré " + Path.GetFileName(path); Remember(path); Refresh();
     }
+    private void Remember(string path)
+    {
+        Settings.AddRecent(path); RecentFiles.Clear(); foreach (var f in Settings.RecentFiles) RecentFiles.Add(f);
+        if (SettingsPath != null) try { SettingsStore.Save(Settings, SettingsPath); } catch (IOException) { }
+    }
+    public void OpenFile(string path)
+    {
+        var existing = Docs.FindIndex(d => d.FilePath == path); if (existing >= 0) { Activate(existing); return; }   // already open: switch to its tab
+        var (b, imgs) = BuildingFile.Load(path);
+        AddDoc(new Doc { Building = b, Images = imgs, FilePath = path }); Status = "Ouvert " + Path.GetFileName(path); Remember(path);
+    }
+    public void LoadFrom(string path) => OpenFile(path);
     /// <summary>Applies a finished wizard to the current level: walls + background, one history step each.</summary>
     public int ApplyWizard(ImportWizardViewModel w)
     {
