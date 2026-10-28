@@ -12,7 +12,9 @@ namespace ImmeubleCad.Desktop.Tests;
 
 public sealed class HeadlessFixture
 {
-    public HeadlessUnitTestSession Session { get; } = HeadlessUnitTestSession.GetOrStartForAssembly(typeof(HeadlessFixture).Assembly);
+    // Test classes run in parallel: the Avalonia platform must be initialised exactly once.
+    private static readonly Lazy<HeadlessUnitTestSession> Shared = new(() => HeadlessUnitTestSession.GetOrStartForAssembly(typeof(HeadlessFixture).Assembly), LazyThreadSafetyMode.ExecutionAndPublication);
+    public HeadlessUnitTestSession Session => Shared.Value;
 }
 
 public static class TestAppBuilder
@@ -411,4 +413,21 @@ internal static class LogExt
 {
     public static void LogDebugPublic(this Microsoft.Extensions.Logging.ILogger l, string m) => Microsoft.Extensions.Logging.LoggerExtensions.LogDebug(l, "{M}", m);
     public static void LogInformationPublic(this Microsoft.Extensions.Logging.ILogger l, string m) => Microsoft.Extensions.Logging.LoggerExtensions.LogInformation(l, "{M}", m);
+}
+
+public class DisplayOptionTests
+{
+    private readonly HeadlessFixture f = new();
+
+    [Fact] public Task Ghost_toggles_and_common_only_change_what_is_drawn() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(); vm.SelectLevelCommand.Execute(vm.Building.Levels[1].Id);
+        var w = new MainWindow { DataContext = vm, Width = 900, Height = 700 }; w.Show(); w.UpdateLayout();
+        byte[] Px() { var f2 = w.CaptureRenderedFrame()!; using var ms = new MemoryStream(); f2.Save(ms); return ms.ToArray(); }
+        var withGhost = Px(); vm.ToggleGhostBelowCommand.Execute(null); var without = Px(); Assert.NotEqual(withGhost, without);
+        vm.ToggleGhostAboveCommand.Execute(null); Assert.NotEqual(without, Px());
+        var all = Px(); foreach (var wall in vm.CurrentLevel!.Walls) { }
+        vm.ToggleCommonOnlyCommand.Execute(null); Assert.NotEqual(all, Px());                  // sample walls are Private on standard levels → hidden
+        w.Close();
+    }, CancellationToken.None);
 }

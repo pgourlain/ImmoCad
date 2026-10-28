@@ -306,7 +306,9 @@ public class PlanView : Control
                 ctx.DrawImage(bg, new Rect(bg.PixelSize.ToSize(1)));
         }
         var below = Vm.Building.Levels.LastOrDefault(x => x.AltitudeMm < l.AltitudeMm);
-        if (below != null) DrawWalls(ctx, below, new SolidColorBrush(Color.FromArgb(55, 60, 140, 255)), null, null);
+        if (below != null && Vm.GhostBelow) DrawWalls(ctx, below, new SolidColorBrush(Color.FromArgb(55, 60, 140, 255)), null, null);
+        var above = Vm.Building.Levels.FirstOrDefault(x => x.AltitudeMm > l.AltitudeMm);
+        if (above != null && Vm.GhostAbove) DrawWalls(ctx, above, new SolidColorBrush(Color.FromArgb(45, 255, 150, 40)), null, null);
         var wallFill = new SolidColorBrush(dark ? Color.FromRgb(190, 192, 198) : Color.FromRgb(70, 72, 78));
         var sel = new SolidColorBrush(Color.FromRgb(255, 140, 0));
         DrawWalls(ctx, l, wallFill, new Pen(new SolidColorBrush(dark ? Colors.Black : Colors.Black), 0.8), null, Vm.SelectedWalls, sel);
@@ -360,6 +362,7 @@ public class PlanView : Control
             var isSel = selected?.Contains(w.Id) == true;
             if (onlySelected && !isSel) continue;
             if (w.Footprint.Count < 3) continue;
+            if (Vm?.CommonOnly == true && w.Stability == Stability.Private) continue;                       // "Common parts only"
             var (dx, dy) = shift ?? (0, 0);
             Point S(PointMm p) => ToScreen(new PointMm(p.X + dx, p.Y + dy));
             var g = new StreamGeometry();
