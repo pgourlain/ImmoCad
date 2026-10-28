@@ -1,0 +1,356 @@
+[
+ {
+  "id": "radiator",
+  "category": "Equipment",
+  "names": {
+   "fr": "Radiateur",
+   "en": "Radiator"
+  },
+  "inline": false,
+  "defaultElevationMm": 150,
+  "parameters": [
+   {
+    "id": "width",
+    "default": 1000,
+    "min": 100,
+    "max": 4000,
+    "labels": {
+     "fr": "Largeur",
+     "en": "Width"
+    }
+   },
+   {
+    "id": "depth",
+    "default": 100,
+    "min": 50,
+    "max": 2000,
+    "labels": {
+     "fr": "Profondeur",
+     "en": "Depth"
+    }
+   },
+   {
+    "id": "height",
+    "default": 600,
+    "min": 50,
+    "max": 3000,
+    "labels": {
+     "fr": "Hauteur",
+     "en": "Height"
+    }
+   }
+  ],
+  "symbol": [
+   "M0,0 L$width,0 L$width,$depth L0,$depth Z",
+   "M$width/6,0 L$width/6,$depth",
+   "M$width/3,0 L$width/3,$depth",
+   "M$width/2,0 L$width/2,$depth",
+   "M$width*2/3,0 L$width*2/3,$depth",
+   "M$width*5/6,0 L$width*5/6,$depth"
+  ],
+  "shape": [
+   {
+    "type": "box",
+    "x": "0",
+    "y": "0",
+    "z": "0",
+    "w": "$width",
+    "d": "$depth",
+    "h": "$height"
+   }
+  ],
+  "ports": [
+   {
+    "network": "HeatingSupply",
+    "diameterMm": 14,
+    "x": "$width/20",
+    "y": "0",
+    "z": "$height*5/6"
+   },
+   {
+    "network": "HeatingReturn",
+    "diameterMm": 14,
+    "x": "$width*19/20",
+    "y": "0",
+    "z": "$height*5/6"
+   }
+  ]
+ },
+ {
+  "id": "boiler",
+  "category": "Equipment",
+  "names": {
+   "fr": "Chaudière",
+   "en": "Boiler"
+  },
+  "inline": false,
+  "defaultElevationMm": 0,
+  "parameters": [
+   {
+    "id": "width",
+    "default": 500,
+    "min": 100,
+    "max": 4000,
+    "labels": {
+     "fr": "Largeur",
+     "en": "Width"
+    }
+   },
+   {
+    "id": "depth",
+    "default": 400,
+    "min": 50,
+    "max": 2000,
+    "labels": {
+     "fr": "Profondeur",
+     "en": "Depth"
+    }
+   },
+   {
+    "id": "height",
+    "default": 800,
+    "min": 50,
+    "max": 3000,
+    "labels": {
+     "fr": "Hauteur",
+     "en": "Height"
+    }
+   }
+  ],
+  "symbol": [
+   "M0,0 L$width,0 L$width,$depth L0,$depth Z",
+   "M$width/4,$depth/4 L$width*3/4,$depth/4 L$width*3/4,$depth*3/4 L$width/4,$depth*3/4 Z"
+  ],
+  "shape": [
+   {
+    "type": "box",
+    "x": "0",
+    "y": "0",
+    "z": "0",
+    "w": "$width",
+    "d": "$depth",
+    "h": "$height"
+   }
+  ],
+  "ports": [
+   {
+    "network": "HeatingSupply",
+    "diameterMm": 20,
+    "x": "$width/5",
+    "y": "0",
+    "z": "$height"
+   },
+   {
+    "network": "HeatingReturn",
+    "diameterMm": 20,
+    "x": "$width*4/5",
+    "y": "0",
+    "z": "$height"
+   }
+  ]
+ },
+ {
+  "id": "hot-water-tank",
+  "category": "Equipment",
+  "names": {
+   "fr": "Ballon d'eau chaude",
+   "en": "Hot water tank"
+  },
+  "inline": false,
+  "defaultElevationMm": 0,
+  "parameters": [
+   {
+    "id": "width",
+    "default": 600,
+    "min": 100,
+    "max": 4000,
+    "labels": {
+     "fr": "Largeur",
+     "en": "Width"
+    }
+   },
+   {
+    "id": "depth",
+    "default": 600,
+    "min": 50,
+    "max": 2000,
+    "labels": {
+     "fr": "Profondeur",
+     "en": "Depth"
+    }
+   },
+   {
+    "id": "height",
+    "default": 1500,
+    "min": 50,
+    "max": 3000,
+    "labels": {
+     "fr": "Hauteur",
+     "en": "Height"
+    }
+   }
+  ],
+  "symbol": [
+   "C$width/2,$depth/2,$width/2"
+  ],
+  "shape": [
+   {
+    "type": "cylinder",
+    "x": "$width/2",
+    "y": "$depth/2",
+    "z": "0",
+    "r": "$width/2",
+    "h": "$height"
+   }
+  ],
+  "ports": [
+   {
+    "network": "DomesticHotWater",
+    "diameterMm": 20,
+    "x": "$width/2",
+    "y": "$depth/2",
+    "z": "$height"
+   },
+   {
+    "network": "ColdWater",
+    "diameterMm": 20,
+    "x": "$width/2",
+    "y": "$depth/2",
+    "z": "0"
+   }
+  ]
+ },
+ {
+  "id": "manifold",
+  "category": "Equipment",
+  "names": {
+   "fr": "Collecteur",
+   "en": "Manifold"
+  },
+  "inline": false,
+  "defaultElevationMm": 1200,
+  "parameters": [
+   {
+    "id": "width",
+    "default": 600,
+    "min": 100,
+    "max": 4000,
+    "labels": {
+     "fr": "Largeur",
+     "en": "Width"
+    }
+   },
+   {
+    "id": "depth",
+    "default": 100,
+    "min": 50,
+    "max": 2000,
+    "labels": {
+     "fr": "Profondeur",
+     "en": "Depth"
+    }
+   },
+   {
+    "id": "height",
+    "default": 150,
+    "min": 50,
+    "max": 3000,
+    "labels": {
+     "fr": "Hauteur",
+     "en": "Height"
+    }
+   }
+  ],
+  "symbol": [
+   "M0,0 L$width,0 L$width,$depth L0,$depth Z",
+   "M$width/5,0 L$width/5,$depth",
+   "M$width*2/5,0 L$width*2/5,$depth",
+   "M$width*3/5,0 L$width*3/5,$depth",
+   "M$width*4/5,0 L$width*4/5,$depth"
+  ],
+  "shape": [
+   {
+    "type": "box",
+    "x": "0",
+    "y": "0",
+    "z": "0",
+    "w": "$width",
+    "d": "$depth",
+    "h": "$height"
+   }
+  ],
+  "ports": [
+   {
+    "network": "HeatingSupply",
+    "diameterMm": 16,
+    "x": "$width/10",
+    "y": "0",
+    "z": "$height/2"
+   },
+   {
+    "network": "HeatingReturn",
+    "diameterMm": 16,
+    "x": "$width*9/10",
+    "y": "0",
+    "z": "$height/2"
+   }
+  ]
+ },
+ {
+  "id": "circulator-pump",
+  "category": "Equipment",
+  "names": {
+   "fr": "Circulateur",
+   "en": "Circulator pump"
+  },
+  "inline": true,
+  "defaultElevationMm": 0,
+  "parameters": [
+   {
+    "id": "width",
+    "default": 180,
+    "min": 100,
+    "max": 4000,
+    "labels": {
+     "fr": "Largeur",
+     "en": "Width"
+    }
+   },
+   {
+    "id": "depth",
+    "default": 120,
+    "min": 50,
+    "max": 2000,
+    "labels": {
+     "fr": "Profondeur",
+     "en": "Depth"
+    }
+   },
+   {
+    "id": "height",
+    "default": 120,
+    "min": 50,
+    "max": 3000,
+    "labels": {
+     "fr": "Hauteur",
+     "en": "Height"
+    }
+   }
+  ],
+  "symbol": [
+   "M0,0 L$width,0 L$width,$depth L0,$depth Z",
+   "C$width/2,$depth/2,$depth/3"
+  ],
+  "shape": [
+   {
+    "type": "cylinder",
+    "x": "$width/2",
+    "y": "$depth/2",
+    "z": "0",
+    "r": "$depth/2",
+    "h": "$height"
+   }
+  ],
+  "ports": []
+ }
+]

@@ -53,6 +53,7 @@ public class PlanView : Control
     private readonly List<(Rect Rect, Guid LevelId, PointMm Center)> _arrows = new();
     private PointMm _hover;
     private string _chainTyped = "", _chainAngle = ""; private int _chainField;     // typed length / angle while placing; Tab switches field
+    private (Guid Id, PointMm To, PointMm From)? _eqDrag; private (Guid EqId, Port Port, PointMm3 At, PointMm To)? _connect;
     private (Wall Wall, Opening Opening)? _openingDrag;
 
     private void ShowChainMenu(DrawChainTool t)
@@ -70,6 +71,19 @@ public class PlanView : Control
     private StretchHandle? _stretch; private Affine _stretchStart; private (double X, double Y) _stretchFrom; private Affine? _stretchLive;
     private PipeHandleTool? _handleTool;
     private string _typed = "";
+
+    private Equipment? HitEquipment(PointMm p)
+    {
+        if (Vm?.CurrentLevel is not { } l) return null;
+        foreach (var e in Vm.Building.Equipment.Where(q => q.LevelId == l.Id).Reverse())
+        {
+            if (EquipmentCatalog.Find(e.CatalogId)?.With(e.Parameters) is not { } c) continue;
+            var pts = Symbol.Figures(c, e.Position, e.RotationDeg).Where(f => f.Points.Count > 2).SelectMany(f => f.Points).ToList(); if (pts.Count == 0) continue;
+            int x0 = pts.Min(q => q.X) - 40, x1 = pts.Max(q => q.X) + 40, y0 = pts.Min(q => q.Y) - 40, y1 = pts.Max(q => q.Y) + 40;
+            if (p.X >= x0 && p.X <= x1 && p.Y >= y0 && p.Y <= y1) return e;
+        }
+        return null;
+    }
 
     private (SegmentRef Seg, PipeHandle Handle)? HitHandle(Point p)
     {
@@ -167,6 +181,11 @@ public class PlanView : Control
         foreach (var (rect, lvl, c) in _arrows)
             if (rect.Contains(p)) { vm.SelectLevelCommand.Execute(lvl); CenterOn(c); return; }
 
+        // equipment: port handle starts Connect, body selects/moves
+        if (vm.SelectedEquipment is { } se && EquipmentCatalog.Find(se.CatalogId)?.With(se.Parameters) is { } sc && vm.CurrentLevel is { } sl)
+            foreach (var (port, at) in Symbol.PortPositions(sc, se.Position, sl.AltitudeMm + se.ElevationMm, se.RotationDeg))
+            { var sp = ToScreen(new PointMm(at.X, at.Y)); if (Math.Sqrt((sp.X - p.X) * (sp.X - p.X) + (sp.Y - p.Y) * (sp.Y - p.Y)) <= 9) { _connect = (se.Id, port, at, ToMm(p)); e.Pointer.Capture(this); return; } }
+        if (HitEquipment(ToMm(p)) is { } heq) { vm.SelectEquipment(heq.Id); _eqDrag = (heq.Id, heq.Position, ToMm(p)); e.Pointer.Capture(this); InvalidateVisual(); return; }
         // pipe handles and pipe bodies come before walls
         if (_handleTool != null && _handleTool.State == ToolState.Placing) { _handleTool.ForceElbow = e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Alt); _handleTool.Down(HandlePointer(e)); FinishHandle(vm); return; }
         if (HitHandle(p) is { } h) { _handleTool = new PipeHandleTool(vm.Actions, h.Seg.Network.Id, h.Seg.Segment.Id, h.Handle, vm.Snapper_GridMm()) { ForceElbow = e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Alt) }; _typed = ""; _handleTool.Down(HandlePointer(e)); e.Pointer.Capture(this); InvalidateVisual(); return; }
@@ -175,7 +194,7 @@ public class PlanView : Control
             vm.SelectSegment(pipe.Network.Id, pipe.Segment.Id);
             _handleTool = new PipeHandleTool(vm.Actions, pipe.Network.Id, pipe.Segment.Id, PipeHandle.Body, vm.Snapper_GridMm()); _typed = ""; _handleTool.Down(HandlePointer(e)); e.Pointer.Capture(this); InvalidateVisual(); return;
         }
-        vm.ClearSegment();
+        vm.ClearSegment(); if (vm.SelectedEquipmentId != null) vm.SelectEquipment(null);
         _start = _now = p;
         if (vm.HitOpening(ToMm(p)) is { } oh) { _openingDrag = oh; e.Pointer.Capture(this); return; } _startMm = ToMm(p); _delta = (0, 0); _addToSelection = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
         var hit = HitWall(_startMm);
@@ -195,6 +214,8 @@ public class PlanView : Control
         if (_handleTool != null) { _handleTool.ForceElbow = e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Alt); _handleTool.Move(HandlePointer(e)); InvalidateVisual(); return; }
         if (IsChain) { DrawTool?.Move(TP(e)); InvalidateVisual(); return; }
         if (vm.IsPlaceTool || vm.IsRiserTool) { InvalidateVisual(); return; }
+        if (_connect is { } cn0) { _connect = (cn0.EqId, cn0.Port, cn0.At, ToMm(p)); InvalidateVisual(); return; }
+        if (_eqDrag is { } ed0) { var m = ToMm(p); var d = (X: m.X - ed0.From.X, Y: m.Y - ed0.From.Y); var orig = Vm.Building.Equipment.First(q => q.Id == ed0.Id).Position; _eqDrag = (ed0.Id, new PointMm(Snap(orig.X + d.X, Snapper.GridMm), Snap(orig.Y + d.Y, Snapper.GridMm)), ed0.From); InvalidateVisual(); return; }
         if (_stretch is { } sh && Vm.BackgroundSize() is { } szm) { var mm = ToMm(p); _stretchLive = ImageStretch.Drag(_stretchStart, szm.W, szm.H, sh, _stretchFrom, (mm.X, mm.Y), keepRatio: e.KeyModifiers.HasFlag(KeyModifiers.Shift)); InvalidateVisual(); return; }
         if (_openingDrag != null) { _now = p; InvalidateVisual(); return; }
         if (vm.IsMeasureTool || vm.IsNumberTool) { InvalidateVisual(); }
@@ -222,6 +243,8 @@ public class PlanView : Control
         if (Vm is not { } vm) return;
         if (IsChain) { DrawTool?.Up(TP(e)); InvalidateVisual(); return; }
         if (_handleTool != null) { _handleTool.Up(HandlePointer(e)); if (_handleTool.State == ToolState.Committed) FinishHandle(vm); else if (_handleTool.State == ToolState.Placing && _handleTool.Handle == PipeHandle.Body) { _handleTool.Cancel(); _handleTool = null; vm.AfterEdit(); } /* a plain click on the body only selects */ InvalidateVisual(); return; }
+        if (_connect is { } cr) { _connect = null; vm.ConnectPort(cr.EqId, cr.Port, cr.At, ToMm(e.GetPosition(this))); InvalidateVisual(); return; }
+        if (_eqDrag is { } er) { _eqDrag = null; var orig = vm.Building.Equipment.First(q => q.Id == er.Id).Position; if (er.To != orig) vm.MoveEquipmentTo(er.Id, er.To); InvalidateVisual(); return; }
         if (_stretch != null) { var live = _stretchLive; _stretch = null; _stretchLive = null; if (live is { } lt && lt != _stretchStart) vm.SetImageTransform(lt); InvalidateVisual(); return; }
         if (vm.IsRiserTool || vm.IsPlaceTool || vm.IsAlignTool || vm.IsDoorTool || vm.IsWindowTool || vm.IsSpaceTool || vm.IsNumberTool || vm.IsMeasureTool) return;
         if (_openingDrag is { } od) { var to = ToMm(e.GetPosition(this)); _openingDrag = null; if (Math.Abs(_now.X - _start.X) + Math.Abs(_now.Y - _start.Y) > 3) vm.MoveOpeningTo(od.Wall, od.Opening, to); InvalidateVisual(); return; }
@@ -432,12 +455,25 @@ public class PlanView : Control
         }
         foreach (var e in b.Equipment.Where(q => q.LevelId == l.Id))
         {
-            var cat = EquipmentCatalog.Find(e.CatalogId); var w = (cat?.WidthMm ?? 500) * Scale; var d = Math.Max(6, (cat?.DepthMm ?? 100) * Scale);
-            var p = ToScreen(e.Position);
-            ctx.DrawRectangle(Brushes.White, new Pen(Brushes.SlateBlue, 1.5), new Rect(p.X, p.Y - d, w, d));
-            if (e.CatalogId == "radiator") for (var k = 1; k < 6; k++) ctx.DrawLine(new Pen(Brushes.SlateBlue, 1), new Point(p.X + w * k / 6, p.Y - d), new Point(p.X + w * k / 6, p.Y));
-            if (!string.IsNullOrEmpty(e.Label)) ctx.DrawText(new FormattedText(e.Label, System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 11, dark ? Brushes.Gainsboro : Brushes.DimGray), p + new Point(0, 2));
+            var cat = EquipmentCatalog.Find(e.CatalogId)?.With(e.Parameters); var sel = Vm.SelectedEquipmentId == e.Id; var origin = _eqDrag is { } ed && ed.Id == e.Id ? ed.To : e.Position;
+            var pen = new Pen(sel ? Brushes.OrangeRed : Brushes.SlateBlue, sel ? 2.2 : 1.4);
+            if (cat == null) { var p0 = ToScreen(origin); ctx.DrawRectangle(Brushes.White, pen, new Rect(p0.X, p0.Y - 12, 40, 12)); continue; }
+            var figs = Symbol.Figures(cat, origin, e.RotationDeg);
+            foreach (var fig in figs)
+            {
+                if (fig.Centre is { } c) { ctx.DrawEllipse(null, pen, ToScreen(c), fig.Radius * Scale, fig.Radius * Scale); continue; }
+                var g = new StreamGeometry(); using (var cx = g.Open()) { cx.BeginFigure(ToScreen(fig.Points[0]), fig.Closed); foreach (var p in fig.Points.Skip(1)) cx.LineTo(ToScreen(p)); cx.EndFigure(fig.Closed); }
+                ctx.DrawGeometry(fig.Closed && ReferenceEquals(fig, figs[0]) ? Brushes.White : null, pen, g);
+            }
+            if (!string.IsNullOrEmpty(e.Label)) ctx.DrawText(Txt(e.Label, 11, dark ? Brushes.Gainsboro : Brushes.DimGray), ToScreen(origin) + new Point(0, 4));
+            if (sel)
+                foreach (var (port, at) in Symbol.PortPositions(cat, origin, l.AltitudeMm + e.ElevationMm, e.RotationDeg))
+                {
+                    var c = NetworkQueries.ColorOf(port.Network); var sp = ToScreen(new PointMm(at.X, at.Y));
+                    ctx.DrawEllipse(new SolidColorBrush(Color.FromRgb(c.R, c.G, c.B)), new Pen(Brushes.White, 1.5), sp, 6, 6);
+                }
         }
+        if (_connect is { } cn) { var c = NetworkQueries.ColorOf(cn.Port.Network); ctx.DrawLine(new Pen(new SolidColorBrush(Color.FromRgb(c.R, c.G, c.B)), 2.5, DashStyle.Dash), ToScreen(new PointMm(cn.At.X, cn.At.Y)), ToScreen(cn.To)); }
         // placement ghost: green when valid, red with a hint when not
         if ((Vm.IsPlaceTool || Vm.IsRiserTool) && Bounds.Contains(ToScreen(_hover)))
         {

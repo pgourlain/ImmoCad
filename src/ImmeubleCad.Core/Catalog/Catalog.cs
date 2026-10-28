@@ -1,30 +1,135 @@
+using System.Globalization;
+using System.Reflection;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using ImmeubleCad.Core.Model;
 
 namespace ImmeubleCad.Core.Catalog;
 
-public sealed record Port(NetworkType Network, int DiameterMm, int OffsetX, int OffsetY, int OffsetZ);
-public sealed record CatalogEntry(string Id, string Category, string Name, int WidthMm, int DepthMm, int HeightMm, bool Inline, int DefaultElevationMm, List<Port> Ports);
+// ---- JSON shape (source-generated deserialization: AOT friendly) ----
+public sealed class CatalogParameterDto { public string Id { get; set; } = ""; public double Default { get; set; } public double Min { get; set; } public double Max { get; set; } public Dictionary<string, string> Labels { get; set; } = new(); }
+public sealed class CatalogPortDto { public string Network { get; set; } = ""; public int DiameterMm { get; set; } public string X { get; set; } = "0"; public string Y { get; set; } = "0"; public string Z { get; set; } = "0"; }
+public sealed class CatalogShapeDto { public string Type { get; set; } = "box"; public string X { get; set; } = "0"; public string Y { get; set; } = "0"; public string Z { get; set; } = "0"; public string W { get; set; } = "0"; public string D { get; set; } = "0"; public string H { get; set; } = "0"; public string R { get; set; } = "0"; }
+public sealed class CatalogEntryDto
+{
+    public string Id { get; set; } = ""; public string Category { get; set; } = ""; public Dictionary<string, string> Names { get; set; } = new();
+    public bool Inline { get; set; } public int DefaultElevationMm { get; set; }
+    public List<CatalogParameterDto> Parameters { get; set; } = new(); public List<string> Symbol { get; set; } = new(); public List<CatalogShapeDto> Shape { get; set; } = new(); public List<CatalogPortDto> Ports { get; set; } = new();
+}
 
-[JsonSerializable(typeof(List<CatalogEntry>))]
+[JsonSerializable(typeof(List<CatalogEntryDto>))]
+[JsonSourceGenerationOptions(PropertyNameCaseInsensitive = true, WriteIndented = true, PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 public partial class CatalogJsonContext : JsonSerializerContext { }
+
+// ---- model used by the app ----
+public sealed record Port(NetworkType Network, int DiameterMm, int OffsetX, int OffsetY, int OffsetZ);
+public sealed record ShapePart(string Type, int X, int Y, int Z, int W, int D, int H, int R);
+public sealed record CatalogParameter(string Id, double Default, double Min, double Max, IReadOnlyDictionary<string, string> Labels);
+
+/// <summary>A catalog object: parameters with defaults, a 2D symbol (path strings), a 3D shape (boxes and cylinders) and typed ports, all evaluated for a given set of parameter values.</summary>
+public sealed class CatalogEntry
+{
+    public CatalogEntryDto Source { get; }
+    public IReadOnlyDictionary<string, double> Values { get; }
+    public CatalogEntry(CatalogEntryDto source, IReadOnlyDictionary<string, double>? values = null)
+    {
+        Source = source;
+        var v = source.Parameters.ToDictionary(p => p.Id, p => p.Default);
+        if (values != null) foreach (var (k, x) in values) if (source.Parameters.FirstOrDefault(p => p.Id == k) is { } p) v[k] = Math.Clamp(x, p.Min, p.Max);
+        Values = v;
+    }
+
+    public string Id => Source.Id; public string Category => Source.Category; public bool Inline => Source.Inline; public int DefaultElevationMm => Source.DefaultElevationMm;
+    public string Name => Source.Names.TryGetValue(Translations.Language, out var n) ? n : Source.Names.TryGetValue("fr", out var f) ? f : Source.Id;
+    public string NameIn(string lang) => Source.Names.TryGetValue(lang, out var n) ? n : Source.Id;
+    public int WidthMm => (int)Get("width", 100); public int DepthMm => (int)Get("depth", 100); public int HeightMm => (int)Get("height", 100);
+    public IReadOnlyList<CatalogParameter> Parameters => Source.Parameters.Select(p => new CatalogParameter(p.Id, p.Default, p.Min, p.Max, p.Labels)).ToList();
+    private double Get(string id, double fallback) => Values.TryGetValue(id, out var x) ? x : fallback;
+
+    public List<Port> Ports => Source.Ports.Select(p => new Port(Enum.Parse<NetworkType>(p.Network), p.DiameterMm, (int)Eval(p.X), (int)Eval(p.Y), (int)Eval(p.Z))).ToList();
+    public List<ShapePart> Shape => Source.Shape.Select(s => new ShapePart(s.Type, (int)Eval(s.X), (int)Eval(s.Y), (int)Eval(s.Z), (int)Eval(s.W), (int)Eval(s.D), (int)Eval(s.H), (int)Eval(s.R))).ToList();
+    /// <summary>2D symbol path strings with the parameters substituted (numbers in mm, origin = bottom-left of the footprint).</summary>
+    public List<string> Symbol => Source.Symbol.Select(Substitute).ToList();
+
+    /// <summary>A copy with other parameter values (user objects).</summary>
+    public CatalogEntry With(IReadOnlyDictionary<string, double> values) => new(Source, values);
+
+    private string Substitute(string path)
+    {   // every coordinate token is an expression: "M$width/6,0 L…" → evaluate each number-like run
+        var sb = new System.Text.StringBuilder(); var token = new System.Text.StringBuilder();
+        void Flush() { if (token.Length == 0) return; sb.Append(Eval(token.ToString()).ToString("0.##", CultureInfo.InvariantCulture)); token.Clear(); }
+        foreach (var ch in path)
+        {
+            if (ch is ' ' or ',' or 'M' or 'L' or 'Z' or 'C') { Flush(); sb.Append(ch); }
+            else token.Append(ch);
+        }
+        Flush(); return sb.ToString();
+    }
+
+    /// <summary>Tiny expression evaluator: numbers, $parameters and + - * / (left to right with * / first).</summary>
+    public double Eval(string expr)
+    {
+        var tokens = new List<string>(); var cur = new System.Text.StringBuilder();
+        foreach (var ch in expr.Trim()) { if (ch is '+' or '-' or '*' or '/' && cur.Length > 0) { tokens.Add(cur.ToString()); tokens.Add(ch.ToString()); cur.Clear(); } else cur.Append(ch); }
+        if (cur.Length > 0) tokens.Add(cur.ToString());
+        double Val(string t) => t.StartsWith('$') ? Get(t[1..], 0) : double.Parse(t, CultureInfo.InvariantCulture);
+        return EvalTokens(tokens, Val);
+    }
+    private static double EvalTokens(List<string> t, Func<string, double> val)
+    {   // first pass * and /, second pass + and -
+        var nums = new List<double> { val(t[0]) }; var ops = new List<string>();
+        for (var i = 1; i + 1 < t.Count; i += 2)
+        {
+            var op = t[i]; var n = val(t[i + 1]);
+            if (op == "*") nums[^1] *= n; else if (op == "/") nums[^1] = n == 0 ? 0 : nums[^1] / n; else { ops.Add(op); nums.Add(n); }
+        }
+        var r = nums[0]; for (var i = 0; i < ops.Count; i++) r = ops[i] == "+" ? r + nums[i + 1] : r - nums[i + 1];
+        return r;
+    }
+}
 
 public static class EquipmentCatalog
 {
-    public static IReadOnlyList<CatalogEntry> Default { get; } =
-    [
-        new("radiator", "Equipment", "Radiator", 1000, 100, 600, false, 150, [new(NetworkType.HeatingSupply, 14, 50, 0, 500), new(NetworkType.HeatingReturn, 14, 950, 0, 500)]),
-        new("boiler", "Equipment", "Boiler", 500, 400, 800, false, 0, [new(NetworkType.HeatingSupply, 20, 100, 0, 800), new(NetworkType.HeatingReturn, 20, 400, 0, 800)]),
-        new("hot-water-tank", "Equipment", "Hot water tank", 600, 600, 1500, false, 0, [new(NetworkType.DomesticHotWater, 20, 300, 300, 1500), new(NetworkType.ColdWater, 20, 300, 300, 0)]),
-        new("shutoff-valve", "Valves", "Shut-off valve", 50, 50, 50, true, 0, []),
-        new("thermostatic-valve", "Valves", "Thermostatic valve", 50, 50, 50, true, 0, []),
-        new("meter", "Valves", "Meter", 100, 100, 100, true, 0, []),
-        new("washbasin", "Sanitary", "Washbasin", 600, 450, 850, false, 0, [new(NetworkType.ColdWater, 12, 150, 0, 500), new(NetworkType.DomesticHotWater, 12, 450, 0, 500), new(NetworkType.Drainage, 40, 300, 0, 400)]),
-        new("wc", "Sanitary", "WC", 380, 700, 800, false, 0, [new(NetworkType.ColdWater, 12, 190, 0, 200), new(NetworkType.Drainage, 100, 190, 100, 0)]),
-        new("shower", "Sanitary", "Shower", 900, 900, 2000, false, 0, [new(NetworkType.ColdWater, 15, 100, 0, 1000), new(NetworkType.DomesticHotWater, 15, 800, 0, 1000), new(NetworkType.Drainage, 40, 450, 450, 0)]),
-    ];
+    private static IReadOnlyList<CatalogEntry>? _default;
+    /// <summary>Built-in catalog loaded from the embedded catalog/*.json resources.</summary>
+    public static IReadOnlyList<CatalogEntry> Default => _default ??= LoadEmbedded();
+    public static CatalogEntry? Find(string id) => (UserEntries.FirstOrDefault(e => e.Id == id)) ?? Default.FirstOrDefault(e => e.Id == id);
+    public static List<CatalogEntry> UserEntries { get; } = new();
+    public static IEnumerable<CatalogEntry> All => Default.Concat(UserEntries.Where(u => Default.All(d => d.Id != u.Id)));
 
-    public static CatalogEntry? Find(string id) => Default.FirstOrDefault(e => e.Id == id);
+    private static IReadOnlyList<CatalogEntry> LoadEmbedded()
+    {
+        var asm = typeof(EquipmentCatalog).Assembly; var list = new List<CatalogEntry>();
+        foreach (var name in asm.GetManifestResourceNames().Where(n => n.Contains(".catalog.") && n.EndsWith(".json")).OrderBy(n => n, StringComparer.Ordinal))
+        {
+            using var s = asm.GetManifestResourceStream(name)!;
+            list.AddRange((JsonSerializer.Deserialize(s, CatalogJsonContext.Default.ListCatalogEntryDto) ?? new()).Select(d => new CatalogEntry(d)));
+        }
+        return list;
+    }
+
+    // ---- user objects: duplicate a catalog entry, change its parameters, save in the user's catalog folder ----
+    public static CatalogEntry Duplicate(CatalogEntry source, string newId, string nameFr, string nameEn, IReadOnlyDictionary<string, double> parameterDefaults)
+    {
+        var dto = JsonSerializer.Deserialize(JsonSerializer.Serialize(new List<CatalogEntryDto> { source.Source }, CatalogJsonContext.Default.ListCatalogEntryDto), CatalogJsonContext.Default.ListCatalogEntryDto)![0];
+        dto.Id = newId; dto.Names = new() { ["fr"] = nameFr, ["en"] = nameEn };
+        foreach (var p in dto.Parameters) if (parameterDefaults.TryGetValue(p.Id, out var v)) p.Default = Math.Clamp(v, p.Min, p.Max);
+        return new CatalogEntry(dto);
+    }
+
+    public static void SaveUser(string folder, CatalogEntry entry)
+    {
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, entry.Id + ".json"), JsonSerializer.Serialize(new List<CatalogEntryDto> { entry.Source }, CatalogJsonContext.Default.ListCatalogEntryDto));
+    }
+
+    public static void LoadUser(string folder)
+    {
+        UserEntries.Clear(); if (!Directory.Exists(folder)) return;
+        foreach (var f in Directory.GetFiles(folder, "*.json"))
+            try { UserEntries.AddRange((JsonSerializer.Deserialize(File.ReadAllText(f), CatalogJsonContext.Default.ListCatalogEntryDto) ?? new()).Select(d => new CatalogEntry(d))); }
+            catch (JsonException) { /* a broken user file must not stop the app */ }
+    }
 }
 
 public sealed record Placement(bool Valid, string? Hint, PointMm3? Snapped = null, Guid? SegmentId = null);

@@ -124,11 +124,52 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
             return levelId;
         }, i => i);
 
-    public void SetEquipmentProperties(Guid equipmentId, string? label, int elevationMm, int rotationDeg) =>
+    public void SetEquipmentProperties(Guid equipmentId, string? label, int elevationMm, int rotationDeg, IReadOnlyDictionary<string, double>? parameters = null) =>
         Edit("Equipment properties", BuildingEventKind.LevelChanged, () =>
         {
-            var e = building.Equipment.First(x => x.Id == equipmentId); e.Label = label; e.ElevationMm = elevationMm; e.RotationDeg = rotationDeg; return equipmentId;
+            var e = building.Equipment.First(x => x.Id == equipmentId); e.Label = label; e.ElevationMm = elevationMm; e.RotationDeg = ((rotationDeg % 360) + 360) % 360;
+            if (parameters != null) e.Parameters = parameters.ToDictionary(k => k.Key, k => k.Value);
+            return equipmentId;
         }, i => i);
+
+    public void MoveEquipment(Guid equipmentId, PointMm to) =>
+        Edit("Move equipment", BuildingEventKind.LevelChanged, () => { building.Equipment.First(x => x.Id == equipmentId).Position = to; return equipmentId; }, i => i);
+
+    /// <summary>
+    /// Connect gesture: from a port position to a pipe or riser of the same network. The target segment is split at the point nearest the port
+    /// (at the port's altitude for risers), then the connection is routed orthogonally at the port's height (X, then Y), as one history step.
+    /// Returns the new segments, or null when the target cannot be reached orthogonally.
+    /// </summary>
+    public IReadOnlyList<Segment>? ConnectPortToSegment(Guid networkId, Guid targetSegmentId, PointMm3 port, int diameterMm = 14)
+    {
+        var net = Net(networkId); var seg = net.Segments.First(s => s.Id == targetSegmentId);
+        var a = net.Nodes.First(n => n.Id == seg.A).Position; var b = net.Nodes.First(n => n.Id == seg.B).Position;
+        PointMm3 at;
+        if (a.X == b.X && a.Y == b.Y) { var lo = Math.Min(a.Z, b.Z); var hi = Math.Max(a.Z, b.Z); at = new(a.X, a.Y, Math.Clamp(port.Z, lo, hi)); }                    // riser: join at the port's altitude
+        else if (a.Z == b.Z && a.Y == b.Y) at = new(Math.Clamp(port.X, Math.Min(a.X, b.X), Math.Max(a.X, b.X)), a.Y, a.Z);
+        else if (a.Z == b.Z && a.X == b.X) at = new(a.X, Math.Clamp(port.Y, Math.Min(a.Y, b.Y), Math.Max(a.Y, b.Y)), a.Z);
+        else return null;
+        return Edit("Connect port", BuildingEventKind.NetworkChanged, () =>
+        {
+            Node target = net.Nodes.FirstOrDefault(n => n.Position == at) ?? SplitInPlace(net, seg, at);
+            var route = new List<PointMm3> { port }; var cur = port;
+            if (cur.Z != at.Z) { cur = cur with { Z = at.Z }; route.Add(cur); }
+            if (cur.X != at.X) { cur = cur with { X = at.X }; route.Add(cur); }
+            if (cur.Y != at.Y) { cur = cur with { Y = at.Y }; route.Add(cur); }
+            var nodes = route.Select(p => p == at ? target : net.Nodes.FirstOrDefault(n => n.Position == p) ?? new Node { Position = p }).ToList();
+            nodes[^1] = target;
+            foreach (var n in nodes.Where(n => !net.Nodes.Contains(n))) net.Nodes.Add(n);
+            var created = new List<Segment>();
+            for (var i = 1; i < nodes.Count; i++) if (nodes[i - 1].Id != nodes[i].Id) { var sg = new Segment { A = nodes[i - 1].Id, B = nodes[i].Id, DiameterMm = diameterMm, Material = seg.Material }; net.Segments.Add(sg); created.Add(sg); }
+            return (IReadOnlyList<Segment>)created;
+        }, _ => networkId);
+    }
+
+    private static Node SplitInPlace(Network net, Segment seg, PointMm3 at)
+    {
+        var node = new Node { Position = at }; net.Nodes.Add(node);
+        var oldB = seg.B; seg.B = node.Id; net.Segments.Add(new Segment { A = node.Id, B = oldB, DiameterMm = seg.DiameterMm, Material = seg.Material }); return node;
+    }
 
     public void DeleteEquipment(Guid equipmentId) =>
         Edit("Delete equipment", BuildingEventKind.LevelChanged, () => { building.Equipment.RemoveAll(e => e.Id == equipmentId); return equipmentId; }, i => i);

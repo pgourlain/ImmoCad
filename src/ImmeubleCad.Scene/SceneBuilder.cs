@@ -11,7 +11,7 @@ public sealed record SceneWall(Guid Id, int LevelIndex, IReadOnlyList<(int X, in
 public sealed record SceneLevel(Guid Id, int Index, int AltitudeMm, int HeightMm);
 public sealed record ScenePipe(Guid NetworkId, Guid SegmentId, (int X, int Y, int Z) A, (int X, int Y, int Z) B, int DiameterMm, (float R, float G, float B) Color, bool Visible);
 public sealed record SceneFitting(Guid NetworkId, Guid NodeId, string Kind, (int X, int Y, int Z) At, (int X, int Y, int Z)? ArmA, (int X, int Y, int Z)? ArmB, int DiameterMm, (float R, float G, float B) Color, bool Visible);
-public sealed record SceneBox(Guid Id, Guid LevelId, string Name, int X, int Y, int Z, int W, int D, int H, (float R, float G, float B) Color);
+public sealed record SceneBox(Guid Id, Guid LevelId, string Name, int X, int Y, int Z, int W, int D, int H, (float R, float G, float B) Color, int Radius = 0);
 public sealed record SceneInput(IReadOnlyList<SceneLevel> Levels, IReadOnlyList<SceneWall> Walls, IReadOnlyList<ScenePipe> Pipes, IReadOnlyList<SceneFitting> Fittings, IReadOnlyList<SceneBox> Boxes);
 
 public sealed record SceneOptions(Guid? CurrentLevel, LevelFilter Filter = LevelFilter.WholeBuilding, bool CutAboveCurrent = true, bool XRay = false, bool Slabs = true, ISet<Guid>? Selection = null);
@@ -59,7 +59,7 @@ public static class SceneBuilder
         }
         foreach (var b in input.Boxes.Where(b => LevelVisible(input.Levels.FirstOrDefault(l => l.Id == b.LevelId)?.Index ?? 0)))
         {
-            var m = MeshBuilder.Box(b.X, b.Y, b.Z, b.X + b.W, b.Y + b.D, b.Z + b.H); m.ComputeNormals(); res.Add(new SceneObject(b.Id, SceneKind.Equipment, b.Name, m, b.Color, 1f, o.Selection?.Contains(b.Id) == true));
+            var m = b.Radius > 0 ? MeshBuilder.Cylinder((b.X, b.Y, b.Z), (b.X, b.Y, b.Z + b.H), b.Radius * 2) : MeshBuilder.Box(b.X, b.Y, b.Z, b.X + b.W, b.Y + b.D, b.Z + b.H); m.ComputeNormals(); res.Add(new SceneObject(b.Id, SceneKind.Equipment, b.Name, m, b.Color, 1f, o.Selection?.Contains(b.Id) == true));
         }
         return res;
     }

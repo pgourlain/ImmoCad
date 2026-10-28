@@ -164,6 +164,7 @@ public class GeometryTests
 
     [Fact] public void Catalog_entries_valid() =>
         Assert.All(ImmeubleCad.Core.Catalog.EquipmentCatalog.Default, e => { Assert.True(e.WidthMm > 0 && e.HeightMm > 0); Assert.NotEmpty(e.Name); });
+
 }
 
 public class ImportTests
@@ -363,10 +364,10 @@ public class ExportTests
     [Fact] public void Bom_full_counts_fittings_equipment_and_rounds_bars()
     {
         var b = Sample(); var csv = ImmeubleCad.Core.Export.BomFull.ToCsv(b, roundToBars: true);
-        Assert.Contains("equipment,,Radiator,,1,pcs", csv);
+        Assert.Contains($"equipment,,{ImmeubleCad.Core.Catalog.EquipmentCatalog.Find("radiator")!.Name},,1,pcs", csv);
         Assert.Contains("bars of 3 m", csv);
         var pdf = System.Text.Encoding.Latin1.GetString(ImmeubleCad.Core.Export.BomFull.ToPdf(b));
-        Assert.StartsWith("%PDF-1.4", pdf); Assert.Contains("%%EOF", pdf); Assert.Contains("Radiator", pdf);
+        Assert.StartsWith("%PDF-1.4", pdf); Assert.Contains("%%EOF", pdf); Assert.Contains(ImmeubleCad.Core.Catalog.EquipmentCatalog.Find("radiator")!.Name.Replace("é", "\u00e9"), pdf.Replace("\u00e9", "\u00e9"));
     }
 
     [Fact] public void Hand_count_matches_for_simple_run()
@@ -843,5 +844,90 @@ public class ChainToolDetailTests
         t.Move(P(2400, 100)); Assert.Equal(new PointMm(2400, 1500), t.ApplyLength(1500, 90));
         var (len, ang) = t.Live()!.Value; Assert.True(len > 0 && ang is > -181 and < 181);
         t.Finish(); Assert.Single(runs); Assert.Equal(3, runs[0].Count);
+    }
+}
+
+
+public class CatalogJsonTests
+{
+    private static IReadOnlyList<ImmeubleCad.Core.Catalog.CatalogEntry> All => ImmeubleCad.Core.Catalog.EquipmentCatalog.Default;
+
+    [Fact] public void Every_entry_loads_with_symbol_shape_ports_and_both_translations()
+    {
+        Assert.True(All.Count >= 17); Assert.Equal(All.Count, All.Select(e => e.Id).Distinct().Count());
+        foreach (var e in All)
+        {
+            Assert.False(string.IsNullOrWhiteSpace(e.NameIn("fr"))); Assert.False(string.IsNullOrWhiteSpace(e.NameIn("en"))); Assert.NotEqual(e.Id, e.NameIn("fr"));
+            Assert.NotEmpty(e.Symbol); Assert.NotEmpty(e.Shape); Assert.True(e.WidthMm > 0 && e.DepthMm > 0 && e.HeightMm > 0, e.Id);
+            Assert.All(e.Parameters, p => { Assert.InRange(p.Default, p.Min, p.Max); Assert.True(p.Labels.ContainsKey("fr") && p.Labels.ContainsKey("en")); });
+            Assert.All(e.Symbol, s => Assert.DoesNotContain("$", s));                                              // every parameter reference was substituted
+            foreach (var p in e.Ports) { Assert.InRange(p.OffsetX, -1, e.WidthMm + 1); Assert.InRange(p.OffsetY, -1, e.DepthMm + 1); Assert.InRange(p.OffsetZ, -1, e.HeightMm + 1); Assert.True(p.DiameterMm is >= 8 and <= 200, e.Id); }
+            Assert.All(e.Shape, s => Assert.True(s.Type is "box" or "cylinder"));
+        }
+    }
+
+    [Fact] public void Categories_cover_the_palette_of_the_roadmap_and_inline_components_have_no_ports_to_connect()
+    {
+        string[] expected = ["radiator", "boiler", "hot-water-tank", "manifold", "circulator-pump", "shutoff-valve", "thermostatic-valve", "balancing-valve", "air-vent", "check-valve", "pressure-reducer", "meter", "washbasin", "sink", "wc", "shower", "bathtub"];
+        Assert.Empty(expected.Except(All.Select(e => e.Id)));
+        Assert.All(All.Where(e => e.Category == "Valves"), e => Assert.True(e.Inline));
+        Assert.All(All.Where(e => e.Category == "Sanitary"), e => Assert.Contains(e.Ports, p => p.Network == NetworkType.Drainage));
+    }
+
+    [Fact] public void Parameters_change_dimensions_ports_and_symbol_and_are_clamped()
+    {
+        var rad = ImmeubleCad.Core.Catalog.EquipmentCatalog.Find("radiator")!; var wide = rad.With(new Dictionary<string, double> { ["width"] = 1600 });
+        Assert.Equal(1000, rad.WidthMm); Assert.Equal(1600, wide.WidthMm); Assert.Equal(1520, wide.Ports.Single(p => p.Network == NetworkType.HeatingReturn).OffsetX);
+        Assert.NotEqual(rad.Symbol[1], wide.Symbol[1]); Assert.Contains("1600", wide.Symbol[0]);
+        Assert.Equal(4000, rad.With(new Dictionary<string, double> { ["width"] = 99999 }).WidthMm); Assert.Equal(100, rad.With(new Dictionary<string, double> { ["width"] = -5 }).WidthMm);
+        Assert.Equal(1600 + 0, wide.Shape[0].W);
+        Assert.Equal(7.5, rad.Eval("2.5*3"), 9); Assert.Equal(11, rad.Eval("$width/100+1"), 9); Assert.Equal(-3, rad.Eval("-3"), 9);
+    }
+
+    [Fact] public void User_objects_can_be_duplicated_changed_saved_and_reloaded()
+    {
+        var src = ImmeubleCad.Core.Catalog.EquipmentCatalog.Find("radiator")!; var dir = Path.Combine(Path.GetTempPath(), "usercat" + Guid.NewGuid().ToString("N"));
+        var mine = ImmeubleCad.Core.Catalog.EquipmentCatalog.Duplicate(src, "radiator-long", "Radiateur long", "Long radiator", new Dictionary<string, double> { ["width"] = 2000, ["height"] = 450 });
+        Assert.Equal(2000, mine.WidthMm); Assert.Equal(1000, src.WidthMm); Assert.Equal("Long radiator", mine.NameIn("en"));
+        ImmeubleCad.Core.Catalog.EquipmentCatalog.SaveUser(dir, mine); File.WriteAllText(Path.Combine(dir, "broken.json"), "{ nope");
+        ImmeubleCad.Core.Catalog.EquipmentCatalog.LoadUser(dir);
+        try { var back = ImmeubleCad.Core.Catalog.EquipmentCatalog.Find("radiator-long")!; Assert.Equal(2000, back.WidthMm); Assert.Equal(450, back.HeightMm); Assert.Contains(ImmeubleCad.Core.Catalog.EquipmentCatalog.All, e => e.Id == "radiator-long"); Assert.Equal(1000, ImmeubleCad.Core.Catalog.EquipmentCatalog.Find("radiator")!.WidthMm); }
+        finally { ImmeubleCad.Core.Catalog.EquipmentCatalog.UserEntries.Clear(); Directory.Delete(dir, true); }
+    }
+}
+
+public class ConnectPortTests
+{
+    [Fact] public void Radiator_port_connects_to_a_riser_in_one_step_with_orthogonal_routing_and_a_tee()
+    {
+        var (b, h) = SampleBuilding.Create(); var a = new BuildingActions(b, h, new BuildingEventsService());
+        var riser = b.Networks.First(n => n.Type == NetworkType.HeatingSupply); var rad = ImmeubleCad.Core.Catalog.EquipmentCatalog.Find("radiator")!;
+        var eq = b.Equipment[0]; var port = ImmeubleCad.Core.Catalog.Symbol.PortPositions(rad, eq.Position, b.Levels[0].AltitudeMm + eq.ElevationMm, eq.RotationDeg).First(p => p.Port.Network == NetworkType.HeatingSupply).At;
+        var steps = h.Items.Count; var before = BuildingJson.Serialize(b);
+        var segs = a.ConnectPortToSegment(riser.Id, riser.Segments[0].Id, port, 14)!;
+        Assert.Equal(steps + 1, h.Items.Count); Assert.True(segs.Count >= 2);
+        Assert.Contains(FittingResolver.Resolve(riser, b.Levels), f => f.Kind == FittingKind.Tee && f.Position.Z == port.Z);                    // tee on the riser at the port's altitude
+        Assert.Empty(FittingResolver.Validate(riser).Where(w => w.Contains("axis")));
+        h.Undo(b); Assert.Equal(before, BuildingJson.Serialize(b));
+    }
+
+    [Fact] public void Connect_to_a_horizontal_pipe_and_refuse_diagonal_targets()
+    {
+        var b = new Building(); var h = new BuildingHistory(); var a = new BuildingActions(b, h, new BuildingEventsService()); var n = a.AddNetwork("N", NetworkType.ColdWater);
+        var s = a.AddPipeRun(n.Id, [new(0, 0, 500), new(4000, 0, 500)])[0];
+        var segs = a.ConnectPortToSegment(n.Id, s.Id, new(2000, 900, 700))!; Assert.True(segs.Count >= 2);
+        Assert.Contains(n.Nodes, x => x.Position == new PointMm3(2000, 0, 700) || x.Position == new PointMm3(2000, 0, 500));
+        var d = a.AddPipeRun(n.Id, [new(0, 0, 0), new(100, 100, 0)])[0]; var steps = h.Items.Count;
+        Assert.Null(a.ConnectPortToSegment(n.Id, d.Id, new(0, 0, 0))); Assert.Equal(steps, h.Items.Count);
+    }
+
+    [Fact] public void Instance_parameters_and_move_are_undoable_single_steps_and_feed_symbols_and_3d()
+    {
+        var (b, h) = SampleBuilding.Create(); var a = new BuildingActions(b, h, new BuildingEventsService()); var e = b.Equipment[0]; var cat = ImmeubleCad.Core.Catalog.EquipmentCatalog.Find("radiator")!;
+        var before = BuildingJson.Serialize(b); a.SetEquipmentProperties(e.Id, "Radiateur séjour", 200, 90, new Dictionary<string, double> { ["width"] = 1400 }); a.MoveEquipment(e.Id, new(100, 100));
+        Assert.Equal(1400, cat.With(b.Equipment[0].Parameters).WidthMm);
+        var fig = ImmeubleCad.Core.Catalog.Symbol.Figures(cat.With(b.Equipment[0].Parameters), b.Equipment[0].Position, 90); Assert.NotEmpty(fig); Assert.True(fig[0].Points.Max(p => p.Y) - fig[0].Points.Min(p => p.Y) >= 1399);   // quarter turn: width runs along Y
+        var parts = ImmeubleCad.Core.Catalog.Symbol.Parts(cat.With(b.Equipment[0].Parameters), b.Equipment[0].Position, 200, 90); Assert.Equal(1400, parts[0].D); Assert.Equal(cat.DepthMm, parts[0].W);
+        h.Undo(b); h.Undo(b); Assert.Equal(before, BuildingJson.Serialize(b));
     }
 }

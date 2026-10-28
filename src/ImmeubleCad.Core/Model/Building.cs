@@ -95,6 +95,8 @@ public sealed class Equipment
     public int ElevationMm { get; set; }
     public int RotationDeg { get; set; }
     public string? Label { get; set; }
+    /// <summary>Overrides of the catalog parameters (width, depth, height…) for this instance.</summary>
+    public Dictionary<string, double> Parameters { get; set; } = new();
 }
 
 public sealed class Building

@@ -652,3 +652,44 @@ public class ChainUiTests
         Assert.Equal(walls + 3, vm.CurrentLevel!.Walls.Count); Assert.True(vm.IsSelectTool);
     }, CancellationToken.None);
 }
+
+public class EquipmentUiTests
+{
+    private readonly HeadlessFixture f = new();
+
+    [Fact] public Task Select_move_edit_and_connect_a_radiator_to_a_riser_with_the_mouse() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(); var w = new MainWindow { DataContext = vm, Width = 1280, Height = 820 }; w.Show(); w.UpdateLayout(); w.CaptureRenderedFrame();
+        var plan = w.FindControl<PlanView>("Plan")!; Avalonia.Point At(double x, double y) => plan.TranslatePoint(plan.ToScreenForTest(new((int)x, (int)y)), w)!.Value;
+        var eq = vm.Building.Equipment[0]; var cat = ImmeubleCad.Core.Catalog.EquipmentCatalog.Find("radiator")!;
+        // select by clicking the symbol
+        w.MouseDown(At(eq.Position.X + 500, eq.Position.Y + 50), Avalonia.Input.MouseButton.Left); w.MouseUp(At(eq.Position.X + 500, eq.Position.Y + 50), Avalonia.Input.MouseButton.Left);
+        Assert.Equal(eq.Id, vm.SelectedEquipmentId); Assert.Contains("HeatingSupply", vm.EqInfo);
+        // edit properties: label + width + rotation → one history step each, undoable
+        var steps = vm.History.Items.Count; vm.EqLabel = "Radiateur séjour"; vm.EqWidth = 1400; vm.ApplyEquipmentCommand.Execute(null);
+        Assert.Equal(steps + 1, vm.History.Items.Count); Assert.Equal("Radiateur séjour", vm.Building.Equipment[0].Label); Assert.Equal(1400, cat.With(vm.Building.Equipment[0].Parameters).WidthMm);
+        // drag it 500 mm along the wall
+        var before = vm.Building.Equipment[0].Position; steps = vm.History.Items.Count;
+        w.MouseDown(At(before.X + 400, before.Y + 50), Avalonia.Input.MouseButton.Left); w.MouseMove(At(before.X + 600, before.Y + 50)); w.MouseMove(At(before.X + 900, before.Y + 50)); w.MouseUp(At(before.X + 900, before.Y + 50), Avalonia.Input.MouseButton.Left);
+        Assert.Equal(steps + 1, vm.History.Items.Count); Assert.Equal(before.X + 500, vm.Building.Equipment[0].Position.X);
+        // connect: from the supply port to the heating-supply riser (at 300,300) → one step, a tee on the riser
+        var e2 = vm.Building.Equipment[0]; var c2 = cat.With(e2.Parameters); var port = ImmeubleCad.Core.Catalog.Symbol.PortPositions(c2, e2.Position, vm.Building.Levels[0].AltitudeMm + e2.ElevationMm, e2.RotationDeg).First(p => p.Port.Network == ImmeubleCad.Core.Model.NetworkType.HeatingSupply);
+        steps = vm.History.Items.Count; var net = vm.Building.Networks.First(n => n.Type == ImmeubleCad.Core.Model.NetworkType.HeatingSupply); var segs = net.Segments.Count;
+        w.MouseDown(At(port.At.X, port.At.Y), Avalonia.Input.MouseButton.Left); w.MouseMove(At(1500, 400)); w.MouseMove(At(320, 300)); w.MouseUp(At(320, 300), Avalonia.Input.MouseButton.Left);
+        Assert.Equal(steps + 1, vm.History.Items.Count); Assert.True(vm.Building.Networks.First(n => n.Type == ImmeubleCad.Core.Model.NetworkType.HeatingSupply).Segments.Count > segs);
+        w.CaptureRenderedFrame()!.Save(Path.Combine(AppContext.BaseDirectory, "screenshots", "equipment.png"));
+        // releasing on nothing connects nothing
+        steps = vm.History.Items.Count; var again = ImmeubleCad.Core.Catalog.Symbol.PortPositions(c2, vm.Building.Equipment[0].Position, 150, 0).First(p => p.Port.Network == ImmeubleCad.Core.Model.NetworkType.HeatingReturn);
+        w.MouseDown(At(again.At.X, again.At.Y), Avalonia.Input.MouseButton.Left); w.MouseMove(At(5000, 5000)); w.MouseUp(At(5000, 5000), Avalonia.Input.MouseButton.Left);
+        Assert.Equal(steps, vm.History.Items.Count); Assert.Contains("Relâchez", vm.Status);
+    }, CancellationToken.None);
+
+    [Fact] public Task Palette_shows_translated_names_and_3d_uses_the_catalog_shapes() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(); Assert.Contains(vm.Palette, p => p.Name == "Radiateur"); Assert.True(vm.Palette.Count >= 17);
+        ImmeubleCad.Core.Translations.Language = "en"; try { vm.Search = ""; vm.Search = " "; vm.Search = ""; Assert.Contains(vm.Palette, p => p.Name == "Radiator"); } finally { ImmeubleCad.Core.Translations.Language = "fr"; }
+        var input = ImmeubleCad.Core.SceneMapper.Map(vm.Building); Assert.Contains(input.Boxes, b => b.Name == "Radiateur");
+        var tank = vm.Building.Equipment.Count; vm.SelectPaletteCommand.Execute("hot-water-tank"); vm.PlaceFromPalette(new(3000, 2000)); vm.SelectPaletteCommand.Execute("boiler"); vm.PlaceFromPalette(new(3800, 2000));
+        Assert.Equal(tank + 2, vm.Building.Equipment.Count); Assert.Contains(ImmeubleCad.Core.SceneMapper.Map(vm.Building).Boxes, b => b.Radius > 0);   // the tank is a cylinder
+    }, CancellationToken.None);
+}

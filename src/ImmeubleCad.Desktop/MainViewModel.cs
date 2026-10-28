@@ -104,9 +104,54 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand] private void CycleLevelFilter() { LevelFilter = (LevelFilter + 1) % 3; Status = LevelFilter switch { 0 => "Tout le bâtiment", 1 => "Niveau courant et dessous", _ => "Niveau courant seulement" }; Changed?.Invoke(); }
     [RelayCommand] private void CycleView() { RequestMode(Mode switch { ViewMode.Plan => ViewMode.Solid, ViewMode.Solid => ViewMode.Wireframe, _ => ViewMode.Plan }); }
 
+    // ---- Equipment: selection, properties, connect ----
+    public Guid? SelectedEquipmentId { get; private set; }
+    public Equipment? SelectedEquipment => SelectedEquipmentId is { } id ? Building.Equipment.FirstOrDefault(e => e.Id == id) : null;
+    [ObservableProperty] private string _eqLabel = ""; [ObservableProperty] private int _eqElevation; [ObservableProperty] private int _eqRotation;
+    [ObservableProperty] private int _eqWidth; [ObservableProperty] private int _eqDepth; [ObservableProperty] private int _eqHeight; [ObservableProperty] private string _eqInfo = "";
+
+    public void SelectEquipment(Guid? id)
+    {
+        SelectedEquipmentId = id; if (id != null) { SelectedWalls.Clear(); SelectedSegment = null; }
+        if (SelectedEquipment is { } e)
+        {
+            var cat = EquipmentCatalog.Find(e.CatalogId)?.With(e.Parameters); EqLabel = e.Label ?? ""; EqElevation = e.ElevationMm; EqRotation = e.RotationDeg;
+            EqWidth = cat?.WidthMm ?? 0; EqDepth = cat?.DepthMm ?? 0; EqHeight = cat?.HeightMm ?? 0;
+            EqInfo = $"{cat?.Name ?? e.CatalogId} — {Building.Levels.FirstOrDefault(l => l.Id == e.LevelId)?.Name} — ports : {string.Join(", ", cat?.Ports.Select(p => $"{p.Network} DN{p.DiameterMm}") ?? [])}";
+        }
+        OnPropertyChanged(nameof(SelectionText)); Changed?.Invoke();
+    }
+    [RelayCommand] private void ApplyEquipment()
+    {
+        if (SelectedEquipment is not { } e) return;
+        var p = new Dictionary<string, double> { ["width"] = EqWidth, ["depth"] = EqDepth, ["height"] = EqHeight };
+        Actions.SetEquipmentProperties(e.Id, EqLabel.Length == 0 ? null : EqLabel, EqElevation, EqRotation, p); Status = "Équipement modifié"; var id = e.Id; Refresh(); SelectEquipment(id);
+    }
+    public void MoveEquipmentTo(Guid id, PointMm to) { Actions.MoveEquipment(id, to); Status = "Équipement déplacé"; Refresh(); SelectEquipment(id); }
+
+    /// <summary>Connect gesture: port → pipe/riser of the same network type under the release point. One history step.</summary>
+    public bool ConnectPort(Guid equipmentId, Port port, PointMm3 portAt, PointMm release)
+    {
+        var l = CurrentLevel; if (l == null) return false;
+        SegmentRef? target = null; double best = 400;
+        foreach (var s in NetworkQueries.All(Building).Where(s => s.Network.Type == port.Network && !s.Network.Locked))
+        {
+            double D(PointMm a, PointMm b2)
+            {
+                double dx = b2.X - a.X, dy = b2.Y - a.Y; var l2 = dx * dx + dy * dy; var t = l2 == 0 ? 0 : Math.Clamp(((release.X - a.X) * dx + (release.Y - a.Y) * dy) / l2, 0, 1);
+                return Math.Sqrt(Math.Pow(release.X - (a.X + t * dx), 2) + Math.Pow(release.Y - (a.Y + t * dy), 2));
+            }
+            var d = D(new PointMm(s.A.X, s.A.Y), new PointMm(s.B.X, s.B.Y));
+            if (d < best && (NetworkQueries.IsVertical(s) ? Math.Min(s.A.Z, s.B.Z) <= portAt.Z && Math.Max(s.A.Z, s.B.Z) >= portAt.Z : s.A.Z == s.B.Z)) { best = d; target = s; }
+        }
+        if (target == null) { Status = $"Relâchez sur une colonne ou un tuyau « {port.Network} »"; return false; }
+        var segs = Actions.ConnectPortToSegment(target.Network.Id, target.Segment.Id, portAt, port.DiameterMm);
+        Status = segs == null ? "Connexion impossible (tuyau non orthogonal)" : $"Connecté : {segs.Count} tronçon(s)"; Refresh(); SelectEquipment(equipmentId); return segs != null;
+    }
+
     // ---- Pipe selection (handles) ----
     public (Guid NetworkId, Guid SegmentId)? SelectedSegment { get; private set; }
-    public void SelectSegment(Guid networkId, Guid segmentId) { SelectedWalls.Clear(); SelectedSegment = (networkId, segmentId); Status = "Tuyau sélectionné — poignées : prolonger, coude (Ctrl), té (milieu)"; OnPropertyChanged(nameof(SelectionText)); Changed?.Invoke(); }
+    public void SelectSegment(Guid networkId, Guid segmentId) { SelectedWalls.Clear(); SelectedEquipmentId = null; SelectedSegment = (networkId, segmentId); Status = "Tuyau sélectionné — poignées : prolonger, coude (Ctrl), té (milieu)"; OnPropertyChanged(nameof(SelectionText)); Changed?.Invoke(); }
     public void ClearSegment() { SelectedSegment = null; }
     public int Snapper_GridMm() => 50;
     public void AfterEdit(string? message = null) { if (message != null) Status = message; Refresh(); }
@@ -471,7 +516,7 @@ public partial class MainViewModel : ObservableObject
 
     public void SelectWalls(IEnumerable<Guid> ids, bool add)
     {
-        if (ids.Any()) SelectedSegment = null;
+        if (ids.Any()) { SelectedSegment = null; SelectedEquipmentId = null; }
         if (!add) SelectedWalls.Clear();
         foreach (var id in ids) SelectedWalls.Add(id);
         Status = SelectionText; OnPropertyChanged(nameof(SelectionText)); Changed?.Invoke();

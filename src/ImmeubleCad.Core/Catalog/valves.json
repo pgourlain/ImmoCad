@@ -1,0 +1,414 @@
+[
+ {
+  "id": "shutoff-valve",
+  "category": "Valves",
+  "names": {
+   "fr": "Vanne d'arrêt",
+   "en": "Shut-off valve"
+  },
+  "inline": true,
+  "defaultElevationMm": 0,
+  "parameters": [
+   {
+    "id": "width",
+    "default": 80,
+    "min": 40,
+    "max": 4000,
+    "labels": {
+     "fr": "Largeur",
+     "en": "Width"
+    }
+   },
+   {
+    "id": "depth",
+    "default": 80,
+    "min": 50,
+    "max": 2000,
+    "labels": {
+     "fr": "Profondeur",
+     "en": "Depth"
+    }
+   },
+   {
+    "id": "height",
+    "default": 80,
+    "min": 50,
+    "max": 3000,
+    "labels": {
+     "fr": "Hauteur",
+     "en": "Height"
+    }
+   }
+  ],
+  "symbol": [
+   "C$width/2,$depth/2,$width/2",
+   "M0,0 L$width,$depth",
+   "M0,$depth L$width,0"
+  ],
+  "shape": [
+   {
+    "type": "box",
+    "x": "0",
+    "y": "0",
+    "z": "0",
+    "w": "$width",
+    "d": "$depth",
+    "h": "$height"
+   }
+  ],
+  "ports": []
+ },
+ {
+  "id": "thermostatic-valve",
+  "category": "Valves",
+  "names": {
+   "fr": "Robinet thermostatique",
+   "en": "Thermostatic valve"
+  },
+  "inline": true,
+  "defaultElevationMm": 0,
+  "parameters": [
+   {
+    "id": "width",
+    "default": 80,
+    "min": 40,
+    "max": 4000,
+    "labels": {
+     "fr": "Largeur",
+     "en": "Width"
+    }
+   },
+   {
+    "id": "depth",
+    "default": 80,
+    "min": 50,
+    "max": 2000,
+    "labels": {
+     "fr": "Profondeur",
+     "en": "Depth"
+    }
+   },
+   {
+    "id": "height",
+    "default": 80,
+    "min": 50,
+    "max": 3000,
+    "labels": {
+     "fr": "Hauteur",
+     "en": "Height"
+    }
+   }
+  ],
+  "symbol": [
+   "C$width/2,$depth/2,$width/2",
+   "M0,0 L$width,$depth",
+   "M0,$depth L$width,0"
+  ],
+  "shape": [
+   {
+    "type": "box",
+    "x": "0",
+    "y": "0",
+    "z": "0",
+    "w": "$width",
+    "d": "$depth",
+    "h": "$height"
+   }
+  ],
+  "ports": []
+ },
+ {
+  "id": "balancing-valve",
+  "category": "Valves",
+  "names": {
+   "fr": "Vanne d'équilibrage",
+   "en": "Balancing valve"
+  },
+  "inline": true,
+  "defaultElevationMm": 0,
+  "parameters": [
+   {
+    "id": "width",
+    "default": 80,
+    "min": 40,
+    "max": 4000,
+    "labels": {
+     "fr": "Largeur",
+     "en": "Width"
+    }
+   },
+   {
+    "id": "depth",
+    "default": 80,
+    "min": 50,
+    "max": 2000,
+    "labels": {
+     "fr": "Profondeur",
+     "en": "Depth"
+    }
+   },
+   {
+    "id": "height",
+    "default": 80,
+    "min": 50,
+    "max": 3000,
+    "labels": {
+     "fr": "Hauteur",
+     "en": "Height"
+    }
+   }
+  ],
+  "symbol": [
+   "C$width/2,$depth/2,$width/2",
+   "M0,0 L$width,$depth",
+   "M0,$depth L$width,0"
+  ],
+  "shape": [
+   {
+    "type": "box",
+    "x": "0",
+    "y": "0",
+    "z": "0",
+    "w": "$width",
+    "d": "$depth",
+    "h": "$height"
+   }
+  ],
+  "ports": []
+ },
+ {
+  "id": "air-vent",
+  "category": "Valves",
+  "names": {
+   "fr": "Purgeur d'air",
+   "en": "Air vent"
+  },
+  "inline": true,
+  "defaultElevationMm": 0,
+  "parameters": [
+   {
+    "id": "width",
+    "default": 80,
+    "min": 40,
+    "max": 4000,
+    "labels": {
+     "fr": "Largeur",
+     "en": "Width"
+    }
+   },
+   {
+    "id": "depth",
+    "default": 80,
+    "min": 50,
+    "max": 2000,
+    "labels": {
+     "fr": "Profondeur",
+     "en": "Depth"
+    }
+   },
+   {
+    "id": "height",
+    "default": 80,
+    "min": 50,
+    "max": 3000,
+    "labels": {
+     "fr": "Hauteur",
+     "en": "Height"
+    }
+   }
+  ],
+  "symbol": [
+   "C$width/2,$depth/2,$width/2",
+   "M0,0 L$width,$depth",
+   "M0,$depth L$width,0"
+  ],
+  "shape": [
+   {
+    "type": "box",
+    "x": "0",
+    "y": "0",
+    "z": "0",
+    "w": "$width",
+    "d": "$depth",
+    "h": "$height"
+   }
+  ],
+  "ports": []
+ },
+ {
+  "id": "check-valve",
+  "category": "Valves",
+  "names": {
+   "fr": "Clapet anti-retour",
+   "en": "Check valve"
+  },
+  "inline": true,
+  "defaultElevationMm": 0,
+  "parameters": [
+   {
+    "id": "width",
+    "default": 80,
+    "min": 40,
+    "max": 4000,
+    "labels": {
+     "fr": "Largeur",
+     "en": "Width"
+    }
+   },
+   {
+    "id": "depth",
+    "default": 80,
+    "min": 50,
+    "max": 2000,
+    "labels": {
+     "fr": "Profondeur",
+     "en": "Depth"
+    }
+   },
+   {
+    "id": "height",
+    "default": 80,
+    "min": 50,
+    "max": 3000,
+    "labels": {
+     "fr": "Hauteur",
+     "en": "Height"
+    }
+   }
+  ],
+  "symbol": [
+   "C$width/2,$depth/2,$width/2",
+   "M0,0 L$width,$depth",
+   "M0,$depth L$width,0"
+  ],
+  "shape": [
+   {
+    "type": "box",
+    "x": "0",
+    "y": "0",
+    "z": "0",
+    "w": "$width",
+    "d": "$depth",
+    "h": "$height"
+   }
+  ],
+  "ports": []
+ },
+ {
+  "id": "pressure-reducer",
+  "category": "Valves",
+  "names": {
+   "fr": "Réducteur de pression",
+   "en": "Pressure reducer"
+  },
+  "inline": true,
+  "defaultElevationMm": 0,
+  "parameters": [
+   {
+    "id": "width",
+    "default": 80,
+    "min": 40,
+    "max": 4000,
+    "labels": {
+     "fr": "Largeur",
+     "en": "Width"
+    }
+   },
+   {
+    "id": "depth",
+    "default": 80,
+    "min": 50,
+    "max": 2000,
+    "labels": {
+     "fr": "Profondeur",
+     "en": "Depth"
+    }
+   },
+   {
+    "id": "height",
+    "default": 80,
+    "min": 50,
+    "max": 3000,
+    "labels": {
+     "fr": "Hauteur",
+     "en": "Height"
+    }
+   }
+  ],
+  "symbol": [
+   "C$width/2,$depth/2,$width/2",
+   "M0,0 L$width,$depth",
+   "M0,$depth L$width,0"
+  ],
+  "shape": [
+   {
+    "type": "box",
+    "x": "0",
+    "y": "0",
+    "z": "0",
+    "w": "$width",
+    "d": "$depth",
+    "h": "$height"
+   }
+  ],
+  "ports": []
+ },
+ {
+  "id": "meter",
+  "category": "Valves",
+  "names": {
+   "fr": "Compteur",
+   "en": "Meter"
+  },
+  "inline": true,
+  "defaultElevationMm": 0,
+  "parameters": [
+   {
+    "id": "width",
+    "default": 110,
+    "min": 100,
+    "max": 4000,
+    "labels": {
+     "fr": "Largeur",
+     "en": "Width"
+    }
+   },
+   {
+    "id": "depth",
+    "default": 110,
+    "min": 50,
+    "max": 2000,
+    "labels": {
+     "fr": "Profondeur",
+     "en": "Depth"
+    }
+   },
+   {
+    "id": "height",
+    "default": 110,
+    "min": 50,
+    "max": 3000,
+    "labels": {
+     "fr": "Hauteur",
+     "en": "Height"
+    }
+   }
+  ],
+  "symbol": [
+   "M0,0 L$width,0 L$width,$depth L0,$depth Z",
+   "C$width/2,$depth/2,$width/3"
+  ],
+  "shape": [
+   {
+    "type": "box",
+    "x": "0",
+    "y": "0",
+    "z": "0",
+    "w": "$width",
+    "d": "$depth",
+    "h": "$height"
+   }
+  ],
+  "ports": []
+ }
+]

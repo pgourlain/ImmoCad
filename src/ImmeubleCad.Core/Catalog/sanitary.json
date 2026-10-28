@@ -1,0 +1,396 @@
+[
+ {
+  "id": "washbasin",
+  "category": "Sanitary",
+  "names": {
+   "fr": "Lavabo",
+   "en": "Washbasin"
+  },
+  "inline": false,
+  "defaultElevationMm": 0,
+  "parameters": [
+   {
+    "id": "width",
+    "default": 600,
+    "min": 100,
+    "max": 4000,
+    "labels": {
+     "fr": "Largeur",
+     "en": "Width"
+    }
+   },
+   {
+    "id": "depth",
+    "default": 450,
+    "min": 50,
+    "max": 2000,
+    "labels": {
+     "fr": "Profondeur",
+     "en": "Depth"
+    }
+   },
+   {
+    "id": "height",
+    "default": 850,
+    "min": 50,
+    "max": 3000,
+    "labels": {
+     "fr": "Hauteur",
+     "en": "Height"
+    }
+   }
+  ],
+  "symbol": [
+   "M0,0 L$width,0 L$width,$depth L0,$depth Z",
+   "C$width/2,$depth/2,$depth/3"
+  ],
+  "shape": [
+   {
+    "type": "box",
+    "x": "0",
+    "y": "0",
+    "z": "0",
+    "w": "$width",
+    "d": "$depth",
+    "h": "$height"
+   }
+  ],
+  "ports": [
+   {
+    "network": "ColdWater",
+    "diameterMm": 12,
+    "x": "$width/4",
+    "y": "0",
+    "z": "$height*3/5"
+   },
+   {
+    "network": "DomesticHotWater",
+    "diameterMm": 12,
+    "x": "$width*3/4",
+    "y": "0",
+    "z": "$height*3/5"
+   },
+   {
+    "network": "Drainage",
+    "diameterMm": 40,
+    "x": "$width/2",
+    "y": "0",
+    "z": "$height/2"
+   }
+  ]
+ },
+ {
+  "id": "sink",
+  "category": "Sanitary",
+  "names": {
+   "fr": "Évier",
+   "en": "Sink"
+  },
+  "inline": false,
+  "defaultElevationMm": 0,
+  "parameters": [
+   {
+    "id": "width",
+    "default": 1200,
+    "min": 100,
+    "max": 4000,
+    "labels": {
+     "fr": "Largeur",
+     "en": "Width"
+    }
+   },
+   {
+    "id": "depth",
+    "default": 600,
+    "min": 50,
+    "max": 2000,
+    "labels": {
+     "fr": "Profondeur",
+     "en": "Depth"
+    }
+   },
+   {
+    "id": "height",
+    "default": 900,
+    "min": 50,
+    "max": 3000,
+    "labels": {
+     "fr": "Hauteur",
+     "en": "Height"
+    }
+   }
+  ],
+  "symbol": [
+   "M0,0 L$width,0 L$width,$depth L0,$depth Z",
+   "M$width/10,$depth/5 L$width*2/5,$depth/5 L$width*2/5,$depth*4/5 L$width/10,$depth*4/5 Z"
+  ],
+  "shape": [
+   {
+    "type": "box",
+    "x": "0",
+    "y": "0",
+    "z": "0",
+    "w": "$width",
+    "d": "$depth",
+    "h": "$height"
+   }
+  ],
+  "ports": [
+   {
+    "network": "ColdWater",
+    "diameterMm": 15,
+    "x": "$width/4",
+    "y": "0",
+    "z": "$height*3/5"
+   },
+   {
+    "network": "DomesticHotWater",
+    "diameterMm": 15,
+    "x": "$width/3",
+    "y": "0",
+    "z": "$height*3/5"
+   },
+   {
+    "network": "Drainage",
+    "diameterMm": 40,
+    "x": "$width/5",
+    "y": "0",
+    "z": "$height/2"
+   }
+  ]
+ },
+ {
+  "id": "wc",
+  "category": "Sanitary",
+  "names": {
+   "fr": "WC",
+   "en": "WC"
+  },
+  "inline": false,
+  "defaultElevationMm": 0,
+  "parameters": [
+   {
+    "id": "width",
+    "default": 380,
+    "min": 100,
+    "max": 4000,
+    "labels": {
+     "fr": "Largeur",
+     "en": "Width"
+    }
+   },
+   {
+    "id": "depth",
+    "default": 700,
+    "min": 50,
+    "max": 2000,
+    "labels": {
+     "fr": "Profondeur",
+     "en": "Depth"
+    }
+   },
+   {
+    "id": "height",
+    "default": 800,
+    "min": 50,
+    "max": 3000,
+    "labels": {
+     "fr": "Hauteur",
+     "en": "Height"
+    }
+   }
+  ],
+  "symbol": [
+   "M0,0 L$width,0 L$width,$depth/3 L0,$depth/3 Z",
+   "M$width/2,$depth/3 C$width/2,$depth*2/3,$width/2.5"
+  ],
+  "shape": [
+   {
+    "type": "box",
+    "x": "0",
+    "y": "0",
+    "z": "0",
+    "w": "$width",
+    "d": "$depth",
+    "h": "$height"
+   }
+  ],
+  "ports": [
+   {
+    "network": "ColdWater",
+    "diameterMm": 12,
+    "x": "$width/2",
+    "y": "0",
+    "z": "$height/4"
+   },
+   {
+    "network": "Drainage",
+    "diameterMm": 100,
+    "x": "$width/2",
+    "y": "$depth/6",
+    "z": "0"
+   }
+  ]
+ },
+ {
+  "id": "shower",
+  "category": "Sanitary",
+  "names": {
+   "fr": "Douche",
+   "en": "Shower"
+  },
+  "inline": false,
+  "defaultElevationMm": 0,
+  "parameters": [
+   {
+    "id": "width",
+    "default": 900,
+    "min": 100,
+    "max": 4000,
+    "labels": {
+     "fr": "Largeur",
+     "en": "Width"
+    }
+   },
+   {
+    "id": "depth",
+    "default": 900,
+    "min": 50,
+    "max": 2000,
+    "labels": {
+     "fr": "Profondeur",
+     "en": "Depth"
+    }
+   },
+   {
+    "id": "height",
+    "default": 2000,
+    "min": 50,
+    "max": 3000,
+    "labels": {
+     "fr": "Hauteur",
+     "en": "Height"
+    }
+   }
+  ],
+  "symbol": [
+   "M0,0 L$width,0 L$width,$depth L0,$depth Z",
+   "M0,0 L$width,$depth",
+   "M$width,0 L0,$depth"
+  ],
+  "shape": [
+   {
+    "type": "box",
+    "x": "0",
+    "y": "0",
+    "z": "0",
+    "w": "$width",
+    "d": "$depth",
+    "h": "$height"
+   }
+  ],
+  "ports": [
+   {
+    "network": "ColdWater",
+    "diameterMm": 15,
+    "x": "$width/10",
+    "y": "0",
+    "z": "$height/2"
+   },
+   {
+    "network": "DomesticHotWater",
+    "diameterMm": 15,
+    "x": "$width*8/10",
+    "y": "0",
+    "z": "$height/2"
+   },
+   {
+    "network": "Drainage",
+    "diameterMm": 40,
+    "x": "$width/2",
+    "y": "$depth/2",
+    "z": "0"
+   }
+  ]
+ },
+ {
+  "id": "bathtub",
+  "category": "Sanitary",
+  "names": {
+   "fr": "Baignoire",
+   "en": "Bathtub"
+  },
+  "inline": false,
+  "defaultElevationMm": 0,
+  "parameters": [
+   {
+    "id": "width",
+    "default": 1700,
+    "min": 100,
+    "max": 4000,
+    "labels": {
+     "fr": "Largeur",
+     "en": "Width"
+    }
+   },
+   {
+    "id": "depth",
+    "default": 750,
+    "min": 50,
+    "max": 2000,
+    "labels": {
+     "fr": "Profondeur",
+     "en": "Depth"
+    }
+   },
+   {
+    "id": "height",
+    "default": 550,
+    "min": 50,
+    "max": 3000,
+    "labels": {
+     "fr": "Hauteur",
+     "en": "Height"
+    }
+   }
+  ],
+  "symbol": [
+   "M0,0 L$width,0 L$width,$depth L0,$depth Z",
+   "M$width/12,$depth/8 L$width*11/12,$depth/8 L$width*11/12,$depth*7/8 L$width/12,$depth*7/8 Z"
+  ],
+  "shape": [
+   {
+    "type": "box",
+    "x": "0",
+    "y": "0",
+    "z": "0",
+    "w": "$width",
+    "d": "$depth",
+    "h": "$height"
+   }
+  ],
+  "ports": [
+   {
+    "network": "ColdWater",
+    "diameterMm": 15,
+    "x": "$width/10",
+    "y": "0",
+    "z": "$height"
+   },
+   {
+    "network": "DomesticHotWater",
+    "diameterMm": 15,
+    "x": "$width/6",
+    "y": "0",
+    "z": "$height"
+   },
+   {
+    "network": "Drainage",
+    "diameterMm": 40,
+    "x": "$width*9/10",
+    "y": "$depth/2",
+    "z": "0"
+   }
+  ]
+ }
+]

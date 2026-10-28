@@ -176,6 +176,16 @@
             <NumericUpDown Value="{Binding PropThickness}" Minimum="0" Maximum="1000" Increment="10" FormatString="Épaisseur 0 &quot;mm&quot;" />
             <Button Content="Appliquer l'épaisseur" Command="{Binding ApplyThicknessCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
             <Separator />
+            <TextBlock Text="ÉQUIPEMENT" Classes="caption" />
+            <TextBlock Text="{Binding EqInfo}" TextWrapping="Wrap" Classes="caption" />
+            <TextBox Watermark="Libellé (ex. Radiateur séjour)" Text="{Binding EqLabel}" />
+            <NumericUpDown Value="{Binding EqWidth}" Minimum="50" Maximum="4000" Increment="50" FormatString="Largeur 0 &quot;mm&quot;" />
+            <NumericUpDown Value="{Binding EqDepth}" Minimum="50" Maximum="2000" Increment="10" FormatString="Profondeur 0 &quot;mm&quot;" />
+            <NumericUpDown Value="{Binding EqHeight}" Minimum="50" Maximum="3000" Increment="50" FormatString="Hauteur 0 &quot;mm&quot;" />
+            <NumericUpDown Value="{Binding EqElevation}" Minimum="0" Maximum="3000" Increment="50" FormatString="Hauteur de pose 0 &quot;mm&quot;" />
+            <NumericUpDown Value="{Binding EqRotation}" Minimum="0" Maximum="359" Increment="90" FormatString="Rotation 0&quot;°&quot;" />
+            <Button Content="Appliquer l'équipement" Command="{Binding ApplyEquipmentCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+            <Separator />
             <TextBlock Text="PLAN DE FOND" Classes="caption" />
             <CheckBox Content="Afficher" IsChecked="{Binding BgVisible}" />
             <Slider Minimum="0" Maximum="1" Value="{Binding BgOpacity}" ToolTip.Tip="Opacité" />
