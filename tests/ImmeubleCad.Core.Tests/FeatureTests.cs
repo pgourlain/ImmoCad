@@ -164,3 +164,21 @@ public class GeometryTests
     [Fact] public void Catalog_entries_valid() =>
         Assert.All(ImmeubleCad.Core.Catalog.EquipmentCatalog.Default, e => { Assert.True(e.WidthMm > 0 && e.HeightMm > 0); Assert.NotEmpty(e.Name); });
 }
+
+public class ImportTests
+{
+    [Fact] public void Import_png_detects_wall_in_mm_with_one_history_step()
+    {
+        var raw = Enumerable.Repeat((byte)255, 200 * 100).ToArray();
+        for (var y = 40; y < 50; y++) for (var x = 20; x < 180; x++) raw[y * 200 + x] = 0;
+        using var img = new ImageMagick.MagickImage(raw, new ImageMagick.PixelReadSettings(200, 100, ImageMagick.StorageType.Char, "I"));
+        var bytes = img.ToByteArray(ImageMagick.MagickFormat.Png);
+        var b = new Building(); var h = new BuildingHistory(); var a = new BuildingActions(b, h, new BuildingEventsService());
+        var lv = a.AddLevel("RDC", 0); var steps = h.Items.Count;
+        var n = ImmeubleCad.Core.Import.PlanImport.Import(a, lv.Id, bytes, new ImmeubleCad.Core.Import.Calibration(0.1, 0.1), new ImmeubleCad.Core.Import.PlanWallDetectorAdapter());
+        Assert.Equal(1, n); Assert.Equal(steps + 1, h.Items.Count);
+        var fp = b.Levels[0].Walls[0].Footprint;
+        Assert.Equal(200, fp.Min(p => p.X)); Assert.Equal(1800, fp.Max(p => p.X)); // 20px / 0.1 px per mm
+        Assert.Equal(500, fp.Min(p => p.Y)); Assert.Equal(600, fp.Max(p => p.Y)); // flipped Y: (100-50..100-40)/0.1
+    }
+}

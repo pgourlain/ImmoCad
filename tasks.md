@@ -72,7 +72,7 @@ Every phase ends with a **Validation** checklist. Run it on macOS (Apple Silicon
 
 - [ ] `ImmeubleCad.Desktop` (Avalonia 12, CommunityToolkit.Mvvm), composition root `AppServices.Build()` shared by `App` and the UI tests.
 - [ ] Main window: menu bar, toolbar with a **2D / 3D / Wireframe** segmented control, left tool strip, **level bar** (vertical, elevator-style buttons, top level first) next to the view, center view area showing the plan view by default (3D and elevation views are placeholders for now), right panels (Networks, Properties), status bar (tool, cursor position in metres, current level, zoom, **contextual hint** of what to do next).
-- [ ] `ViewState` in Core with `ViewStateChanged` events; `MainViewModel` exposes it to both views.
+- [x] `ViewState` in Core with `ViewStateChanged` events; `MainViewModel` exposes it to both views.
 - [ ] Menus defined once as `MenuSpec` records, turned into a `NativeMenu` on macOS and an in-window `Menu` elsewhere (copy CinnabarSharp). Later features bound to a disabled `NotYetImplemented` command.
 - [ ] Shortcuts through `PlatformHotkeyConfiguration.CommandModifiers` (⌘ on macOS, Ctrl elsewhere).
 - [ ] `IDialogService` (file pickers, save-changes prompt, errors), `FakeDialogService` for tests, `TestHarness` building the real window.
@@ -80,8 +80,8 @@ Every phase ends with a **Validation** checklist. Run it on macOS (Apple Silicon
 
 **Log file (from the first phase, so every later bug leaves a trace)**
 
-- [ ] `AppLog` (Desktop): `ILoggerProvider` writing to `log.txt` in the per-OS app-data folder (`%LOCALAPPDATA%\ImmeubleCad`, `~/Library/Application Support/ImmeubleCad`, `~/.local/share/ImmeubleCad`). Line format: ISO timestamp, level, category, message, exception with stack trace. Writes are buffered on a background queue and flushed on error and on exit.
-- [ ] Rolling: new file when `log.txt` exceeds 5 MB, keep the last 5 (`log.1.txt`…); old files deleted at startup.
+- [x] `AppLog` (Desktop): `ILoggerProvider` writing to `log.txt` in the per-OS app-data folder (`%LOCALAPPDATA%\ImmeubleCad`, `~/Library/Application Support/ImmeubleCad`, `~/.local/share/ImmeubleCad`). Line format: ISO timestamp, level, category, message, exception with stack trace. Writes are buffered on a background queue and flushed on error and on exit.
+- [x] Rolling: new file when `log.txt` exceeds 5 MB, keep the last 5 (`log.1.txt`…); old files deleted at startup.
 - [ ] Levels: Information by default, Debug with `IMMEUBLECAD_LOG=debug` or a setting; also mirror to stderr with `IMMEUBLECAD_LOG=1`.
 - [ ] Global handlers log everything that escapes: `AppDomain.CurrentDomain.UnhandledException`, `TaskScheduler.UnobservedTaskException`, `Dispatcher.UIThread.UnhandledException`, Avalonia's own warnings/errors (log sink). Errors shown in dialogs are logged too.
 - [ ] Startup line with app version, build date, OS, architecture, .NET version, GPU/OpenGL info once the 3D view starts; one line per opened/saved file (path) and per long operation (import, detection, export) with its duration.
@@ -96,15 +96,15 @@ Every phase ends with a **Validation** checklist. Run it on macOS (Apple Silicon
 
 ## Phase 2 — Building document, file format, history
 
-- [ ] Model (Core): `Building` → `Level` (name, altitude mm, height mm, background image, calibration) → `Wall`; `Equipment`; `Network` → `Node`, `Segment` (see Phase 6 for networks; create the types now, empty).
-- [ ] `Wall`: footprint polygon (`List<PointMm>`, closed) on one level, height defaults to the level height, optional label. Walls from detection and walls drawn by hand share this type.
-- [ ] `Opening` (door, window, simple opening) hosted by a wall: position along the wall, width, height, sill height, swing side and direction for doors, optional number/label.
-- [ ] `Space` (room): closed polygon on a level (computed from the surrounding walls or drawn), name, **number** (e.g. cellar "Cave 12"), kind (cellar, corridor, boiler room, bike room, parking, stairwell, service shaft, apartment, room…), optional lot number (copropriété).
-- [ ] **Stability** on walls, openings and spaces: `Common` (common parts: cellars, corridors, stairwell, boiler room, shafts, façades: they don't change over time) or `Private` (apartment interiors: may change with renovations). Defaults from the level kind and the space kind; editable.
-- [ ] History: `IHistoryItem`, `BuildingHistory` (pointer, clean pointer, `IsDirty` derived), first item `BaseHistoryItem` ("New building" / "Open building").
-- [ ] `BuildingActions`: add/delete/rename level, change altitude/height, add/delete/move wall. `HistoryTests.Actions` lists them all and checks exact undo/redo.
-- [ ] Events: `IBuildingEventsService` with `BuildingEventItem`, `LevelEventItem`, `NetworkEventItem`; `MainViewModel` subscribes.
-- [ ] File format `.immeuble`: a zip with `building.json` (source-generated `System.Text.Json`, schema version field) and the background images of each level under `images/`. Round-trip test.
+- [x] Model (Core): `Building` → `Level` (name, altitude mm, height mm, background image, calibration) → `Wall`; `Equipment`; `Network` → `Node`, `Segment` (see Phase 6 for networks; create the types now, empty).
+- [x] `Wall`: footprint polygon (`List<PointMm>`, closed) on one level, height defaults to the level height, optional label. Walls from detection and walls drawn by hand share this type.
+- [x] `Opening` (door, window, simple opening) hosted by a wall: position along the wall, width, height, sill height, swing side and direction for doors, optional number/label.
+- [x] `Space` (room): closed polygon on a level (computed from the surrounding walls or drawn), name, **number** (e.g. cellar "Cave 12"), kind (cellar, corridor, boiler room, bike room, parking, stairwell, service shaft, apartment, room…), optional lot number (copropriété).
+- [x] **Stability** on walls, openings and spaces: `Common` (common parts: cellars, corridors, stairwell, boiler room, shafts, façades: they don't change over time) or `Private` (apartment interiors: may change with renovations). Defaults from the level kind and the space kind; editable.
+- [x] History: `IHistoryItem`, `BuildingHistory` (pointer, clean pointer, `IsDirty` derived), first item `BaseHistoryItem` ("New building" / "Open building").
+- [x] `BuildingActions`: add/delete/rename level, change altitude/height, add/delete/move wall. `HistoryTests.Actions` lists them all and checks exact undo/redo.
+- [x] Events: `IBuildingEventsService` with `BuildingEventItem`, `LevelEventItem`, `NetworkEventItem`; `MainViewModel` subscribes.
+- [x] File format `.immeuble`: a zip with `building.json` (source-generated `System.Text.Json`, schema version field) and the background images of each level under `images/`. Round-trip test.
 - [ ] Tabs for several open buildings, `*`/dot for unsaved changes, save prompt on close and quit, File › Open Recent, drag and drop, file on the command line.
 - [ ] Undo/Redo menu and toolbar, History panel (click a step to jump to it).
 
@@ -150,7 +150,7 @@ JPG plans of different levels rarely fit exactly on top of each other (different
 
 Walls traced from a scan are often slightly crooked or made of many short broken segments ("saw teeth"). The user selects one or several walls and makes them straight, with as few segments as possible.
 
-- [ ] `WallStraightener` (Plan, pure, deterministic), applied to a wall polygon in steps:
+- [x] `WallStraightener` (Plan, pure, deterministic), applied to a wall polygon in steps:
   1. **Dominant axes:** histogram of edge directions weighted by length over the whole level → the building's main axis (and its perpendicular), so "straight" means aligned with the building, not with the image. The straightener takes an optional **`ReferenceGeometry`** input (a set of reference directions and outline edges): empty in the MVP, filled from the cadastral footprint in Phase 12, so buildings with non-90° corners (common in old city centres) get their real angles instead of being forced to 90°.
   2. **Remove saw teeth:** drop jogs and zigzags smaller than a tolerance (default 30 mm, slider), Douglas–Peucker on what remains.
   3. **Fit lines:** group the remaining points into runs, fit each run with a least-squares line (robust to outliers: RANSAC or iterative trimming).
@@ -186,7 +186,7 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 
 **Input model (hybrid click/drag)**
 
-- [ ] `ToolStateMachine` base in Core: `Idle → Pressed → Dragging | Placing → Committed`, drag threshold in screen pixels passed by the view (default 4 px), so click mode and drag mode come for free in every tool. Tests for both paths and for the threshold.
+- [x] `ToolStateMachine` base in Core: `Idle → Pressed → Dragging | Placing → Committed`, drag threshold in screen pixels passed by the view (default 4 px), so click mode and drag mode come for free in every tool. Tests for both paths and for the threshold.
 - [ ] Chained tools (Draw Wall, later Draw Pipe): each click adds a point and starts the next segment; double-click or Enter finishes; Backspace removes the last point; Escape cancels the segment in progress (a second Escape cancels the whole run); clicking the first point closes the outline.
 - [ ] Rubber band preview with live length and angle shown next to the cursor.
 - [ ] Typed values while placing: typing a number shows an input box near the cursor; Enter applies it as the segment length along the current direction (`2.4` = 2.4 m, `2400mm` accepted). Tab switches to the angle field.
@@ -196,7 +196,7 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 **Tools**
 
 - [ ] Tools in Core implementing `ITool` with `ToolPointer` in **mm** (no Avalonia types), unit-tested: Select (click, box by drag, Shift add), Move (drag, or click then click destination), Draw Wall (chained, thickness option), Draw Room (rectangle by drag or two clicks → 4 walls), Delete.
-- [ ] Snapping (`Snapper` in Core): grid, wall corners, wall faces, midpoints, orthogonal 0/90° (45° with a modifier), alignment with existing points (dotted guide line), and points of the ghost level. Snap indicator (small symbol per snap kind) drawn by the view from a `ToolOverlay`.
+- [x] Snapping (`Snapper` in Core): grid, wall corners, wall faces, midpoints, orthogonal 0/90° (45° with a modifier), alignment with existing points (dotted guide line), and points of the ghost level. Snap indicator (small symbol per snap kind) drawn by the view from a `ToolOverlay`.
 - [ ] Measure tool: two clicks → distance shown, nothing added to the model.
 
 **Doors, rooms and cellars**
@@ -219,7 +219,7 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 ## Phase 5 — 3D view
 
 - [ ] `ImmeubleCad.Scene`: `MeshBuilder` producing vertex/index buffers (float positions in metres, normals, color per network/category): wall extrusion from footprint polygon and height, floor slab per level (from the outer outline or a bounding polygon), pipe cylinders, fittings (torus segment for elbows, simple tee), equipment boxes. Deterministic; pinned checksum test.
-- [ ] `Picking`: ray vs meshes → id of the wall, equipment, node or segment under the mouse. Unit-tested.
+- [x] `Picking`: ray vs meshes → id of the wall, equipment, node or segment under the mouse. Unit-tested.
 - [ ] `Viewport3D` control (Avalonia `OpenGlControlBase` + Silk.NET.OpenGL): orbit (left drag), pan (right or middle drag), zoom (wheel), "fit all", top/front/side/isometric presets. Simple lighting (one directional light + ambient).
 - [ ] Render modes: **Solid**, **X-ray** (walls translucent, networks opaque), **Wireframe** (wall edges + networks in color). `Scene` produces an edge list per mesh for wireframe.
 - [ ] Level filters: current level only / current + below / whole building; **cut above the current level** (dollhouse view) on by default; show/hide each network.
@@ -243,11 +243,11 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 
 ## Phase 6 — Networks model
 
-- [ ] `NetworkType`: HeatingSupply, HeatingReturn, DomesticHotWater, ColdWater, Drainage, Gas (extensible), each with default color, default diameter and material.
-- [ ] `Network` = graph: `Node` (id, `PointMm3` position, optional attachment: wall face, equipment port) and `Segment` (node A, node B, outer diameter mm, material). Segments must be axis-aligned (X, Y or Z) in the MVP; 45° later.
-- [ ] `FittingResolver` (Core, pure): derives each node's fitting from its segments: end cap, straight joint, elbow 90°, tee, cross, reducer (diameter change), floor/slab crossing (vertical segment crossing a level's altitude), wall crossing. Fully unit-tested.
-- [ ] Validation rules (warnings, not errors): unconnected end, segment through a wall without crossing, two networks overlapping, slope missing on drainage.
-- [ ] `BuildingActions` for networks: add node/segment, move node, split segment, merge collinear segments, delete, change diameter/type. All in `HistoryTests.Actions`.
+- [x] `NetworkType`: HeatingSupply, HeatingReturn, DomesticHotWater, ColdWater, Drainage, Gas (extensible), each with default color, default diameter and material.
+- [x] `Network` = graph: `Node` (id, `PointMm3` position, optional attachment: wall face, equipment port) and `Segment` (node A, node B, outer diameter mm, material). Segments must be axis-aligned (X, Y or Z) in the MVP; 45° later.
+- [x] `FittingResolver` (Core, pure): derives each node's fitting from its segments: end cap, straight joint, elbow 90°, tee, cross, reducer (diameter change), floor/slab crossing (vertical segment crossing a level's altitude), wall crossing. Fully unit-tested.
+- [x] Validation rules (warnings, not errors): unconnected end, segment through a wall without crossing, two networks overlapping, slope missing on drainage.
+- [x] `BuildingActions` for networks: add node/segment, move node, split segment, merge collinear segments, delete, change diameter/type. All in `HistoryTests.Actions`.
 - [ ] Networks panel: list of networks, color, visibility, lock.
 
 **Validation**
@@ -313,12 +313,12 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 
 ## Phase 9 — Bill of materials and exports
 
-- [ ] Bill of materials: per network, length per diameter and material (rounded up to standard bar lengths, option), count of each fitting type, list of equipment. View in a panel, export to CSV and to a printable PDF.
+- [x] Bill of materials: per network, length per diameter and material (rounded up to standard bar lengths, option), count of each fitting type, list of equipment. View in a panel, export to CSV and to a printable PDF.
 **Exports to other tools** (File › Export, one exporter per format behind `IBuildingExporter` in Core, registered in DI like CinnabarSharp's formats; each has a round-trip or golden-file test)
 
-- [ ] **IFC 4** (`.ifc`), the BIM standard, priority export: building → storeys (`IfcBuildingStorey` per level) → `IfcWall` (extruded footprints), `IfcSlab`, `IfcDoor`/`IfcWindow`, networks as `IfcDistributionSystem` with `IfcPipeSegment`, `IfcPipeFitting` (elbows, tees from `FittingResolver`), `IfcValve`, `IfcSpaceHeater`, `IfcBoiler`…, colors per network, geographic placement (`IfcSite` with the Lambert 93 anchor once Phase 12 exists). Opens in FreeCAD (BIM workbench), Revit, ArchiCAD, BlenderBIM/Bonsai, online IFC viewers. Library: evaluate xBIM Essentials and GeometryGym IFC (check licenses and AOT compatibility before choosing; write an ADR in `docs/adr/`).
-- [ ] **FreeCAD macro** (`.FCMacro` / `.py`): a generated Python script that rebuilds the building as **native, editable FreeCAD objects** (BIM/Arch walls on levels, pipes as swept profiles or BIM pipes, equipment as parametric boxes, one group per network with its color). Best fidelity for FreeCAD users; no FreeCAD dependency at build time (text generation only).
-- [ ] **DXF** (`.dxf`): 2D plans per level, one layer per category and per network (AutoCAD, LibreCAD, DraftSight, QCAD). Library: netDxf (check license) or a minimal hand-written DXF R12 writer.
+- [x] **IFC 4** (`.ifc`), the BIM standard, priority export: building → storeys (`IfcBuildingStorey` per level) → `IfcWall` (extruded footprints), `IfcSlab`, `IfcDoor`/`IfcWindow`, networks as `IfcDistributionSystem` with `IfcPipeSegment`, `IfcPipeFitting` (elbows, tees from `FittingResolver`), `IfcValve`, `IfcSpaceHeater`, `IfcBoiler`…, colors per network, geographic placement (`IfcSite` with the Lambert 93 anchor once Phase 12 exists). Opens in FreeCAD (BIM workbench), Revit, ArchiCAD, BlenderBIM/Bonsai, online IFC viewers. Library: evaluate xBIM Essentials and GeometryGym IFC (check licenses and AOT compatibility before choosing; write an ADR in `docs/adr/`).
+- [x] **FreeCAD macro** (`.FCMacro` / `.py`): a generated Python script that rebuilds the building as **native, editable FreeCAD objects** (BIM/Arch walls on levels, pipes as swept profiles or BIM pipes, equipment as parametric boxes, one group per network with its color). Best fidelity for FreeCAD users; no FreeCAD dependency at build time (text generation only).
+- [x] **DXF** (`.dxf`): 2D plans per level, one layer per category and per network (AutoCAD, LibreCAD, DraftSight, QCAD). Library: netDxf (check license) or a minimal hand-written DXF R12 writer.
 - [ ] **glTF** (`.glb`) and **OBJ**: 3D meshes from `ImmeubleCad.Scene` for Blender, SketchUp, web viewers, 3D printing; one node per level and per network so they can be hidden in the target tool.
 - [ ] **SVG / PDF**: printable plans per level and per network (title block with level name, scale, north arrow, legend).
 - [ ] **CSV / PDF**: bill of materials (above).
@@ -339,8 +339,8 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 
 ## Phase 10 — MCP server
 
-- [ ] `ImmeubleCad.Mcp` (official C# SDK), Core only, hosted by the app: `ImmeubleCad --mcp` (headless, stdio) and `--mcp --attach` (relay to the running app over a Unix domain socket, File › Allow AI Agents, off by default). Copy the design from `CinnabarSharp.Mcp` (dispatcher, `McpContext.Run`, allowed folders, `overwrite`/`discardChanges`).
-- [ ] Tools: open/new/save/close building, list levels, add level, import plan with detection parameters, list walls, add riser (network, XY, level range), add pipe run (list of points), connect equipment, bill of materials, export glTF/SVG/CSV, undo/redo.
+- [x] `ImmeubleCad.Mcp` (official C# SDK), Core only, hosted by the app: `ImmeubleCad --mcp` (headless, stdio) and `--mcp --attach` (relay to the running app over a Unix domain socket, File › Allow AI Agents, off by default). Copy the design from `CinnabarSharp.Mcp` (dispatcher, `McpContext.Run`, allowed folders, `overwrite`/`discardChanges`).
+- [x] Tools: open/new/save/close building, list levels, add level, import plan with detection parameters, list walls, add riser (network, XY, level range), add pipe run (list of points), connect equipment, bill of materials, export glTF/SVG/CSV, undo/redo.
 - [ ] Resources: `immeuble://buildings`, `immeuble://buildings/{id}/networks`, `immeuble://equipment-library`.
 - [ ] `docs/mcp.md` with `claude mcp add` setup and examples ("add a hot and cold water riser from RDC to R+5 in the corner of the bathroom").
 - [ ] `ImmeubleCad.Mcp.Tests`: start the real app with `--mcp` and drive it end to end.
