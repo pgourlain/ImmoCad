@@ -437,3 +437,45 @@ public class WizardMathTests
         Assert.Equal((50, 100), (w, h));
     }
 }
+
+public class NetworkEditTests
+{
+    private static (Building, BuildingActions, BuildingHistory) New()
+    { var b = new Building(); var h = new BuildingHistory(); return (b, new BuildingActions(b, h, new BuildingEventsService()), h); }
+
+    [Fact] public void Valve_inserted_on_pipe_splits_it_keeps_diameter_and_is_counted()
+    {
+        var (b, a, h) = New(); var n = a.AddNetwork("H", NetworkType.HeatingSupply); var seg = a.AddPipeRun(n.Id, [new(0, 0, 0), new(2000, 0, 0)], 28)[0];
+        var before = BuildingJson.Serialize(b); var steps = h.Items.Count;
+        var node = a.InsertComponent(n.Id, seg.Id, new(800, 0, 0), "shutoff-valve");
+        Assert.Equal(2, n.Segments.Count); Assert.All(n.Segments, s => Assert.Equal(28, s.DiameterMm)); Assert.Equal(steps + 1, h.Items.Count);
+        Assert.Equal(FittingKind.Component, FittingResolver.Resolve(n).Single(f => f.NodeId == node.Id).Kind);
+        Assert.Contains(n.Nodes, x => x.Component == "shutoff-valve");
+        h.Undo(b); Assert.Equal(before, BuildingJson.Serialize(b));
+    }
+
+    [Fact] public void Split_then_merge_round_trips_and_merge_refuses_elbows_and_components()
+    {
+        var (b, a, h) = New(); var n = a.AddNetwork("H", NetworkType.ColdWater); var seg = a.AddPipeRun(n.Id, [new(0, 0, 0), new(2000, 0, 0)])[0];
+        var mid = a.SplitSegment(n.Id, seg.Id, new(1000, 0, 0)); Assert.Equal(2, n.Segments.Count);
+        Assert.True(a.MergeAt(n.Id, mid.Id)); Assert.Single(n.Segments); Assert.Equal(2, n.Nodes.Count);
+        var (b2, a2, _) = New(); var n2 = a2.AddNetwork("E", NetworkType.ColdWater); a2.AddPipeRun(n2.Id, [new(0, 0, 0), new(1000, 0, 0), new(1000, 1000, 0)]);
+        Assert.False(a2.MergeAt(n2.Id, n2.Nodes[1].Id));
+    }
+
+    [Fact] public void Riser_extent_and_network_display_are_single_history_steps()
+    {
+        var (b, a, h) = New(); var r = a.AddRiserTemplate(new(0, 0), 0, [NetworkType.ColdWater], 0, 2700)[0]; var steps = h.Items.Count;
+        a.SetRiserExtent(r.Id, 0, 8100); a.SetNetworkDisplay(r.Id, false, true);
+        Assert.Equal(steps + 2, h.Items.Count); Assert.Equal(8100, r.Nodes.Max(n => n.Position.Z)); Assert.False(r.Visible); Assert.True(r.Locked);
+    }
+
+    [Fact] public void Riser_snaps_50mm_from_wall_faces_and_corner()
+    {
+        var wall = new List<PointMm> { new(0, 0), new(4000, 0), new(4000, 200), new(0, 200) };
+        Assert.Equal(new PointMm(1000, 250), RiserSnap.Snap(new(1000, 330), [wall]));        // above the north face (y=200) +50
+        var corner = new List<PointMm> { new(0, 0), new(200, 0), new(200, 4000), new(0, 4000) };
+        Assert.Equal(new PointMm(250, 250), RiserSnap.Snap(new(300, 330), [wall, corner]));   // inner corner: 50 mm from both faces
+        Assert.Equal(new PointMm(2000, 2000), RiserSnap.Snap(new(2000, 2000), [wall, corner])); // far from walls: untouched
+    }
+}

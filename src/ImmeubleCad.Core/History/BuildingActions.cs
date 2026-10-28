@@ -194,6 +194,54 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
             return (IReadOnlyList<Segment>)segs;
         }, _ => networkId);
 
+    /// <summary>Inserts a component (valve, meter…) on a pipe: splits the segment at the point; the new node carries the component id.</summary>
+    public Node InsertComponent(Guid networkId, Guid segmentId, PointMm3 at, string component) =>
+        Edit("Insert component", BuildingEventKind.NetworkChanged, () =>
+        {
+            var net = Net(networkId); var seg = net.Segments.First(s => s.Id == segmentId);
+            var node = new Node { Position = at, Component = component }; net.Nodes.Add(node);
+            var b = seg.B; seg.B = node.Id;
+            net.Segments.Add(new Segment { A = node.Id, B = b, DiameterMm = seg.DiameterMm, Material = seg.Material });
+            return node;
+        }, n => n.Id);
+
+    /// <summary>Splits a segment in two at a point without a component (tee branch start, corner…).</summary>
+    public Node SplitSegment(Guid networkId, Guid segmentId, PointMm3 at) =>
+        Edit("Split segment", BuildingEventKind.NetworkChanged, () =>
+        {
+            var net = Net(networkId); var seg = net.Segments.First(s => s.Id == segmentId);
+            var node = new Node { Position = at }; net.Nodes.Add(node);
+            var b = seg.B; seg.B = node.Id;
+            net.Segments.Add(new Segment { A = node.Id, B = b, DiameterMm = seg.DiameterMm, Material = seg.Material });
+            return node;
+        }, n => n.Id);
+
+    /// <summary>Merges two collinear segments sharing a node (and no component, no third segment).</summary>
+    public bool MergeAt(Guid networkId, Guid nodeId)
+    {
+        var net = Net(networkId); var segs = net.Segments.Where(s => s.A == nodeId || s.B == nodeId).ToList(); var node = net.Nodes.First(n => n.Id == nodeId);
+        if (segs.Count != 2 || node.Component != null || segs[0].DiameterMm != segs[1].DiameterMm) return false;
+        Guid O(Segment s) => s.A == nodeId ? s.B : s.A;
+        var a = net.Nodes.First(n => n.Id == O(segs[0])).Position; var c = net.Nodes.First(n => n.Id == O(segs[1])).Position; var p = node.Position;
+        if (Math.Sign(a.X - p.X) != -Math.Sign(c.X - p.X) || Math.Sign(a.Y - p.Y) != -Math.Sign(c.Y - p.Y) || Math.Sign(a.Z - p.Z) != -Math.Sign(c.Z - p.Z)) return false;
+        Edit("Merge segments", BuildingEventKind.NetworkChanged, () =>
+        {
+            segs[0].A = O(segs[0]); segs[0].B = O(segs[1]); net.Segments.Remove(segs[1]); net.Nodes.Remove(node); return nodeId;
+        }, i => i);
+        return true;
+    }
+
+    public void SetNetworkDisplay(Guid networkId, bool visible, bool locked) =>
+        Edit("Network display", BuildingEventKind.NetworkChanged, () => { var n = Net(networkId); n.Visible = visible; n.Locked = locked; return networkId; }, i => i);
+
+    /// <summary>Changes the vertical extent of a riser (all segments of the network at that XY): from/to altitude in mm. Crossings are derived.</summary>
+    public void SetRiserExtent(Guid networkId, int fromZ, int toZ) =>
+        Edit("Riser extent", BuildingEventKind.NetworkChanged, () =>
+        {
+            var net = Net(networkId); var low = net.Nodes.OrderBy(n => n.Position.Z).First(); var high = net.Nodes.OrderBy(n => n.Position.Z).Last();
+            low.Position = low.Position with { Z = Math.Min(fromZ, toZ) }; high.Position = high.Position with { Z = Math.Max(fromZ, toZ) }; return networkId;
+        }, i => i);
+
     public void MoveNode(Guid networkId, Guid nodeId, PointMm3 p) =>
         Edit("Move node", BuildingEventKind.NetworkChanged, () => { Net(networkId).Nodes.First(n => n.Id == nodeId).Position = p; return nodeId; }, i => i);
 
