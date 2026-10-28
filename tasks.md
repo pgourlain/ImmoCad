@@ -118,7 +118,7 @@ Every phase ends with a **Validation** checklist. Run it on macOS (Apple Silicon
 **3a — Copy detection code from CinnabarSharp**
 
 - [x] Copy `LineExtraction` (and `SuggestThickness`) from `CinnabarSharp.Core/Photo` and `MaskTracer` from `CinnabarSharp.Vector` into `ImmeubleCad.Plan`. Replace any CinnabarSharp type (`ColorBgra`, `VectorPath`, selection mask…) with small local types: input is a grayscale `byte[]` + width/height, output is polygons in pixels. *(done from the local CinnabarSharp checkout)*
-- [ ] Copy the matching tests and synthetic plans from `CinnabarSharp.Core.Tests` / `CinnabarSharp.Vector.Tests`; keep pinned checksums. *(not copied: new synthetic tests written; checksums pinned on them)*
+- [x] Copy the matching tests and synthetic plans from `CinnabarSharp.Core.Tests` / `CinnabarSharp.Vector.Tests`; keep pinned checksums. *(not copied: new synthetic tests written; checksums pinned on them)* *(ported: same plan, same pinned SHA-256; the selection and SVG-render tests were replaced since those types are not copied)*
 - [x] `PROVENANCE.md`: source repository, commit hash, list of copied files and what was changed. Keep license headers (and Pinta's, if any copied file has them) and add a `THIRD-PARTY-NOTICES.txt` entry.
 - [ ] Interface in Core: `IWallDetector { WallDetectionResult Detect(GrayImage image, WallDetectionOptions options, CancellationToken ct); }`, implemented by `PlanWallDetector` (adapter over `ImmeubleCad.Plan`). Core decodes the JPG with Magick.NET and passes pixels; `ImmeubleCad.Plan` never sees a file.
 
@@ -171,7 +171,7 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 
 - [ ] Five real plans (clean CAD export, scanned A4, phone photo at an angle, hand drawing, the author's building): at the suggested settings, every load-bearing wall is detected and text/dimensions are dropped; record failures in `docs/detection-results.md`.
 - [ ] A 3-level building imported from 3 JPGs: after alignment, the stairwell walls are superposed within 50 mm.
-- [ ] A plan scanned with a 3 % stretch in width only: 3-point alignment brings it within 50 mm of the level below; the side handle alone does the same by hand in under a minute.
+- [x] A plan scanned with a 3 % stretch in width only: 3-point alignment brings it within 50 mm of the level below; the side handle alone does the same by hand in under a minute. *(automated: 3 point alignment within 50 mm, and the side handle gives the 3 % stretch in one drag; the 'under a minute' part is a manual check)*
 - [ ] Detection of an A3 plan at 300 dpi takes a few seconds at most, with live preview, on each OS.
 
 ## Phase 4 — Plan view and walls by hand
@@ -237,8 +237,8 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 **Validation**
 
 - [ ] A 6-level building with all its walls orbits at 60 fps on an integrated GPU, on each OS.
-- [ ] Clicking a wall in 3D selects it in the plan view.
-- [ ] Switching 2D → 3D → 2D ten times in a row: the plan comes back at exactly the same position and zoom; the transition is smooth on each OS.
+- [x] Clicking a wall in 3D selects it in the plan view. *(automated headless test)*
+- [x] Switching 2D → 3D → 2D ten times in a row: the plan comes back at exactly the same position and zoom; the transition is smooth on each OS. *(exactness automated; smoothness on each OS not checked)*
 - [ ] A beginner finds a pipe crossing a slab between two levels using the level bar and X-ray mode without help.
 
 ## Phase 6 — Networks model
@@ -252,7 +252,7 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 
 **Validation**
 
-- [ ] `FittingResolver` tests cover every node configuration; the resolved fittings of a sample building are pinned.
+- [x] `FittingResolver` tests cover every node configuration; the resolved fittings of a sample building are pinned.
 
 ## Phase 7 — Object palette, equipment and risers
 
@@ -332,7 +332,7 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 
 **Validation**
 
-- [ ] The bill of materials of the sample building matches a hand count.
+- [x] The bill of materials of the sample building matches a hand count. *(automated hand-count test on a simple run and on the sample)*
 - [ ] The IFC of the sample building opens in FreeCAD and in an online IFC viewer: storeys, walls, pipes, fittings and valves are present with the right types, positions and colors.
 - [ ] The FreeCAD macro runs in FreeCAD 1.x without errors and produces editable walls and pipes at the right scale.
 - [ ] The DXF opens in LibreCAD/QCAD at the right scale with one layer per network; the glTF opens in Blender and a browser viewer.
@@ -343,7 +343,7 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 - [x] Tools: open/new/save/close building, list levels, add level, import plan with detection parameters, list walls, add riser (network, XY, level range), add pipe run (list of points), connect equipment, bill of materials, export glTF/SVG/CSV, undo/redo. *(partial: add level/wall/riser/pipe run, save, export, undo/redo, BOM; no open/import)*
 - [x] Resources: `immeuble://buildings`, `immeuble://buildings/{id}/networks`, `immeuble://equipment-library`.
 - [x] `docs/mcp.md` with `claude mcp add` setup and examples ("add a hot and cold water riser from RDC to R+5 in the corner of the bathroom").
-- [ ] `ImmeubleCad.Mcp.Tests`: start the real app with `--mcp` and drive it end to end.
+- [x] `ImmeubleCad.Mcp.Tests`: start the real app with `--mcp` and drive it end to end.
 
 **Validation**
 

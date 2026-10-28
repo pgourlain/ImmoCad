@@ -774,3 +774,33 @@ public class ImageStretchTests
         Assert.Equal((10.3, 9.8, 12), (Math.Round(d.ScaleX, 6), Math.Round(d.ScaleY, 6), Math.Round(d.RotationDeg, 6)));
     }
 }
+
+public class FittingCoverageTests
+{
+    private static Network Net(Action<BuildingActions, Network> build, out Building b)
+    { b = new Building(); var a = new BuildingActions(b, new BuildingHistory(), new BuildingEventsService()); a.AddLevel("RDC", 0); a.AddLevel("R+1", 2700); var n = a.AddNetwork("N", NetworkType.ColdWater); build(a, n); return n; }
+
+    [Fact] public void Every_node_configuration_resolves_to_the_expected_fitting()
+    {
+        var kinds = new Dictionary<FittingKind, bool>();
+        void Seen(FittingKind k, Network n, Building b, PointMm3 at) { Assert.Equal(k, FittingResolver.Resolve(n, b.Levels).First(f => f.Position == at).Kind); kinds[k] = true; }
+
+        var n1 = Net((a, n) => a.AddPipeRun(n.Id, [new(0, 0, 0), new(1000, 0, 0)]), out var b1); Seen(FittingKind.EndCap, n1, b1, new(0, 0, 0));
+        var n2 = Net((a, n) => { var r = a.AddPipeRun(n.Id, [new(0, 0, 0), new(2000, 0, 0)])[0]; a.SplitSegment(n.Id, r.Id, new(1000, 0, 0)); }, out var b2); Seen(FittingKind.Joint, n2, b2, new(1000, 0, 0));
+        var n3 = Net((a, n) => a.AddPipeRun(n.Id, [new(0, 0, 0), new(1000, 0, 0), new(1000, 1000, 0)]), out var b3); Seen(FittingKind.Elbow90, n3, b3, new(1000, 0, 0));
+        var n4 = Net((a, n) => { var r = a.AddPipeRun(n.Id, [new(0, 0, 0), new(2000, 0, 0)])[0]; a.AddTeeBranch(n.Id, r.Id, new(1000, 0, 0), new(1000, 800, 0)); }, out var b4); Seen(FittingKind.Tee, n4, b4, new(1000, 0, 0));
+        var n5 = Net((a, n) => { var r = a.AddPipeRun(n.Id, [new(0, 0, 0), new(2000, 0, 0)])[0]; a.AddTeeBranch(n.Id, r.Id, new(1000, 0, 0), new(1000, 800, 0)); var c = n.Nodes.First(x => x.Position == new PointMm3(1000, 0, 0)); var e = a.AddNode(n.Id, new(1000, -800, 0)); a.AddSegment(n.Id, c.Id, e.Id); }, out var b5); Seen(FittingKind.Cross, n5, b5, new(1000, 0, 0));
+        var n6 = Net((a, n) => { var s1 = a.AddPipeRun(n.Id, [new(0, 0, 0), new(1000, 0, 0)], 22)[0]; var m = n.Nodes.First(x => x.Position == new PointMm3(1000, 0, 0)); var e = a.AddNode(n.Id, new(2000, 0, 0)); a.AddSegment(n.Id, m.Id, e.Id, 15); }, out var b6); Seen(FittingKind.Reducer, n6, b6, new(1000, 0, 0));
+        var n7 = Net((a, n) => { var s = a.AddPipeRun(n.Id, [new(0, 0, 0), new(0, 0, 5400)])[0]; a.SplitSegment(n.Id, s.Id, new(0, 0, 2700)); }, out var b7); Seen(FittingKind.SlabCrossing, n7, b7, new(0, 0, 2700));
+        var n8 = Net((a, n) => { var s = a.AddPipeRun(n.Id, [new(0, 0, 2400), new(2000, 0, 2400)])[0]; a.InsertComponent(n.Id, s.Id, new(1000, 0, 2400), "shutoff-valve"); }, out var b8); Seen(FittingKind.Component, n8, b8, new(1000, 0, 2400));
+        Assert.Equal(8, kinds.Count);
+    }
+
+    [Fact] public void Fittings_of_the_sample_building_are_pinned()
+    {
+        var (b, _) = SampleBuilding.Create(); var a = new BuildingActions(b, new BuildingHistory(), new BuildingEventsService());
+        var heat = b.Networks[0]; a.AddElbow(heat.Id, heat.Nodes[1].Id, new(heat.Nodes[1].Position.X + 1000, heat.Nodes[1].Position.Y, heat.Nodes[1].Position.Z));
+        var text = string.Join(";", b.Networks.SelectMany(n => FittingResolver.Resolve(n, b.Levels).Select(f => $"{n.Type}:{f.Kind}@{f.Position.X},{f.Position.Y},{f.Position.Z}")).OrderBy(x => x, StringComparer.Ordinal));
+        Assert.Equal("HeatingReturn:EndCap@450,300,0;HeatingReturn:EndCap@450,300,8100;HeatingSupply:Elbow90@300,300,8100;HeatingSupply:EndCap@1300,300,8100;HeatingSupply:EndCap@300,300,0", text);
+    }
+}

@@ -7,4 +7,4 @@ Wall detection code copied from **CinnabarSharp** (https://github.com/pgourlain/
 | `LineExtraction.cs` | `CinnabarSharp.Core/Photo/LineExtraction.cs` | Input is a grayscale `byte[]` (no BGRA conversion, no `SelectionMask`); namespace `ImmeubleCad.Plan`. Algorithm untouched. |
 | `MaskTracer.cs` | `CinnabarSharp.Vector/Geometry/MaskTracer.cs` | `VectorPath` replaced by `WallOutline` (outline + holes as `PointPx` lists); a small local `VPoint`. Algorithm untouched. |
 
-Tests are written for ImmeubleCad on synthetic plans (`tests/ImmeubleCad.Plan.Tests`); the CinnabarSharp tests were not copied.
+Tests: `tests/ImmeubleCad.Plan.Tests/CinnabarPortedTests.cs` ports `WallExtractionTests` and `MaskTracerTests` (same synthetic plan, same pinned SHA-256 of the mask). The tests of CinnabarSharp types that were not copied (selection mask, vector rasterizer, effect preview) were replaced by equivalent checks.
