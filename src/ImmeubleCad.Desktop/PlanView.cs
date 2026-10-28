@@ -113,9 +113,18 @@ public class PlanView : Control
 
     private ToolPointer HandlePointer(PointerEventArgs e) { var p = e.GetPosition(this); return new ToolPointer(ToMm(p), p.X, p.Y); }
 
-    public PointMm ToMm(Point p) => new((int)Math.Round((p.X - Offset.X) / Scale), (int)Math.Round((Bounds.Height - p.Y - Offset.Y) / Scale));
+    /// <summary>"North up": the whole view is turned about the viewport centre so that true north points up (needs a placed building).</summary>
+    public double ViewRotationRad => Vm is { NorthUp: true, Building.Site: { } s } ? s.RotationDeg * Math.PI / 180 : 0;
+    private Point Rot(Point p, double angle)
+    {
+        if (angle == 0) return p;
+        double cx = Bounds.Width / 2, cy = Bounds.Height / 2, c = Math.Cos(angle), s = Math.Sin(angle), dx = p.X - cx, dy = p.Y - cy;
+        return new(cx + dx * c - dy * s, cy + dx * s + dy * c);
+    }
+    private Matrix RotationMatrix() => ViewRotationRad == 0 ? Matrix.Identity : Matrix.CreateTranslation(-Bounds.Width / 2, -Bounds.Height / 2) * Matrix.CreateRotation(ViewRotationRad) * Matrix.CreateTranslation(Bounds.Width / 2, Bounds.Height / 2);
+    public PointMm ToMm(Point p) { var u = Rot(p, -ViewRotationRad); return new((int)Math.Round((u.X - Offset.X) / Scale), (int)Math.Round((Bounds.Height - u.Y - Offset.Y) / Scale)); }
     internal Point ToScreenForTest(PointMm p) => ToScreen(p);
-    private Point ToScreen(PointMm p) => new(Offset.X + p.X * Scale, Bounds.Height - Offset.Y - p.Y * Scale);
+    private Point ToScreen(PointMm p) => Rot(new(Offset.X + p.X * Scale, Bounds.Height - Offset.Y - p.Y * Scale), ViewRotationRad);
 
     public void FitAll()
     {
@@ -418,7 +427,7 @@ public class PlanView : Control
                 else ctx.DrawLine(pen, a, b);
             }
         }
-        var c = new Point(Bounds.Width - 46, 56); var r = -site.RotationDeg * Math.PI / 180;     // the model's Y axis points site.RotationDeg° from north: the arrow turns the other way
+        var c = new Point(Bounds.Width - 46, 56); var r = (Vm.NorthUp ? 0 : -site.RotationDeg) * Math.PI / 180;     // the model's Y axis points site.RotationDeg° from north: the arrow turns the other way
         ctx.DrawEllipse(new SolidColorBrush(Color.FromArgb(170, 255, 255, 255)), new Pen(Brushes.Gray, 1), c, 22, 22);
         Point Rot(double x, double y) => new(c.X + x * Math.Cos(r) - y * Math.Sin(r), c.Y + x * Math.Sin(r) + y * Math.Cos(r));
         var g = new StreamGeometry(); using (var cx = g.Open()) { cx.BeginFigure(Rot(0, -17), true); cx.LineTo(Rot(7, 9)); cx.LineTo(Rot(0, 4)); cx.LineTo(Rot(-7, 9)); cx.EndFigure(true); }
@@ -516,14 +525,14 @@ public class PlanView : Control
         var dark = ActualThemeVariant == Avalonia.Styling.ThemeVariant.Dark;
         ctx.FillRectangle(Tokens.Brush(this, "PlanBackground", dark ? Color.FromRgb(30, 32, 36) : Color.FromRgb(250, 250, 248)), new Rect(Bounds.Size));
         if (!_fitted) FitAll();
-        DrawGrid(ctx, dark);
+        using (ctx.PushTransform(RotationMatrix())) DrawGrid(ctx, dark);
         if (Vm?.CurrentLevel is not { } l) return;
         if (l.BackgroundVisible && l.ImageTransform is { Length: 6 } tr0 && Background(l) is { } bg)
         {
             var tr = _stretchLive is { } live ? live.ToArray() : tr0;
             // pixels → mm (affine) → screen; axis-aligned or rotated drawing through a matrix
             var m = new Matrix(tr[0] * Scale, -tr[3] * Scale, tr[1] * Scale, -tr[4] * Scale, Offset.X + tr[2] * Scale, Bounds.Height - Offset.Y - tr[5] * Scale);
-            using (ctx.PushTransform(m)) using (ctx.PushOpacity(l.BackgroundOpacity))
+            using (ctx.PushTransform(m * RotationMatrix())) using (ctx.PushOpacity(l.BackgroundOpacity))
                 ctx.DrawImage(bg, new Rect(bg.PixelSize.ToSize(1)));
             if (Vm.IsStretchTool && Vm.BackgroundSize() is { } bs)
             {
@@ -537,7 +546,7 @@ public class PlanView : Control
         if (below?.ImageTransform is { Length: 6 } bt && below.BackgroundVisible && Background(below) is { } bbg && (Vm.BgDifference || Vm.IsAlignTool || Vm.IsStretchTool))
         {   // the level below's picture in a contrasting colour (blue tint), or as a difference blend, to see how well the two plans overlap
             var bm = new Matrix(bt[0] * Scale, -bt[3] * Scale, bt[1] * Scale, -bt[4] * Scale, Offset.X + bt[2] * Scale, Bounds.Height - Offset.Y - bt[5] * Scale);
-            using (ctx.PushTransform(bm)) using (ctx.PushOpacity(Vm.BgDifference ? 1.0 : 0.35))
+            using (ctx.PushTransform(bm * RotationMatrix())) using (ctx.PushOpacity(Vm.BgDifference ? 1.0 : 0.35))
             using (ctx.PushRenderOptions(new RenderOptions { BitmapBlendingMode = Vm.BgDifference ? BitmapBlendingMode.Difference : BitmapBlendingMode.SourceOver }))
                 ctx.DrawImage(bbg, new Rect(bbg.PixelSize.ToSize(1)));
         }

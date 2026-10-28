@@ -79,3 +79,25 @@ public class McpExportAliasTests
         Directory.Delete(d, true);
     }
 }
+
+public class McpTwoJpgTests
+{
+    private static byte[] PlanPng(int shift)
+    {
+        const int W = 600, H = 480; var px = Enumerable.Repeat((byte)255, W * H).ToArray();
+        for (var y = 40; y < 440; y++) for (var x = 50; x < 550; x++) if (x < 60 || x >= 540 || y < 50 || y >= 430) px[(y + shift) * W + x] = 0;
+        using var img = new ImageMagick.MagickImage(px, new ImageMagick.PixelReadSettings(W, H, ImageMagick.StorageType.Char, "I")); return img.ToByteArray(ImageMagick.MagickFormat.Png);
+    }
+
+    [Fact] public void Agent_builds_a_two_level_building_from_two_images_and_adds_risers()
+    {
+        var s = new McpSession(); var t = new BuildingTools(s); var d = Path.Combine(Path.GetTempPath(), "mcp2" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(d);
+        File.WriteAllBytes(Path.Combine(d, "rdc.png"), PlanPng(0)); File.WriteAllBytes(Path.Combine(d, "r1.png"), PlanPng(3));
+        var rdc = t.AddLevel("RDC", 0); var r1 = t.AddLevel("R+1", 2700);
+        Assert.Contains("1 wall group", t.ImportPlan(rdc, Path.Combine(d, "rdc.png"), 0.1)); Assert.Contains("1 wall group", t.ImportPlan(r1, Path.Combine(d, "r1.png"), 0.1));
+        Assert.True(s.Building.Levels.Count(l => l.Walls.Count == 1) == 2, string.Join(",", s.Building.Levels.Select(l => l.DisplayName + ":" + l.Walls.Count))); var shape = s.Building.Levels[0].Walls[0]; Assert.Equal(5000, shape.Footprint.Max(p => p.X) - shape.Footprint.Min(p => p.X));       // 500 px at 0.1 px/mm
+        t.AddRiser("ColdWater", 500, 500, 0, 5400); t.AddRiserTemplate("HeatingSupply,HeatingReturn", 800, 500, 150, 0, 5400, 22);
+        Assert.Equal(3, s.Building.Networks.Count); Assert.Contains(t.BillOfMaterials(), l => l.Contains("5.4 m"));
+        t.Undo(); Assert.Single(s.Building.Networks); Directory.Delete(d, true);   // the template (2 networks) was one history step
+    }
+}

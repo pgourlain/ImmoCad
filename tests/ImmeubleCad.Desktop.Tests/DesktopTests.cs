@@ -1084,3 +1084,22 @@ public class Handles3dTests
         vm.UndoCommand.Execute(null); Assert.Equal(3000, vm.Building.Networks[^1].Nodes.Max(n => n.Position.X)); w.Close();
     }, CancellationToken.None);
 }
+
+public class NorthUpTests
+{
+    private readonly HeadlessFixture f = new();
+
+    [Fact] public Task North_up_turns_the_plan_by_the_site_rotation_keeps_hit_testing_exact_and_the_arrow_points_up() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(); var w = new MainWindow { DataContext = vm, Width = 1300, Height = 850 }; w.Show(); w.UpdateLayout(); w.CaptureRenderedFrame();
+        vm.Actions.SetSite(new ImmeubleCad.Core.Model.SiteInfo { EastM = 650000, NorthM = 6860000, RotationDeg = 30, Footprint = [[650000, 6860000], [650008, 6860000], [650008, 6860006], [650000, 6860006]] }); vm.Refresh(); w.CaptureRenderedFrame();
+        var plan = w.FindControl<PlanView>("Plan")!; Assert.Equal(0, plan.ViewRotationRad); var flat = plan.ToScreenForTest(new(2000, 1000));
+        vm.ToggleNorthUpCommand.Execute(null); Assert.True(vm.NorthUp); Assert.Equal(30 * Math.PI / 180, plan.ViewRotationRad, 9); Assert.Equal("Nord en haut", vm.Status);
+        var turned = plan.ToScreenForTest(new(2000, 1000)); Assert.True(Math.Abs(turned.X - flat.X) + Math.Abs(turned.Y - flat.Y) > 10);                                  // the plan really turned
+        foreach (var p in new ImmeubleCad.Core.Model.PointMm[] { new(0, 0), new(2000, 1000), new(7000, 5500), new(-300, 4000) }) Assert.Equal(p, plan.ToMm(plan.ToScreenForTest(p)));   // screen ↔ plan stays exact
+        w.CaptureRenderedFrame()!.Save(Path.Combine(AppContext.BaseDirectory, "screenshots", "northup.png"));
+        var wall = vm.CurrentLevel!.Walls[0]; var inside = wall.Footprint.Aggregate((a, b) => new(a.X + b.X, a.Y + b.Y)); var c = new ImmeubleCad.Core.Model.PointMm(inside.X / wall.Footprint.Count, inside.Y / wall.Footprint.Count);
+        var at = plan.TranslatePoint(plan.ToScreenForTest(c), w)!.Value; w.MouseDown(at, Avalonia.Input.MouseButton.Left); w.MouseUp(at, Avalonia.Input.MouseButton.Left); Assert.Contains(wall.Id, vm.SelectedWalls);   // a click still finds the wall
+        vm.ToggleNorthUpCommand.Execute(null); Assert.Equal(0, plan.ViewRotationRad); Assert.Equal("Bâtiment aligné", vm.Status); w.Close();
+    }, CancellationToken.None);
+}

@@ -22,6 +22,10 @@ public partial class MainViewModel
     [ObservableProperty] private string _siteAddress = "";
     [ObservableProperty] private int _mapLayer;                                // 0 orthophoto, 1 plan IGN, 2 cadastre
     [ObservableProperty] private bool _showFootprint = true;
+    /// <summary>true = true north up (the plan is turned by the site rotation); false = building aligned.</summary>
+    [ObservableProperty] private bool _northUp;
+    partial void OnNorthUpChanged(bool value) => Changed?.Invoke();
+    [RelayCommand] private void ToggleNorthUp() { NorthUp = !NorthUp; Status = T(NorthUp ? "northup.on" : "northup.off"); }
     [ObservableProperty] private string _siteMessage = "";
     public (double E, double N) MapCenter { get; set; } = (650000, 6860000);
     public double MapScale { get; set; } = 3;                                   // px per metre

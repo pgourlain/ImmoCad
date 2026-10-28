@@ -1113,3 +1113,17 @@ public class WebMercatorTests
         Assert.InRange(w, 205, 222);                                                                                            // a z17 tile is 305.7 m at the equator × cos(45.76°) ≈ 213 m of ground
     }
 }
+
+public class FreeCadMacroSyntaxTests
+{
+    [Fact] public void Generated_macro_is_valid_python_when_python_is_available()
+    {
+        var (b, _) = SampleBuilding.Create(); var macro = new ImmeubleCad.Core.Export.FreeCadMacroExporter().Export(b);
+        Assert.StartsWith("import FreeCAD, Part", macro); Assert.Contains("doc.recompute()", macro);
+        var py = new[] { "python3", "python" }.FirstOrDefault(p => { try { using var q = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(p, "--version") { RedirectStandardOutput = true, RedirectStandardError = true }); q!.WaitForExit(5000); return q.ExitCode == 0; } catch { return false; } });
+        if (py == null) return;                                                                                                     // nothing to check the syntax with on this machine
+        var file = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".py"); File.WriteAllText(file, macro);
+        using var proc = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(py, $"-I -m py_compile \"{file}\"") { RedirectStandardError = true })!; var err = proc.StandardError.ReadToEnd(); proc.WaitForExit(15000); File.Delete(file);
+        Assert.True(proc.ExitCode == 0, err);
+    }
+}

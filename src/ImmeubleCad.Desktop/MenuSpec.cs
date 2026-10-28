@@ -80,6 +80,7 @@ public static class MenuFactory
                 new(T("menu.view.language"), Children: [new(T("lang.en"), vm.SetLanguageCommand, "en"), new(T("lang.fr"), vm.SetLanguageCommand, "fr")]),
                 new(T("menu.theme"), Children: [new(T("menu.theme.auto"), vm.SetThemeCommand, "auto"), new(T("menu.theme.light"), vm.SetThemeCommand, "light"), new(T("menu.theme.dark"), vm.SetThemeCommand, "dark")]),
                 MenuItemSpec.Separator,
+                new(T("menu.northup"), vm.ToggleNorthUpCommand),
                 new(T("menu.ghost.below"), vm.ToggleGhostBelowCommand),
                 new(T("menu.ghost.above"), vm.ToggleGhostAboveCommand),
                 new(T("commononly"), vm.ToggleCommonOnlyCommand),

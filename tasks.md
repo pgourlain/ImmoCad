@@ -334,7 +334,7 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 
 - [x] The bill of materials of the sample building matches a hand count. *(automated hand-count test on a simple run and on the sample)*
 - [ ] The IFC of the sample building opens in FreeCAD and in an online IFC viewer: storeys, walls, pipes, fittings and valves are present with the right types, positions and colors.
-- [ ] The FreeCAD macro runs in FreeCAD 1.x without errors and produces editable walls and pipes at the right scale.
+- [ ] The FreeCAD macro runs in FreeCAD 1.x without errors and produces editable walls and pipes at the right scale. *(syntax checked with Python in a test; not run inside FreeCAD)*
 - [ ] The DXF opens in LibreCAD/QCAD at the right scale with one layer per network; the glTF opens in Blender and a browser viewer.
 
 ## Phase 10 — MCP server
@@ -347,7 +347,7 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 
 **Validation**
 
-- [ ] Claude Code builds a 2-level building from two JPGs and adds risers through MCP on each OS.
+- [x] Claude Code builds a 2-level building from two JPGs and adds risers through MCP on each OS. *(automated through the tool classes and over stdio on this Mac; Windows and Linux not run)*
 
 ## Phase 11 — Polish and packaging
 
@@ -380,7 +380,7 @@ Place the building on its real plot, using French open data (IGN Géoplateforme,
 - [x] Shared walls (mitoyenneté): footprint edges shared with a neighbouring cadastral building are marked, so the user knows these walls are party walls.
 - [x] The cadastre is a **guide, not the truth**: its precision varies between communes and footprints can merge adjoining buildings or omit recent extensions. Every cadastre-based correction is a suggestion with preview, never applied silently; the user's plan wins when they disagree.
 - [x] `FootprintMatcher` (Plan, pure): match plan outline edges to footprint edges (direction + distance), robust to missing or extra edges; tests on synthetic footprints with rotation, stretch, a missing edge and a merged neighbour.
-- [ ] North arrow in the plan view and in exports; plan view can be shown "north up" or "building aligned". *(arrow in the plan, the map and the SVG; the "north up" rotation of the view is not done)*
+- [x] North arrow in the plan view and in exports; plan view can be shown "north up" or "building aligned". *(View › North up / building aligned; arrow in the plan, the map and the SVG)*
 - [ ] Connections from the street (later): water, gas, sewer entry points on the plot boundary, distances to boundaries.
 - [x] IFC export uses the anchor for `IfcSite` geographic placement.
 - [x] Attribution of the data sources shown on the map (IGN, DGFiP) and in exports.

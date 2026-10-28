@@ -5,6 +5,9 @@ internal static class TranslationData
 {
     public static readonly (string Key, string En, string Fr)[] All =
     [
+        ("menu.northup", "North up / building aligned", "Nord en haut / bâtiment aligné"),
+        ("northup.on", "North up", "Nord en haut"),
+        ("northup.off", "Building aligned", "Bâtiment aligné"),
         ("network.runs", "runs through: {0}", "passe par : {0}"),
         ("align.movewalls", "Move the walls with the plan", "Déplacer les murs avec le plan"),
         ("tip.sidebyside", "Plan and 3D side by side", "Plan et 3D côte à côte"),
