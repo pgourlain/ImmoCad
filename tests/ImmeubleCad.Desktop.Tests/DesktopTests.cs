@@ -48,6 +48,21 @@ public class DesktopTests
         w.Close();
     }, CancellationToken.None);
 
+    [Fact] public Task Draw_wall_chain_is_one_undo_step_and_saves() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(); var walls = vm.CurrentLevel!.Walls.Count; var steps = vm.History.Items.Count;
+        var tool = new ImmeubleCad.Core.Tools.DrawChainTool(vm.CommitWalls);
+        ImmeubleCad.Core.Tools.ToolPointer P(int x, int y) => new(new(x, y), x, y);
+        tool.Down(P(0, 5000)); tool.Up(P(0, 5000)); tool.Move(P(3000, 5000)); tool.Down(P(3000, 5000)); tool.Move(P(3000, 8000)); tool.Down(P(3000, 8000)); tool.Finish();
+        Assert.Equal(walls + 2, vm.CurrentLevel.Walls.Count);
+        Assert.Equal(steps + 1, vm.History.Items.Count);
+        var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".immeuble");
+        vm.SaveTo(path); Assert.False(vm.History.IsDirty);
+        var vm2 = new MainViewModel(); vm2.LoadFrom(path); File.Delete(path);
+        Assert.Equal(walls + 2, vm2.CurrentLevel!.Walls.Count);
+        vm.UndoCommand.Execute(null); Assert.Equal(walls, vm.Building.Levels.First(l => l.Name == "RDC").Walls.Count);
+    }, CancellationToken.None);
+
     [Fact] public Task Undo_redo_levels() => f.Session.Dispatch(() =>
     {
         var vm = new MainViewModel();

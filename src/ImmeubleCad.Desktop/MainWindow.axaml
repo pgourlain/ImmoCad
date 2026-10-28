@@ -3,6 +3,18 @@
         x:DataType="vm:MainViewModel" Title="ImmeubleCad" Width="1200" Height="800">
   <DockPanel>
     <Menu DockPanel.Dock="Top">
+      <MenuItem Header="_File">
+        <MenuItem Header="Open…" Click="OnOpen" HotKey="Ctrl+O" />
+        <MenuItem Header="Save…" Click="OnSave" HotKey="Ctrl+S" />
+        <MenuItem Header="Import plan (JPG/PNG)…" Click="OnImport" />
+        <MenuItem Header="Export">
+          <MenuItem Header="IFC" Click="OnExport" Tag="ifc" />
+          <MenuItem Header="FreeCAD macro" Click="OnExport" Tag="freecad" />
+          <MenuItem Header="DXF" Click="OnExport" Tag="dxf" />
+          <MenuItem Header="OBJ" Click="OnExport" Tag="obj" />
+          <MenuItem Header="Bill of materials (CSV)" Click="OnExport" Tag="csv" />
+        </MenuItem>
+      </MenuItem>
       <MenuItem Header="_Edit">
         <MenuItem Header="Undo" Command="{Binding UndoCommand}" HotKey="Ctrl+Z" />
         <MenuItem Header="Redo" Command="{Binding RedoCommand}" HotKey="Ctrl+Shift+Z" />
@@ -10,6 +22,7 @@
       <MenuItem Header="_Level"><MenuItem Header="Add level" Command="{Binding AddLevelCommand}" /></MenuItem>
     </Menu>
     <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="4" Margin="4">
+      <ToggleButton x:Name="DrawWallBtn" Content="Draw wall" Click="OnToggleWall" />
       <Button Content="2D" Command="{Binding SetModeCommand}" CommandParameter="Plan" />
       <Button Content="3D" Command="{Binding SetModeCommand}" CommandParameter="Solid" />
       <Button Content="Wireframe" Command="{Binding SetModeCommand}" CommandParameter="Wireframe" />
@@ -24,7 +37,7 @@
       </ItemsControl.ItemTemplate>
     </ItemsControl>
     <Grid>
-      <vm:PlanView x:Name="Plan" Level="{Binding CurrentLevel}" IsVisible="{Binding !Is3D}" />
+      <vm:PlanView x:Name="Plan" Focusable="True" Building="{Binding Building}" Level="{Binding CurrentLevel}" IsVisible="{Binding !Is3D}" />
       <vm:Viewport3D x:Name="View3D" Building="{Binding Building}" CurrentLevel="{Binding CurrentLevel}" IsVisible="{Binding Is3D}" />
     </Grid>
   </DockPanel>
