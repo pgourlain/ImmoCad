@@ -221,6 +221,9 @@
           <Button Content="Élévation" Command="{Binding ShowElevationCommand}" ToolTip.Tip="Vue de face du mur sélectionné" />
           <Button Content="3D" Command="{Binding SetModeCommand}" CommandParameter="Solid" />
           <Button Content="Filaire" Command="{Binding SetModeCommand}" CommandParameter="Wireframe" />
+          <ToggleButton Content="Rayons X" IsChecked="{Binding XRay, Mode=OneWay}" Command="{Binding ToggleXRayCommand}" IsVisible="{Binding Is3D}" />
+          <ToggleButton Content="Coupe" IsChecked="{Binding CutAbove, Mode=OneWay}" Command="{Binding ToggleCutCommand}" IsVisible="{Binding Is3D}" ToolTip.Tip="Masquer ce qui est au-dessus du niveau courant" />
+          <Button Content="Niveaux" Command="{Binding CycleLevelFilterCommand}" IsVisible="{Binding Is3D}" />
         </StackPanel>
       </Grid>
     </Border>
@@ -244,7 +247,7 @@
       </Border>
       <vm:PlanView x:Name="Plan" IsVisible="{Binding IsPlan}" />
       <vm:ElevationView x:Name="Elev" IsVisible="{Binding IsElevation}" Focusable="True" />
-      <vm:Viewport3D x:Name="View3D" IsVisible="{Binding Is3D}" />
+      <Grid x:Name="View3DHost" IsVisible="{Binding Is3D}" />
     </Grid>
   </DockPanel>
 </Window>

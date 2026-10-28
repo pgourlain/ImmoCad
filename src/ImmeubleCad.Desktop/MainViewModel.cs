@@ -78,6 +78,32 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _hint = T("hint.select");
     public int WallThicknessMm { get; set; } = 200;
 
+    // ---- 3D ----
+    [ObservableProperty] private bool _xRay;
+    [ObservableProperty] private bool _cutAbove = true;
+    [ObservableProperty] private int _levelFilter;                 // 0 whole building, 1 current + below, 2 current only
+    public ViewState State { get; } = new();
+
+    /// <summary>A click in the 3D view selects the model object, and the plan shows it (level + selection are shared).</summary>
+    public void Pick3D(Guid id, ImmeubleCad.Scene.SceneKind kind)
+    {
+        if (ActiveIndex < 0) return;
+        foreach (var l in Building.Levels)
+        {
+            if (kind == ImmeubleCad.Scene.SceneKind.Wall && l.Walls.Any(w => w.Id == id)) { CurrentLevelId = l.Id; SelectedWalls.Clear(); SelectedWalls.Add(id); SelectedSegment = null; State.Select(id); Status = T("walls.selected", 1); Refresh(); return; }
+        }
+        if (kind == ImmeubleCad.Scene.SceneKind.Pipe)
+            foreach (var n in Building.Networks.Where(n => n.Segments.Any(s => s.Id == id))) { SelectSegment(n.Id, id); State.Select(id); return; }
+        State.Select(id); Status = kind.ToString();
+    }
+
+    /// <summary>"Show in 3D" / "Show in plan" on the selection.</summary>
+    [RelayCommand] private void ShowInPlan() { RequestMode(ViewMode.Plan); }
+    [RelayCommand] private void ToggleXRay() { XRay = !XRay; Changed?.Invoke(); }
+    [RelayCommand] private void ToggleCut() { CutAbove = !CutAbove; Changed?.Invoke(); }
+    [RelayCommand] private void CycleLevelFilter() { LevelFilter = (LevelFilter + 1) % 3; Status = LevelFilter switch { 0 => "Tout le bâtiment", 1 => "Niveau courant et dessous", _ => "Niveau courant seulement" }; Changed?.Invoke(); }
+    [RelayCommand] private void CycleView() { RequestMode(Mode switch { ViewMode.Plan => ViewMode.Solid, ViewMode.Solid => ViewMode.Wireframe, _ => ViewMode.Plan }); }
+
     // ---- Pipe selection (handles) ----
     public (Guid NetworkId, Guid SegmentId)? SelectedSegment { get; private set; }
     public void SelectSegment(Guid networkId, Guid segmentId) { SelectedWalls.Clear(); SelectedSegment = (networkId, segmentId); Status = "Tuyau sélectionné — poignées : prolonger, coude (Ctrl), té (milieu)"; OnPropertyChanged(nameof(SelectionText)); Changed?.Invoke(); }
@@ -487,7 +513,15 @@ public partial class MainViewModel : ObservableObject
 
     [RelayCommand] private void SelectAll() { if (CurrentLevel is { } l) SelectWalls(l.Walls.Select(w => w.Id), false); }
     [RelayCommand] private void SetTool(string t) => Tool = Enum.Parse<ToolKind>(t);
-    [RelayCommand] private void SetMode(string m) => Mode = Enum.Parse<ViewMode>(m);
+    /// <summary>Set by the window: runs the animated plan ↔ 3D transition and calls <c>done</c> when finished. Returns false when it does not handle the change.</summary>
+    public Func<ViewMode, ViewMode, Action, bool>? TransitionHandler { get; set; }
+    public void RequestMode(ViewMode to)
+    {
+        var from = Mode; if (to == from) return;
+        if (TransitionHandler?.Invoke(from, to, () => Mode = to) == true) return;
+        Mode = to;
+    }
+    [RelayCommand] private void SetMode(string m) => RequestMode(Enum.Parse<ViewMode>(m));
     [RelayCommand] private void Undo() { History.Undo(Building); Refresh(); }
     [RelayCommand] private void Redo() { History.Redo(Building); Refresh(); }
 

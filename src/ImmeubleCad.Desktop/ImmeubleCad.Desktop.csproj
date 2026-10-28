@@ -4,6 +4,7 @@
     <AssemblyName>ImmeubleCad</AssemblyName>
     <RootNamespace>ImmeubleCad.Desktop</RootNamespace>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup><InternalsVisibleTo Include="ImmeubleCad.Desktop.Tests" /></ItemGroup>
   <ItemGroup>
@@ -11,6 +12,7 @@
     <PackageReference Include="Avalonia.Desktop" Version="12.1.4" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.4" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <PackageReference Include="Silk.NET.OpenGL" Version="2.23.0" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />
     <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.0" />
     <ProjectReference Include="..\ImmeubleCad.Core\ImmeubleCad.Core.csproj" />

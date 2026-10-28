@@ -218,21 +218,21 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 
 ## Phase 5 — 3D view
 
-- [ ] `ImmeubleCad.Scene`: `MeshBuilder` producing vertex/index buffers (float positions in metres, normals, color per network/category): wall extrusion from footprint polygon and height, floor slab per level (from the outer outline or a bounding polygon), pipe cylinders, fittings (torus segment for elbows, simple tee), equipment boxes. Deterministic; pinned checksum test.
+- [x] `ImmeubleCad.Scene`: `MeshBuilder` producing vertex/index buffers (float positions in metres, normals, color per network/category): wall extrusion from footprint polygon and height, floor slab per level (from the outer outline or a bounding polygon), pipe cylinders, fittings (torus segment for elbows, simple tee), equipment boxes. Deterministic; pinned checksum test. *(cylinders with normals, elbows as bent cylinders, tee/reducer as boxes, slabs under each level; no per-vertex colour buffer: colour is per object)*
 - [x] `Picking`: ray vs meshes → id of the wall, equipment, node or segment under the mouse. Unit-tested.
-- [ ] `Viewport3D` control (Avalonia `OpenGlControlBase` + Silk.NET.OpenGL): orbit (left drag), pan (right or middle drag), zoom (wheel), "fit all", top/front/side/isometric presets. Simple lighting (one directional light + ambient).
-- [ ] Render modes: **Solid**, **X-ray** (walls translucent, networks opaque), **Wireframe** (wall edges + networks in color). `Scene` produces an edge list per mesh for wireframe.
-- [ ] Level filters: current level only / current + below / whole building; **cut above the current level** (dollhouse view) on by default; show/hide each network.
-- [ ] Level bar works in 3D too: changing level moves the cut and the camera target vertically.
+- [x] `Viewport3D` control (Avalonia `OpenGlControlBase` + Silk.NET.OpenGL): orbit (left drag), pan (right or middle drag), zoom (wheel), "fit all", top/front/side/isometric presets. Simple lighting (one directional light + ambient). *(`GlViewport3D` written with Silk.NET; on this Mac no GL context is created so it falls back to the software viewport automatically — the GL path has not been run on Windows/Linux)*
+- [x] Render modes: **Solid**, **X-ray** (walls translucent, networks opaque), **Wireframe** (wall edges + networks in color). `Scene` produces an edge list per mesh for wireframe.
+- [x] Level filters: current level only / current + below / whole building; **cut above the current level** (dollhouse view) on by default; show/hide each network.
+- [x] Level bar works in 3D too: changing level moves the cut and the camera target vertically.
 
 **Switching 2D ↔ 3D without losing context**
 
-- [ ] One key (Tab) and the toolbar segmented control switch 2D / 3D / Wireframe; the choice is in `ViewState`.
-- [ ] Animated transition (~0.5 s, ease-in-out): the 3D camera starts as an orthographic top view matching the plan view's framing (same look-at point and scale), then tilts to the last used 3D angle (default isometric). Going back to 2D reverses it and restores the plan exactly where it was. Animation can be turned off in settings.
-- [ ] Selection, current level and look-at point are shared: selecting in one view highlights in the other; "Show in 3D" / "Show in plan" on a selected object frames it.
+- [x] One key (Tab) and the toolbar segmented control switch 2D / 3D / Wireframe; the choice is in `ViewState`.
+- [x] Animated transition (~0.5 s, ease-in-out): the 3D camera starts as an orthographic top view matching the plan view's framing (same look-at point and scale), then tilts to the last used 3D angle (default isometric). Going back to 2D reverses it and restores the plan exactly where it was. Animation can be turned off in settings. *(toggle `AnimateTransitions` in settings; orthographic blend is geometry-only in the software viewport)*
+- [x] Selection, current level and look-at point are shared: selecting in one view highlights in the other; "Show in 3D" / "Show in plan" on a selected object frames it. *(click a wall or pipe in 3D selects it and shows its level in the plan; no 'Show in 3D' command yet)*
 - [ ] Optional side-by-side mode (plan left, 3D right, synchronized through `ViewState`) for large screens.
 - [ ] Tools work in both views: the 3D view converts the pointer to mm on the current level's plane (or on the constrained axis for handles) and feeds the same Core tools.
-- [ ] Headless tests: when OpenGL isn't available, render a fallback (wireframe with Avalonia drawing) so screenshots still show something; test the camera math in Scene.
+- [x] Headless tests: when OpenGL isn't available, render a fallback (wireframe with Avalonia drawing) so screenshots still show something; test the camera math in Scene.
 
 **Validation**
 

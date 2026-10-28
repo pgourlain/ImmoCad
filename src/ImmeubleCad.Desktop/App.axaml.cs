@@ -47,6 +47,8 @@ public partial class App : Application
             var timer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(3) };
             timer.Tick += (_, _) => { try { if (vm.HasDocument && vm.History.IsDirty) Autosave.Save(vm.Building); } catch (Exception ex) { log.LogError(ex, "Autosave failed"); } };
             timer.Start();
+            if (Environment.GetEnvironmentVariable("IMMEUBLECAD_SMOKE3D") == "1")      // dev aid: open the sample in 3D, wait, quit; the log tells whether OpenGL worked
+                win.Opened += async (_, _) => { vm.OpenSampleCommand.Execute(null); vm.SetModeCommand.Execute("Solid"); await Task.Delay(3000); log.LogInformation("Smoke test: 3D shown for 3 s"); Log.Flush(); d.Shutdown(); };
             d.MainWindow = win;
         }
         base.OnFrameworkInitializationCompleted();

@@ -238,7 +238,9 @@ public class PlanView : Control
         e.Handled = true;
     }
 
-        public void CenterOn(PointMm c) => Offset = (Bounds.Width / 2 - c.X * Scale, Bounds.Height / 2 - c.Y * Scale);
+        /// <summary>The point at the centre of the viewport (mm): the look-at point shared with the 3D view.</summary>
+    public PointMm LookAtMm => ToMm(new Point(Bounds.Width / 2, Bounds.Height / 2));
+    public void CenterOn(PointMm c) => Offset = (Bounds.Width / 2 - c.X * Scale, Bounds.Height / 2 - c.Y * Scale);
 
     private static FormattedText Txt(string t, double size, IBrush b) => new(t, System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, size, b);
 

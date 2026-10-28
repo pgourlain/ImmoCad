@@ -141,3 +141,30 @@ public class CameraTransitionTests
         var mid = CameraTransition.At(a, b, 0.25); Assert.InRange(mid.OrthoBlend, 0.4, 0.6); Assert.Equal(b, CameraTransition.At(a, b, 0.01, animate: false));
     }
 }
+
+public class UnprojectTests
+{
+    [Theory] [InlineData(0.8, 0.5, 15.0)] [InlineData(-2.0, 0.1, 6.0)] [InlineData(3.0, 1.2, 30.0)]
+    public void Ray_through_a_projected_point_passes_through_it(double yaw, double pitch, double dist)
+    {
+        var c = new OrbitCamera { Yaw = yaw, Pitch = pitch, Distance = dist, Target = (2, 3, 1) };
+        var p = (X: 4.0, Y: -1.0, Z: 2.5); var (sx, sy, _) = c.Project(p.X, p.Y, p.Z);
+        var (o, d) = c.Unproject(sx, sy);
+        // distance from the point to the ray
+        double vx = p.X - o.X, vy = p.Y - o.Y, vz = p.Z - o.Z; var t = vx * d.X + vy * d.Y + vz * d.Z;
+        double qx = vx - d.X * t, qy = vy - d.Y * t, qz = vz - d.Z * t;
+        Assert.True(Math.Sqrt(qx * qx + qy * qy + qz * qz) < 1e-9); Assert.Equal(1, Math.Sqrt(d.X * d.X + d.Y * d.Y + d.Z * d.Z), 9);
+    }
+
+    [Fact] public void Picking_through_the_camera_hits_the_wall_under_the_pixel()
+    {
+        var wall = MeshBuilder.ExtrudeWall(new (int, int)[] { (0, 0), (4000, 0), (4000, 200), (0, 200) }, 0, 2700); wall.ComputeNormals();
+        var id = Guid.NewGuid(); var objs = new[] { new SceneObject(id, SceneKind.Wall, "w", wall, (1, 1, 1), 1) };
+        var c = new OrbitCamera { Yaw = 0.6, Pitch = 0.7, Distance = 12, Target = (2, 0.1, 1.35) };
+        var (sx, sy, _) = c.Project(2, 0.1, 2.7); var (o, d) = c.Unproject(sx, sy);                        // a point on top of the wall
+        var hit = SceneBuilder.Pick(objs, ((float)o.X, (float)o.Y, (float)o.Z), ((float)d.X, (float)d.Y, (float)d.Z));
+        Assert.Equal(id, hit!.Value.Id);
+        var (mx, my, _) = c.Project(9, 9, 0); var (o2, d2) = c.Unproject(mx, my);
+        Assert.Null(SceneBuilder.Pick(objs, ((float)o2.X, (float)o2.Y, (float)o2.Z), ((float)d2.X, (float)d2.Y, (float)d2.Z)));
+    }
+}

@@ -19,10 +19,12 @@ public sealed class AppLogProvider : ILoggerProvider
         _t = new Thread(Pump) { IsBackground = true, Name = "AppLog" }; _t.Start();
     }
 
+    /// <summary>Per-OS app-data folder; IMMEUBLECAD_DATA_DIR overrides it (tests never touch the user's real folder).</summary>
     public static string DefaultDir() =>
+        Environment.GetEnvironmentVariable("IMMEUBLECAD_DATA_DIR") is { Length: > 0 } over ? over :
         OperatingSystem.IsWindows() ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ImmeubleCad")
-        : OperatingSystem.IsMacOS() ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Personal), "Library", "Application Support", "ImmeubleCad")
-        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Personal), ".local", "share", "ImmeubleCad");
+        : OperatingSystem.IsMacOS() ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library", "Application Support", "ImmeubleCad")
+        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "share", "ImmeubleCad");
 
     /// <summary>Information by default; Debug with IMMEUBLECAD_LOG=debug.</summary>
     public static LogLevel LevelFromEnvironment() => string.Equals(Environment.GetEnvironmentVariable("IMMEUBLECAD_LOG"), "debug", StringComparison.OrdinalIgnoreCase) ? LogLevel.Debug : LogLevel.Information;
@@ -46,7 +48,7 @@ public sealed class AppLogProvider : ILoggerProvider
     {
         foreach (var line in _q.GetConsumingEnumerable())
         {
-            try { Roll(); File.AppendAllText(LogPath, line + Environment.NewLine, Encoding.UTF8); if (MirrorToStderr()) Console.Error.WriteLine(line); } catch { /* logging must never throw */ }
+            try { Roll(); File.AppendAllText(LogPath, line + Environment.NewLine, new UTF8Encoding(false)); if (MirrorToStderr()) Console.Error.WriteLine(line); } catch { /* logging must never throw */ }
             Interlocked.Decrement(ref _pending);
         }
     }

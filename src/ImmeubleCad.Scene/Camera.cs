@@ -26,4 +26,18 @@ public sealed class OrbitCamera
         var scale = 2.0 / Distance;
         return (sxn * scale / aspect, syn * scale, depth);
     }
+
+    /// <summary>
+    /// Inverse of <see cref="Project"/>: the ray through a normalized screen point (as returned by Project) in world metres.
+    /// The origin is pushed back along the view direction so that it lies in front of the whole scene.
+    /// </summary>
+    public ((double X, double Y, double Z) Origin, (double X, double Y, double Z) Dir) Unproject(double sx, double sy, double aspect = 1, double backoff = 1000)
+    {
+        var (cy, sn) = (Math.Cos(Yaw), Math.Sin(Yaw)); var (cp, sp) = (Math.Cos(Pitch), Math.Sin(Pitch));
+        var scale = 2.0 / Distance; double rx = sx * aspect / scale, up = sy / scale;
+        double ry = up * sp, dz = up * cp;                                   // point on the image plane (depth 0)
+        double wx = Target.X + rx * cy + ry * -sn, wy = Target.Y + rx * sn + ry * cy, wz = Target.Z + dz;
+        var dir = (-sn * cp, cy * cp, -sp);
+        return ((wx - dir.Item1 * backoff, wy - dir.Item2 * backoff, wz - dir.Item3 * backoff), dir);
+    }
 }

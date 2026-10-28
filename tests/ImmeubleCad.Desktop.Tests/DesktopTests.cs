@@ -18,6 +18,11 @@ public sealed class HeadlessFixture
     public HeadlessUnitTestSession Session => Shared.Value;
 }
 
+public static class TestInit
+{
+    [System.Runtime.CompilerServices.ModuleInitializer] public static void Init() { MainWindow.UseOpenGL = false; Environment.SetEnvironmentVariable("IMMEUBLECAD_DATA_DIR", Path.Combine(Path.GetTempPath(), "immeublecad-tests-" + Environment.ProcessId)); }   // headless tests draw 3D in software
+}
+
 public static class TestAppBuilder
 {
     public static AppBuilder BuildAvaloniaApp() => AppBuilder.Configure<App>().UseSkia().UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false });
@@ -78,7 +83,7 @@ public class DesktopTests
 
     [Fact] public Task Switch_to_3d_renders_and_back() => f.Session.Dispatch(() =>
     {
-        var vm = new MainViewModel(); var w = new MainWindow { DataContext = vm }; w.Show();
+        var vm = new MainViewModel(); vm.Settings.AnimateTransitions = false; var w = new MainWindow { DataContext = vm }; w.Show(); w.UpdateLayout();
         vm.SetModeCommand.Execute("Solid"); Assert.True(vm.Is3D);
         w.CaptureRenderedFrame()!.Save(Path.Combine(Shots(), "3d.png"));
         vm.SetModeCommand.Execute("Plan"); Assert.False(vm.Is3D); w.Close();
@@ -500,5 +505,58 @@ public class RoomToolsTests
         var dir = Path.Combine(AppContext.BaseDirectory, "screenshots"); Directory.CreateDirectory(dir);
         w.CaptureRenderedFrame()!.Save(Path.Combine(dir, "basement.png"));
         vm.ToggleCommonOnlyCommand.Execute(null); w.CaptureRenderedFrame(); w.Close();
+    }, CancellationToken.None);
+}
+
+
+public class ThreeDTests
+{
+    private readonly HeadlessFixture f = new();
+
+    [Fact] public Task Plan_to_3d_to_plan_ten_times_leaves_the_plan_exactly_where_it_was() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(); vm.Settings.AnimateTransitions = false; var w = new MainWindow { DataContext = vm, Width = 1280, Height = 820 }; w.Show(); w.UpdateLayout(); w.CaptureRenderedFrame();
+        var plan = w.FindControl<PlanView>("Plan")!; plan.Scale = 0.0731; plan.Offset = (123.5, -40.25); var (s0, o0) = (plan.Scale, plan.Offset);
+        for (var i = 0; i < 10; i++) { vm.SetModeCommand.Execute("Solid"); w.UpdateLayout(); vm.SetModeCommand.Execute("Plan"); w.UpdateLayout(); }
+        Assert.Equal(s0, plan.Scale); Assert.Equal(o0, plan.Offset); Assert.True(vm.IsPlan);
+    }, CancellationToken.None);
+
+    [Fact] public Task Animated_transition_starts_on_the_plan_framing_and_finishes_on_the_3d_angle_then_returns() => f.Session.Dispatch(async () =>
+    {
+        var vm = new MainViewModel(); var w = new MainWindow { DataContext = vm, Width = 1280, Height = 820 }; w.Show(); w.UpdateLayout(); w.CaptureRenderedFrame();
+        var c = w.View3D.Controller; vm.SetModeCommand.Execute("Solid"); Assert.True(c.IsAnimating); Assert.True(vm.Is3D);
+        Assert.InRange(c.Camera.Pitch, 1.4, 1.58);                                       // starts as a top view
+        await Task.Delay(900); Assert.False(c.IsAnimating); Assert.InRange(c.Camera.Pitch, 0.1, 0.6);   // settled on the 3D angle
+        vm.SetModeCommand.Execute("Plan"); Assert.True(c.IsAnimating); Assert.True(vm.Is3D);              // still showing 3D while it tilts back
+        await Task.Delay(900); Assert.True(vm.IsPlan); Assert.False(c.IsAnimating);
+    }, CancellationToken.None);
+
+    [Fact] public Task Modes_filters_xray_and_cut_and_screenshots() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(); vm.Settings.AnimateTransitions = false; var w = new MainWindow { DataContext = vm, Width = 1280, Height = 820 }; w.Show(); w.UpdateLayout();
+        var dir = Path.Combine(AppContext.BaseDirectory, "screenshots"); Directory.CreateDirectory(dir);
+        vm.SelectLevelCommand.Execute(vm.Building.Levels[1].Id); vm.SetModeCommand.Execute("Solid"); var c = w.View3D.Controller;
+        Assert.True(c.Objects.Count > 0, $"objects={c.Objects.Count} level={vm.CurrentLevel?.Name} mode={vm.Mode} cut={c.CutAboveCurrent} filter={c.Filter} kinds={string.Join(",", c.Objects.GroupBy(o => o.Kind).Select(g => g.Key + "=" + g.Count()))} levels={vm.Building.Levels.Count}");
+        Assert.True(c.Objects.Count(o => o.Kind == ImmeubleCad.Scene.SceneKind.Slab) == 2, $"kinds={string.Join(",", c.Objects.GroupBy(o => o.Kind).Select(g => g.Key + "=" + g.Count()))} lvl={vm.CurrentLevel?.Name} idx={vm.Building.Levels.FindIndex(l => l.Id == vm.CurrentLevelId)}");   // cut above R+1: RDC + R+1
+        w.CaptureRenderedFrame()!.Save(Path.Combine(dir, "3d-solid.png"));
+        vm.ToggleXRayCommand.Execute(null); Assert.All(c.Objects.Where(o => o.Kind == ImmeubleCad.Scene.SceneKind.Wall), o => Assert.True(o.Alpha < 0.5f)); w.CaptureRenderedFrame()!.Save(Path.Combine(dir, "3d-xray.png"));
+        vm.ToggleCutCommand.Execute(null); Assert.Equal(3, c.Objects.Count(o => o.Kind == ImmeubleCad.Scene.SceneKind.Slab));
+        vm.CycleLevelFilterCommand.Execute(null); vm.CycleLevelFilterCommand.Execute(null); Assert.Single(c.Objects, o => o.Kind == ImmeubleCad.Scene.SceneKind.Slab);   // current level only
+        vm.SetModeCommand.Execute("Wireframe"); Assert.True(c.Wireframe); w.CaptureRenderedFrame()!.Save(Path.Combine(dir, "3d-wire.png"));
+        vm.SelectLevelCommand.Execute(vm.Building.Levels[2].Id); Assert.True(c.Camera.Target.Z > 5.4);         // the level bar moves the camera target vertically
+    }, CancellationToken.None);
+
+    [Fact] public Task Clicking_a_wall_in_3d_selects_it_and_shows_its_level_in_the_plan() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(); vm.Settings.AnimateTransitions = false; var w = new MainWindow { DataContext = vm, Width = 1000, Height = 800 }; w.Show(); w.UpdateLayout();
+        vm.SelectLevelCommand.Execute(vm.Building.Levels[2].Id); vm.SetModeCommand.Execute("Solid"); w.UpdateLayout(); w.CaptureRenderedFrame();
+        var c = w.View3D.Controller; var target = vm.Building.Levels[0].Walls[0];                       // a wall of the RDC, seen from the top-right
+        var m = c.Objects.First(o => o.Id == target.Id).Mesh; var (mx, my, mz) = ((m.Min().X + m.Max().X) / 2, (m.Min().Y + m.Max().Y) / 2, m.Max().Z);
+        var half = Math.Min(w.View3D.Control.Bounds.Width, w.View3D.Control.Bounds.Height) / 2; var (px, py, _) = c.Camera.Project(mx, my, mz);
+        var screen = new Avalonia.Point(w.View3D.Control.Bounds.Width / 2 + px * half, w.View3D.Control.Bounds.Height / 2 - py * half);
+        c.Down(screen, false); c.Up(screen, vm, w.View3D.Control.Bounds.Width, w.View3D.Control.Bounds.Height);
+        Assert.Contains(vm.SelectedWalls, id => vm.Building.Levels.SelectMany(l => l.Walls).Any(x => x.Id == id));
+        Assert.Equal(vm.Building.Levels.First(l => l.Walls.Any(x => vm.SelectedWalls.Contains(x.Id))).Id, vm.CurrentLevelId);
+        vm.SetModeCommand.Execute("Plan"); Assert.True(vm.IsPlan);
     }, CancellationToken.None);
 }
