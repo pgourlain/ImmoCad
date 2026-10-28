@@ -100,7 +100,7 @@ public static class EquipmentCatalog
     private static IReadOnlyList<CatalogEntry> LoadEmbedded()
     {
         var asm = typeof(EquipmentCatalog).Assembly; var list = new List<CatalogEntry>();
-        foreach (var name in asm.GetManifestResourceNames().Where(n => n.Contains(".catalog.") && n.EndsWith(".json")).OrderBy(n => n, StringComparer.Ordinal))
+        foreach (var name in asm.GetManifestResourceNames().Where(n => n.StartsWith("catalog/") && n.EndsWith(".json")).OrderBy(n => n, StringComparer.Ordinal))
         {
             using var s = asm.GetManifestResourceStream(name)!;
             list.AddRange((JsonSerializer.Deserialize(s, CatalogJsonContext.Default.ListCatalogEntryDto) ?? new()).Select(d => new CatalogEntry(d)));
