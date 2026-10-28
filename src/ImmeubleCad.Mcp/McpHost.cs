@@ -34,6 +34,29 @@ public sealed class BuildingTools(McpSession s)
         return n.Id.ToString();
     }
 
+    [McpServerTool, Description("Add a wall to a level from a rectangle (mm).")]
+    public string AddWall(string levelId, int x0, int y0, int x1, int y1) =>
+        s.Actions.AddWall(Guid.Parse(levelId), [new(x0, y0), new(x1, y0), new(x1, y1), new(x0, y1)]).Id.ToString();
+
+    [McpServerTool, Description("Add a pipe run through a list of 'x,y,z' points (mm). Returns the network id.")]
+    public string AddPipeRun(string type, string[] points, int diameterMm = 20)
+    {
+        var pts = points.Select(p => p.Split(',').Select(int.Parse).ToArray()).Select(a => new PointMm3(a[0], a[1], a[2])).ToList();
+        var n = s.Actions.AddNetwork("Run", Enum.Parse<NetworkType>(type, true));
+        s.Actions.AddPipeRun(n.Id, pts, diameterMm);
+        return n.Id.ToString();
+    }
+
+    [McpServerTool, Description("Export the building. format: obj, dxf, freecad, ifc. Writes to path and returns it.")]
+    public string Export(string format, string path)
+    {
+        var e = ImmeubleCad.Core.Export.Exporters.All.FirstOrDefault(x => x.Id == format) ?? throw new ArgumentException("unknown format " + format);
+        File.WriteAllText(path, e.Export(s.Building)); return path;
+    }
+
+    [McpServerTool, Description("Save the building to a .immeuble file.")]
+    public string Save(string path) { ImmeubleCad.Core.IO.BuildingFile.Save(s.Building, path); s.History.MarkClean(); return path; }
+
     [McpServerTool, Description("Undo last action.")]
     public string Undo() { s.History.Undo(s.Building); return "ok"; }
 
