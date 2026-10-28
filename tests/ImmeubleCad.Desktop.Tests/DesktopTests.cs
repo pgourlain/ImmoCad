@@ -159,3 +159,33 @@ public class AppLogTests
         Directory.Delete(dir, true);
     }
 }
+
+public class AlignUiTests
+{
+    private readonly HeadlessFixture f = new();
+
+    [Fact] public Task Align_tool_pairs_residuals_apply_and_undo() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(); vm.SelectLevelCommand.Execute(vm.Building.Levels[1].Id);   // R+1, ghost = RDC
+        vm.SetToolCommand.Execute("Align"); Assert.True(vm.IsAlignTool);
+        var before = vm.CurrentLevel!.Walls[0].Footprint[0]; var steps = vm.History.Items.Count;
+        // the upper level is shifted by (+100, +60) mm compared to the one below: three corner pairs
+        vm.AlignClick(100, 60); vm.AlignClick(0, 0);
+        vm.AlignClick(8100, 60); vm.AlignClick(8000, 0);
+        Assert.NotNull(vm.AlignResiduals); Assert.All(vm.AlignResiduals!, r => Assert.True(r < 1));
+        vm.AlignClick(100, 6060); vm.AlignClick(0, 6000);
+        Assert.Equal(3, vm.AlignPairs.Count);
+        Assert.True(vm.AlignApply());
+        Assert.Equal(steps + 1, vm.History.Items.Count);
+        Assert.Equal(new(before.X - 100, before.Y - 60), vm.CurrentLevel!.Walls[0].Footprint[0]);   // walls moved with the plan
+        vm.UndoCommand.Execute(null); Assert.Equal(before, vm.CurrentLevel!.Walls[0].Footprint[0]);
+    }, CancellationToken.None);
+
+    [Fact] public Task Align_collinear_points_are_rejected_without_changing_the_model() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(); vm.SelectLevelCommand.Execute(vm.Building.Levels[1].Id); vm.SetToolCommand.Execute("Align");
+        var steps = vm.History.Items.Count;
+        foreach (var (a, b) in new[] { (0.0, 0.0), (1000.0, 1000.0), (2000.0, 2000.0) }) { vm.AlignClick(a, b); vm.AlignClick(a, b); }
+        Assert.False(vm.AlignApply()); Assert.Equal(steps, vm.History.Items.Count);
+    }, CancellationToken.None);
+}

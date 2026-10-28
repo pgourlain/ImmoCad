@@ -70,6 +70,7 @@ public class PlanView : Control
         if (props.IsMiddleButtonPressed) { _pan = p; return; }
         if (Vm is not { } vm) return;
         if (props.IsRightButtonPressed) { DrawTool?.Cancel(); _gesture = Gesture.None; InvalidateVisual(); return; }
+        if (vm.IsAlignTool) { var m = ToMm(p); vm.AlignClick(m.X, m.Y); InvalidateVisual(); return; }
         if (vm.IsDrawTool) { DrawTool ??= new DrawChainTool(vm.CommitWalls); DrawTool.Down(TP(e)); e.Pointer.Capture(this); InvalidateVisual(); return; }
 
         _start = _now = p; _startMm = ToMm(p); _delta = (0, 0); _addToSelection = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
@@ -124,6 +125,11 @@ public class PlanView : Control
     protected override void OnKeyDown(KeyEventArgs e)
     {
         if (Vm is not { } vm) return;
+        if (vm.IsAlignTool)
+        {
+            if (e.Key == Key.Enter) vm.AlignApply(); else if (e.Key == Key.Back) vm.AlignUndoPair(); else if (e.Key == Key.Escape) { vm.AlignCancel(); vm.SetToolCommand.Execute("Select"); } else return;
+            InvalidateVisual(); e.Handled = true; return;
+        }
         if (DrawTool != null && vm.IsDrawTool)
         {
             if (e.Key == Key.Enter) DrawTool.Finish(); else if (e.Key == Key.Back) DrawTool.Backspace(); else if (e.Key == Key.Escape) { DrawTool.Cancel(); vm.SetToolCommand.Execute("Select"); }
@@ -180,6 +186,19 @@ public class PlanView : Control
                 var len = Math.Sqrt(Math.Pow(pv.X - a.X, 2) + Math.Pow(pv.Y - a.Y, 2)) / 1000;
                 ctx.DrawText(new FormattedText($"{len:0.00} m", System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 12, Brushes.OrangeRed), ToScreen(pv) + new Point(8, -16));
             }
+        }
+        if (Vm.IsAlignTool)
+        {
+            for (var i = 0; i < Vm.AlignPairs.Count; i++)
+            {
+                var (pf, pt) = Vm.AlignPairs[i]; var bad = Vm.AlignResiduals != null && Vm.AlignResiduals[i] > 50;
+                var pen = new Pen(bad ? Brushes.Red : Brushes.LimeGreen, 2);
+                var a = ToScreen(new PointMm((int)pf.X, (int)pf.Y)); var b2 = ToScreen(new PointMm((int)pt.X, (int)pt.Y));
+                ctx.DrawLine(pen, a, b2); ctx.DrawEllipse(Brushes.Orange, null, a, 5, 5); ctx.DrawEllipse(Brushes.DodgerBlue, null, b2, 5, 5);
+                if (Vm.AlignResiduals != null)
+                    ctx.DrawText(new FormattedText($"{Vm.AlignResiduals[i]:0} mm", System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 12, bad ? Brushes.Red : Brushes.ForestGreen), b2 + new Point(8, -14));
+            }
+            if (Vm.AlignPending is { } pd) ctx.DrawEllipse(Brushes.Orange, new Pen(Brushes.White, 2), ToScreen(new PointMm((int)pd.X, (int)pd.Y)), 6, 6);
         }
         var label = new FormattedText($"{l.Name}  ·  {l.AltitudeMm / 1000.0:0.0} m", System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 14, dark ? Brushes.Gainsboro : Brushes.DimGray);
         ctx.DrawText(label, new Point(12, 8));

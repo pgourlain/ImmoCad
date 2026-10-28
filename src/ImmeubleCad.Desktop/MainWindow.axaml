@@ -59,6 +59,7 @@
       <StackPanel>
         <ToggleButton Classes="tool" Content="↖" ToolTip.Tip="Sélection / déplacement" IsChecked="{Binding IsSelectTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Select" />
         <ToggleButton Classes="tool" Content="▭" ToolTip.Tip="Dessiner un mur" IsChecked="{Binding IsDrawTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="DrawWall" />
+        <ToggleButton Classes="tool" Content="⌖" ToolTip.Tip="Aligner sur le niveau du dessous (par points)" IsChecked="{Binding IsAlignTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Align" />
         <Separator Margin="0,6" />
         <Button Classes="tool" Content="⤒" ToolTip.Tip="Déplacer la sélection à l'étage au-dessus (Ctrl+PgUp)" Command="{Binding MoveSelectionUpCommand}" />
         <Button Classes="tool" Content="⤓" ToolTip.Tip="Déplacer la sélection à l'étage en dessous (Ctrl+PgDn)" Command="{Binding MoveSelectionDownCommand}" />

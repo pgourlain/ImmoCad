@@ -10,7 +10,7 @@ using ImmeubleCad.Core.Model;
 namespace ImmeubleCad.Desktop;
 
 public enum ViewMode { Plan, Solid, Wireframe }
-public enum ToolKind { Select, DrawWall }
+public enum ToolKind { Select, DrawWall, Align }
 
 /// <summary>One button of the level bar.</summary>
 public sealed record LevelItem(Guid Id, string Name, string Altitude, bool IsCurrent, int WallCount);
@@ -31,6 +31,33 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _status = "Prêt";
     [ObservableProperty] private string _hint = "Cliquez un mur pour le sélectionner, glissez pour déplacer.";
     public int WallThicknessMm { get; set; } = 200;
+
+    // ---- Align with the level below: pairs (point on this level → same point on the level below) ----
+    public List<((double X, double Y) From, (double X, double Y) To)> AlignPairs { get; } = new();
+    public (double X, double Y)? AlignPending { get; private set; }
+    public double[]? AlignResiduals { get; private set; }
+    public bool AlignMoveWalls { get; set; } = true;
+
+    public void AlignClick(double x, double y)
+    {
+        if (AlignPending is { } from) { AlignPairs.Add((from, (x, y))); AlignPending = null; UpdateAlignPreview(); }
+        else AlignPending = (x, y);
+        Hint = AlignPending != null ? "Cliquez le MÊME point sur le niveau du dessous (en bleu)" : AlignPairs.Count < 2 ? "Cliquez un point de ce niveau (au moins 2 paires)" : "Entrée pour appliquer — ≥3 paires = étirement X/Y indépendant";
+        Changed?.Invoke();
+    }
+    private void UpdateAlignPreview() => AlignResiduals = ImmeubleCad.Core.Geometry.ImageFit.Fit(AlignPairs) is { } f ? ImmeubleCad.Core.Geometry.ImageFit.Residuals(f, AlignPairs) : null;
+
+    public void AlignUndoPair() { if (AlignPairs.Count > 0) AlignPairs.RemoveAt(AlignPairs.Count - 1); AlignPending = null; UpdateAlignPreview(); Changed?.Invoke(); }
+    public void AlignCancel() { AlignPairs.Clear(); AlignPending = null; AlignResiduals = null; Changed?.Invoke(); }
+
+    /// <summary>Applies the fit as one history step; returns false when degenerate (e.g. collinear points).</summary>
+    public bool AlignApply()
+    {
+        if (CurrentLevel is not { } l || AlignPairs.Count < 2) return false;
+        var res = Actions.AlignLevel(l.Id, AlignPairs.ToList(), AlignMoveWalls);
+        if (res == null) { Status = "Points alignés : choisissez des points non colinéaires"; return false; }
+        Status = $"Aligné — erreur max {res.Max():0} mm"; AlignCancel(); Refresh(); return true;
+    }
     public string? FilePath { get; private set; }
     public event Action? Changed;
 
@@ -39,6 +66,7 @@ public partial class MainViewModel : ObservableObject
     public bool Is3D => Mode != ViewMode.Plan;
     public bool IsSelectTool => Tool == ToolKind.Select;
     public bool IsDrawTool => Tool == ToolKind.DrawWall;
+    public bool IsAlignTool => Tool == ToolKind.Align;
     public string SelectionText => SelectedWalls.Count == 0 ? "Aucune sélection" : $"{SelectedWalls.Count} mur(s) sélectionné(s)";
 
     public MainViewModel() { Actions = null!; Load(SampleBuilding.Create()); }
@@ -52,8 +80,8 @@ public partial class MainViewModel : ObservableObject
     partial void OnModeChanged(ViewMode value) => OnPropertyChanged(nameof(Is3D));
     partial void OnToolChanged(ToolKind value)
     {
-        OnPropertyChanged(nameof(IsSelectTool)); OnPropertyChanged(nameof(IsDrawTool));
-        Hint = value == ToolKind.DrawWall ? "Cliquez les points du mur — Entrée pour finir — Échap pour annuler" : "Cliquez un mur pour le sélectionner, glissez pour déplacer.";
+        OnPropertyChanged(nameof(IsSelectTool)); OnPropertyChanged(nameof(IsDrawTool)); OnPropertyChanged(nameof(IsAlignTool));
+        Hint = value switch { ToolKind.DrawWall => "Cliquez les points du mur — Entrée pour finir — Échap pour annuler", ToolKind.Align => "Cliquez un point de ce niveau, puis le même point sur le niveau du dessous (au moins 2 paires)", _ => "Cliquez un mur pour le sélectionner, glissez pour déplacer." }; if (value != ToolKind.Align) AlignCancel();
         Changed?.Invoke();
     }
 
