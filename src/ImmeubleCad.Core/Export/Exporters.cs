@@ -35,7 +35,11 @@ public sealed class ObjExporter : IBuildingExporter
         foreach (var l in b.Levels)
         {
             var m = new Mesh();
-            foreach (var w in l.Walls) MeshBuilder.ExtrudeWall(w.Footprint.Select(p => (p.X, p.Y)).ToList(), l.AltitudeMm, F.WallHeight(l, w), m);
+            foreach (var w in l.Walls)
+            {
+                MeshBuilder.ExtrudeWall(w.Footprint.Select(p => (p.X, p.Y)).ToList(), l.AltitudeMm, F.WallHeight(l, w), m);
+                foreach (var h in w.Holes) MeshBuilder.ExtrudeSides(h.Select(p => (p.X, p.Y)).ToList(), l.AltitudeMm, F.WallHeight(l, w), m);
+            }
             if (m.VertexCount > 0) Write("level_" + l.Name, m);
         }
         foreach (var n in b.Networks)
@@ -161,7 +165,8 @@ public static class SvgExporter
         int x0 = pts.Min(p => p.X), x1 = pts.Max(p => p.X), y0 = pts.Min(p => p.Y), y1 = pts.Max(p => p.Y);
         var sb = new StringBuilder($"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"{x0} {-y1} {x1 - x0} {y1 - y0}\"><title>{System.Net.WebUtility.HtmlEncode(l.Name)}</title>");
         foreach (var w in l.Walls)
-            sb.Append("<polygon fill=\"#444\" stroke=\"#000\" points=\"").Append(string.Join(" ", w.Footprint.Select(p => $"{p.X},{-p.Y}"))).Append("\"/>");
+            sb.Append("<path fill-rule=\"evenodd\" fill=\"#444\" stroke=\"#000\" d=\"")
+              .Append(string.Join(" ", new[] { w.Footprint }.Concat(w.Holes).Select(r => "M" + string.Join(" L", r.Select(p => $"{p.X},{-p.Y}")) + " Z"))).Append("\"/>");
         return sb.Append("</svg>").ToString();
     }
 }

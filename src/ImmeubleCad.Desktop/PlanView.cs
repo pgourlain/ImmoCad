@@ -127,9 +127,16 @@ public class PlanView : Control
             var g = new StreamGeometry();
             using (var c = g.Open())
             {
+                c.SetFillRule(FillRule.EvenOdd);
                 c.BeginFigure(ToScreen(w.Footprint[0]), true);
                 foreach (var p in w.Footprint.Skip(1)) c.LineTo(ToScreen(p));
                 c.EndFigure(true);
+                foreach (var hole in w.Holes.Where(h => h.Count >= 3))
+                {
+                    c.BeginFigure(ToScreen(hole[0]), true);
+                    foreach (var p in hole.Skip(1)) c.LineTo(ToScreen(p));
+                    c.EndFigure(true);
+                }
             }
             ctx.DrawGeometry(fill, pen, g);
         }

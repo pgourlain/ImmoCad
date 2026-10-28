@@ -35,6 +35,15 @@ public static class MeshBuilder
         return m;
     }
 
+    /// <summary>Inner faces of a hole (room) of a wall group: sides only, no caps.</summary>
+    public static Mesh ExtrudeSides(IReadOnlyList<(int X, int Y)> ring, int z0Mm, int heightMm, Mesh? into = null)
+    {
+        var m = into ?? new Mesh(); const float k = 0.001f; var n = ring.Count; var b = new int[n]; var t = new int[n];
+        for (var i = 0; i < n; i++) { b[i] = m.Add(ring[i].X * k, ring[i].Y * k, z0Mm * k); t[i] = m.Add(ring[i].X * k, ring[i].Y * k, (z0Mm + heightMm) * k); }
+        for (var i = 0; i < n; i++) { var j = (i + 1) % n; m.Quad(b[i], b[j], t[j], t[i]); }
+        return m;
+    }
+
     /// <summary>Box between two points along an axis (pipe approximated by a square section), mm.</summary>
     public static Mesh Pipe((int X, int Y, int Z) a, (int X, int Y, int Z) b, int diameterMm, Mesh? into = null)
     {

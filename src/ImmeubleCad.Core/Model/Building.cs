@@ -24,6 +24,8 @@ public sealed class Wall
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public List<PointMm> Footprint { get; set; } = new();
+    /// <summary>Rooms enclosed by this wall group (even-odd).</summary>
+    public List<List<PointMm>> Holes { get; set; } = new();
     public int? HeightMm { get; set; }
     public string? Label { get; set; }
     public Stability Stability { get; set; } = Stability.Common;

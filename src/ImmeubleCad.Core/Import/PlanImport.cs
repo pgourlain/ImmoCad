@@ -5,11 +5,11 @@ using ImmeubleCad.Plan;
 
 namespace ImmeubleCad.Core.Import;
 
-public interface IWallDetector { List<List<PointPx>> Detect(GrayImage image, WallDetectionOptions options, CancellationToken ct); }
+public interface IWallDetector { List<WallOutline> Detect(GrayImage image, WallDetectionOptions options, CancellationToken ct); }
 
 public sealed class PlanWallDetectorAdapter : IWallDetector
 {
-    public List<List<PointPx>> Detect(GrayImage image, WallDetectionOptions options, CancellationToken ct) => Plan.PlanWallDetector.Detect(image, options, ct);
+    public List<WallOutline> Detect(GrayImage image, WallDetectionOptions options, CancellationToken ct) => Plan.PlanWallDetector.Detect(image, options, ct);
 }
 
 /// <summary>Calibration: pixels per mm, separately on X and Y (scans are often stretched).</summary>
@@ -38,12 +38,14 @@ public static class PlanImport
 
     /// <summary>Whole import = one history step (BuildingActions.ImportWalls).</summary>
     public static int Import(BuildingActions actions, Guid levelId, byte[] imageBytes, Calibration cal, IWallDetector detector,
-        WallDetectionOptions? options = null, bool straighten = true, CancellationToken ct = default)
+        WallDetectionOptions? options = null, bool straighten = false, CancellationToken ct = default)
     {
         var img = Decode(imageBytes);
         var found = detector.Detect(img, options ?? new WallDetectionOptions(), ct);
-        var outlines = found.Select(o => straighten ? WallStraightener.Straighten(o, 3) : o).Select(o => ToMm(o, cal, img.Height)).ToList();
-        actions.ImportWalls(levelId, outlines);
-        return outlines.Count;
+        List<PointPx> S(List<PointPx> o) => straighten ? WallStraightener.Straighten(o, 3) : o;
+        var shapes = found.Select(w => ((IEnumerable<PointMm>)ToMm(S(w.Outline), cal, img.Height),
+            (IEnumerable<IEnumerable<PointMm>>)w.Holes.Select(h => (IEnumerable<PointMm>)ToMm(S(h), cal, img.Height)).ToList())).ToList();
+        actions.ImportWallShapes(levelId, shapes);
+        return shapes.Count;
     }
 }

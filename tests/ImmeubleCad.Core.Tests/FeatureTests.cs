@@ -68,7 +68,7 @@ public class FeatureTests
         Assert.Contains("makeCylinder", new FreeCadMacroExporter().Export(b));
         var ifc = new IfcExporter().Export(b);
         Assert.Contains("IFCBUILDINGSTOREY", ifc); Assert.Contains("IFCWALL", ifc); Assert.Contains("IFCPIPESEGMENT", ifc);
-        Assert.Contains("<polygon", SvgExporter.Export(b.Levels[0]));
+        Assert.Contains("<path", SvgExporter.Export(b.Levels[0]));
     }
 
     [Fact] public void Snapper_prefers_corner_then_grid()

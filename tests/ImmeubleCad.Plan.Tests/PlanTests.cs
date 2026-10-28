@@ -5,24 +5,43 @@ namespace ImmeubleCad.Plan.Tests;
 
 public class PlanTests
 {
+    /// <summary>100×100 plan: a room of walls 6 px thick (outer 10..90), plus a 1-px dimension line and a speck (must be dropped).</summary>
     private static GrayImage Synthetic()
     {
         var px = Enumerable.Repeat((byte)255, 100 * 100).ToArray();
-        for (var y = 10; y < 14; y++) for (var x = 10; x < 90; x++) px[y * 100 + x] = 0;
-        for (var y = 10; y < 90; y++) for (var x = 10; x < 14; x++) px[y * 100 + x] = 0;
-        px[50 * 100 + 50] = 0; // speck
+        for (var y = 10; y < 90; y++)
+            for (var x = 10; x < 90; x++)
+                if (x < 16 || x >= 84 || y < 16 || y >= 84) px[y * 100 + x] = 0;
+        for (var x = 20; x < 80; x++) px[50 * 100 + x] = 0;   // thin line inside the room
+        px[2 * 100 + 2] = 0;                                   // speck
         return new(px, 100, 100);
     }
 
-    [Fact] public void Detects_connected_wall_and_drops_speck()
+    [Fact] public void Detects_room_as_outline_with_one_hole_and_drops_thin_strokes()
     {
-        var r = PlanWallDetector.Detect(Synthetic(), new WallDetectionOptions());
-        Assert.Single(r);
-        Assert.Equal(new PointPx(10, 10), r[0][0]);
-        Assert.Equal(new PointPx(90, 90), r[0][2]);
+        var r = PlanWallDetector.Detect(Synthetic(), new WallDetectionOptions(MinThickness: 4));
+        var shape = Assert.Single(r);
+        Assert.Equal(4, shape.Outline.Count);
+        Assert.Equal(new PointPx(10, 10), shape.Outline.OrderBy(p => p.X + p.Y).First());
+        Assert.Equal(new PointPx(90, 90), shape.Outline.OrderBy(p => p.X + p.Y).Last());
+        var hole = Assert.Single(shape.Holes);
+        Assert.Equal(4, hole.Count);
+        Assert.Equal(16, hole.Min(p => p.X)); Assert.Equal(84, hole.Max(p => p.X));
     }
 
-    [Fact] public void Suggests_thickness() => Assert.Equal(4, LineExtraction.SuggestThickness(Synthetic(), 100) is var t && t > 0 ? 4 : 0);
+    [Fact] public void Detection_is_deterministic_with_pinned_result()
+    {
+        string Fp(List<WallOutline> r) => string.Join("|", r.Select(w => string.Join(";", w.Outline.Select(p => $"{p.X},{p.Y}")) + "#" + string.Join("/", w.Holes.Select(h => string.Join(";", h.Select(p => $"{p.X},{p.Y}"))))));
+        var a = Fp(PlanWallDetector.Detect(Synthetic(), new WallDetectionOptions(MinThickness: 4)));
+        Assert.Equal(a, Fp(PlanWallDetector.Detect(Synthetic(), new WallDetectionOptions(MinThickness: 4))));
+        Assert.Equal("10,10;90,10;90,90;10,90#16,16;16,84;84,84;84,16", a.Replace(" ", ""), ignoreCase: true);
+    }
+
+    [Fact] public void Suggests_thickness_close_to_wall_width()
+    {
+        var t = PlanWallDetector.SuggestThickness(Synthetic());
+        Assert.InRange(t, 2, 6);
+    }
 
     [Fact] public void Straightens_noisy_rectangle_to_four_points()
     {

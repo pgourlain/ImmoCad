@@ -71,6 +71,14 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
             return levelId;
         }, i => i);
 
+    public void ImportWallShapes(Guid levelId, IEnumerable<(IEnumerable<PointMm> Outline, IEnumerable<IEnumerable<PointMm>> Holes)> shapes) =>
+        Edit("Import walls", BuildingEventKind.WallAdded, () =>
+        {
+            var l = Find(levelId);
+            foreach (var (o, holes) in shapes) l.Walls.Add(new Wall { Footprint = o.ToList(), Holes = holes.Select(h => h.ToList()).ToList() });
+            return levelId;
+        }, i => i);
+
     public void DeleteWall(Guid levelId, Guid wallId) =>
         Edit("Delete wall", BuildingEventKind.WallRemoved, () => { Find(levelId).Walls.RemoveAll(w => w.Id == wallId); return wallId; }, i => i);
 

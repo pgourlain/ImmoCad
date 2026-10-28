@@ -57,7 +57,11 @@ public class Viewport3D : Control
         foreach (var l in b.Levels.Where(l => l.AltitudeMm < maxZ))
         {
             var m = new Mesh();
-            foreach (var w in l.Walls) MeshBuilder.ExtrudeWall(w.Footprint.Select(p => (p.X, p.Y)).ToList(), l.AltitudeMm, w.HeightMm ?? l.HeightMm, m);
+            foreach (var w in l.Walls)
+            {
+                MeshBuilder.ExtrudeWall(w.Footprint.Select(p => (p.X, p.Y)).ToList(), l.AltitudeMm, w.HeightMm ?? l.HeightMm, m);
+                foreach (var h in w.Holes) MeshBuilder.ExtrudeSides(h.Select(p => (p.X, p.Y)).ToList(), l.AltitudeMm, w.HeightMm ?? l.HeightMm, m);
+            }
             Draw(m, wallPen);
         }
         foreach (var n in b.Networks.Where(n => n.Visible))
