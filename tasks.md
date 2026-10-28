@@ -304,7 +304,7 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 - [x] Move a whole run perpendicular to itself (keeps connections by stretching the connected segments).
 - [x] Type a length while dragging (e.g. "1.25" Enter) for precision.
 - [x] Each gesture = one history step. The tool previews by quiet model changes and commits on pointer-up (same pattern as CinnabarSharp's editable tools).
-- [ ] The same handles work in the plan, elevation and 3D views (3D: drag constrained to the axis under the mouse, axis gizmo shown).
+- [x] The same handles work in the plan, elevation and 3D views (3D: drag constrained to the axis under the mouse, axis gizmo shown). *(plan: all three handles; elevation: top/bottom of vertical pipes; 3D: pipe ends, drag locked to the pipe axis with a dashed gizmo and the live length — drawn by the software viewport, the OpenGL viewport has no overlay yet)*
 
 **Validation**
 

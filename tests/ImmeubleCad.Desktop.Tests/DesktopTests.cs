@@ -1062,3 +1062,25 @@ public class SideBySideAnd3dToolsTests
         Assert.Contains("Gaine", vm.Networks.First(n => n.Id == riser.Id).Where); Assert.StartsWith("passe par", vm.Networks.First(n => n.Id == riser.Id).Where);
     }, CancellationToken.None);
 }
+
+public class Handles3dTests
+{
+    private readonly HeadlessFixture f = new();
+
+    [Fact] public Task Dragging_a_pipe_end_in_3d_stays_on_the_pipe_axis_snaps_and_is_one_undoable_step() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(); vm.Settings.AnimateTransitions = false; var w = new MainWindow { DataContext = vm, Width = 1100, Height = 850 }; w.Show(); w.UpdateLayout();
+        vm.SetToolCommand.Execute("DrawPipe"); vm.PipeType = ImmeubleCad.Core.Model.NetworkType.ColdWater; vm.PipeElevation = 2400; vm.CommitPipe([new(1000, 3000), new(3000, 3000)]); vm.SetToolCommand.Execute("Select");
+        var net = vm.Building.Networks[^1]; var seg = net.Segments[0]; vm.SelectSegment(net.Id, seg.Id); vm.SetModeCommand.Execute("Solid"); w.UpdateLayout(); w.CaptureRenderedFrame();
+        var c = w.View3D.Controller; var ctl = w.View3D.Control; c.Size(ctl.Bounds.Width, ctl.Bounds.Height); var handles = c.Handles!(); Assert.Equal(2, handles.Count(h => h.NetworkId == net.Id)); var end = handles.First(h => h.End.X > 2.5);   // both free ends get a handle: take the right one
+        Avalonia.Point Scr((double X, double Y, double Z) p) { var half = Math.Min(ctl.Bounds.Width, ctl.Bounds.Height) / 2; var (px, py, _) = c.Camera.Project(p.X, p.Y, p.Z); return new(ctl.Bounds.Width / 2 + px * half, ctl.Bounds.Height / 2 - py * half); }
+        var steps = vm.History.Items.Count; var from = Scr(end.End); var target = (X: end.End.X + 1.5, Y: end.End.Y + 0.4, Z: end.End.Z);              // the mouse goes 1.5 m along and 0.4 m off the pipe
+        c.Down(from, false); Assert.NotNull(c.ActiveHandle); c.Move(Scr((end.End.X + 0.7, end.End.Y, end.End.Z))); c.Move(Scr(target));
+        var preview = c.HandlePreview!.Value; Assert.True(Math.Abs(preview.Y - end.End.Y) < 0.05 && Math.Abs(preview.Z - end.End.Z) < 0.05, $"left the axis: {preview}");   // constrained to the axis
+        w.CaptureRenderedFrame()!.Save(Path.Combine(AppContext.BaseDirectory, "screenshots", "handle3d.png"));
+        c.Up(Scr(target), vm, ctl.Bounds.Width, ctl.Bounds.Height);
+        Assert.Equal(steps + 1, vm.History.Items.Count); var moved = vm.Building.Networks[^1].Nodes.Max(n => n.Position.X); Assert.InRange(moved, 3000 + 1300, 3000 + 1700); Assert.Equal(0, moved % 50);
+        Assert.Equal(3000, vm.Building.Networks[^1].Nodes.First(n => n.Position.X < 2000 && n.Position.Y == 3000).Position.Y);                                    // y unchanged
+        vm.UndoCommand.Execute(null); Assert.Equal(3000, vm.Building.Networks[^1].Nodes.Max(n => n.Position.X)); w.Close();
+    }, CancellationToken.None);
+}

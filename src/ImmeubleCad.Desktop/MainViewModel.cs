@@ -193,6 +193,29 @@ public partial class MainViewModel : ObservableObject
         }
     }
 
+    // ---- Pipe handles in the 3D view (drag constrained to the pipe's axis) ----
+    public ViewportController.PipeHandle3D[] Handles3D()
+    {
+        if (SelectedSegment is not { } sel || Building.Networks.FirstOrDefault(n => n.Id == sel.NetworkId) is not { } net || net.Segments.FirstOrDefault(s => s.Id == sel.SegmentId) is not { } seg) return [];
+        var a = net.Nodes.First(n => n.Id == seg.A); var b = net.Nodes.First(n => n.Id == seg.B);
+        ViewportController.PipeHandle3D H(Node end, Node other)
+        {
+            double dx = end.Position.X - other.Position.X, dy = end.Position.Y - other.Position.Y, dz = end.Position.Z - other.Position.Z; var l = Math.Sqrt(dx * dx + dy * dy + dz * dz); l = l < 1e-9 ? 1 : l;
+            return new(net.Id, end.Id, (end.Position.X / 1000.0, end.Position.Y / 1000.0, end.Position.Z / 1000.0), (dx / l, dy / l, dz / l), (other.Position.X / 1000.0, other.Position.Y / 1000.0, other.Position.Z / 1000.0));
+        }
+        var freeA = net.Segments.Count(s => s.A == a.Id || s.B == a.Id) == 1; var freeB = net.Segments.Count(s => s.A == b.Id || s.B == b.Id) == 1;
+        return new[] { freeA ? H(a, b) : null, freeB ? H(b, a) : null }.Where(h => h != null).Select(h => h!).ToArray();
+    }
+
+    /// <summary>The handle was dropped: extend/shorten along the axis (one history step); altitudes snap to level lines.</summary>
+    public void DropPipeEnd3D(Guid networkId, Guid nodeId, (int X, int Y, int Z) mm)
+    {
+        var net = Building.Networks.First(n => n.Id == networkId); var node = net.Nodes.First(n => n.Id == nodeId); var z = node.Position.Z != mm.Z ? ElevationPlane.SnapZ(Building, mm.Z, 150) : mm.Z;
+        var ok = Actions.ExtendEnd(networkId, nodeId, new PointMm3(Snap50(mm.X), Snap50(mm.Y), z)); Status = ok ? T("pipe.modified") : T("nochange");
+        var s = SelectedSegment; Refresh(); if (s != null) SelectSegment(s.Value.NetworkId, s.Value.SegmentId);
+    }
+    private static int Snap50(int v) => (int)Math.Round(v / 50.0) * 50;
+
     // ---- Pipe selection (handles) ----
     public (Guid NetworkId, Guid SegmentId)? SelectedSegment { get; private set; }
     public void SelectSegment(Guid networkId, Guid segmentId) { SelectedWalls.Clear(); SelectedEquipmentId = null; SelectedSegment = (networkId, segmentId); RefreshExtent(); Status = T("pipe.selected.hint"); OnPropertyChanged(nameof(SelectionText)); Changed?.Invoke(); }

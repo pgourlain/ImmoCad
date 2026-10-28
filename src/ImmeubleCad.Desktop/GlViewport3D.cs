@@ -33,6 +33,7 @@ public sealed class GlViewport3D : OpenGlControlBase, IViewport3D
         Focusable = true; ClipToBounds = true;
         Controller.Invalidate = RequestNextFrameRendering;
         Controller.Picked = (id, kind) => Vm?.Pick3D(id, kind);
+        Controller.Handles = () => Vm?.Handles3D() ?? []; Controller.HandleDropped = (n, nd, mm) => Vm?.DropPipeEnd3D(n, nd, mm);
         Controller.PlaneToolActive = () => Vm?.IsPlaneTool == true; Controller.PlaneAltitudeM = () => (Vm?.CurrentLevel?.AltitudeMm ?? 0) / 1000.0; Controller.PlaneClicked = p => Vm?.Click3D(p);
     }
 

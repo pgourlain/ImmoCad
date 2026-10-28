@@ -19,6 +19,7 @@ public class Viewport3D : Control, IViewport3D
         Focusable = true; ClipToBounds = true;
         Controller.Invalidate = InvalidateVisual;
         Controller.Picked = (id, kind) => Vm?.Pick3D(id, kind);
+        Controller.Handles = () => Vm?.Handles3D() ?? []; Controller.HandleDropped = (n, nd, mm) => Vm?.DropPipeEnd3D(n, nd, mm);
         Controller.PlaneToolActive = () => Vm?.IsPlaneTool == true; Controller.PlaneAltitudeM = () => (Vm?.CurrentLevel?.AltitudeMm ?? 0) / 1000.0; Controller.PlaneClicked = p => Vm?.Click3D(p);
     }
 
@@ -69,6 +70,19 @@ public class Viewport3D : Control, IViewport3D
             ctx.DrawGeometry(new SolidColorBrush(t.Color), new Pen(new SolidColorBrush(t.Color), 0.6), g);
         }
         foreach (var l in lines) ctx.DrawLine(new Pen(new SolidColorBrush(l.Color), l.W), l.A, l.B);
+        Controller.Size(Bounds.Width, Bounds.Height);
+        foreach (var h in Controller.Handles?.Invoke() ?? [])                // selected pipe: axis gizmo and end handles
+        {
+            var a = S((float)h.Other.X, (float)h.Other.Y, (float)h.Other.Z); var b = S((float)h.End.X, (float)h.End.Y, (float)h.End.Z);
+            ctx.DrawLine(new Pen(Brushes.OrangeRed, 2.5, DashStyle.Dash), a, b); ctx.DrawRectangle(Brushes.White, new Pen(Brushes.OrangeRed, 2), new Rect(b.X - 6, b.Y - 6, 12, 12));
+            var ax = new Point(b.X + (b.X - a.X) * 0.0, b.Y); _ = ax;
+            if (Controller.ActiveHandle is { } act && act.NodeId == h.NodeId && Controller.HandlePreview is { } pv)
+            {
+                var c = S((float)pv.X, (float)pv.Y, (float)pv.Z); ctx.DrawLine(new Pen(Brushes.DodgerBlue, 3), b, c); ctx.DrawEllipse(Brushes.DodgerBlue, null, c, 6, 6);
+                var len = Math.Sqrt(Math.Pow(pv.X - h.Other.X, 2) + Math.Pow(pv.Y - h.Other.Y, 2) + Math.Pow(pv.Z - h.Other.Z, 2));
+                ctx.DrawText(new FormattedText($"{len:0.00} m", System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 13, Brushes.DodgerBlue), c + new Point(10, -18));
+            }
+        }
         var label = Controller.Wireframe ? T("view3d.wire") : Controller.XRay ? T("view3d.xray") : T("view3d.solid");
         ctx.DrawText(new FormattedText(T("view3d.label", label), System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 12, dark ? Brushes.Gainsboro : Brushes.DimGray), new Point(12, 8));
     }

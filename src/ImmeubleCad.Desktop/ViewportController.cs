@@ -47,15 +47,49 @@ public sealed class ViewportController
     private bool _fitted;
     public void FitAll() { _fitted = false; }
 
+    // ---- pipe end handles: drag constrained to the pipe's axis, gizmo drawn by the viewport ----
+    public sealed record PipeHandle3D(Guid NetworkId, Guid NodeId, (double X, double Y, double Z) End, (double X, double Y, double Z) Axis, (double X, double Y, double Z) Other);
+    public Func<PipeHandle3D[]>? Handles { get; set; }
+    public Action<Guid, Guid, (int X, int Y, int Z)>? HandleDropped { get; set; }
+    public PipeHandle3D? ActiveHandle { get; private set; }
+    public (double X, double Y, double Z)? HandlePreview { get; private set; }
+    private double _width, _height;
+
+    public PipeHandle3D? HitHandle(Point p, double width, double height)
+    {
+        var half = Math.Min(width, height) / 2;
+        foreach (var h in Handles?.Invoke() ?? [])
+        { var (px, py, _) = Camera.Project(h.End.X, h.End.Y, h.End.Z); var s = new Point(width / 2 + px * half, height / 2 - py * half); if (Math.Abs(s.X - p.X) <= 10 && Math.Abs(s.Y - p.Y) <= 10) return h; }
+        return null;
+    }
+
+    /// <summary>Point of the pipe's axis line closest to the mouse ray: the drag cannot leave the axis.</summary>
+    public (double X, double Y, double Z) OnAxis(PipeHandle3D h, Point p, double width, double height)
+    {
+        var half = Math.Min(width, height) / 2; double sx = (p.X - width / 2) / half, sy = -(p.Y - height / 2) / half; var (o, d) = Camera.Unproject(sx, sy, 1);
+        var a = h.Axis; var w0 = (X: h.End.X - o.X, Y: h.End.Y - o.Y, Z: h.End.Z - o.Z);
+        double aa = a.X * a.X + a.Y * a.Y + a.Z * a.Z, ab = a.X * d.X + a.Y * d.Y + a.Z * d.Z, bb = d.X * d.X + d.Y * d.Y + d.Z * d.Z, aw = a.X * w0.X + a.Y * w0.Y + a.Z * w0.Z, bw = d.X * w0.X + d.Y * w0.Y + d.Z * w0.Z;
+        var den = aa * bb - ab * ab; var t = Math.Abs(den) < 1e-9 ? 0 : (ab * bw - bb * aw) / den;       // parameter along the axis
+        return (h.End.X + a.X * t, h.End.Y + a.Y * t, h.End.Z + a.Z * t);
+    }
+
     // ---- input ----
-    public void Down(Point p, bool rightOrMiddle) { _last = p; _down = p; _pan = rightOrMiddle; }
+    public void Down(Point p, bool rightOrMiddle) { _last = p; _down = p; _pan = rightOrMiddle; if (!rightOrMiddle && HitHandle(p, _width, _height) is { } h) { ActiveHandle = h; HandlePreview = h.End; } }
+    public void Size(double width, double height) { _width = width; _height = height; }
     public void Up(Point p, MainViewModel? vm, double width, double height)
     {
-        _last = null;
+        _last = null; Size(width, height);
+        if (ActiveHandle is { } ah)
+        {
+            var at = HandlePreview ?? ah.End; ActiveHandle = null; HandlePreview = null; Invalidate?.Invoke();
+            if (Math.Abs(p.X - _down.X) + Math.Abs(p.Y - _down.Y) > 3) HandleDropped?.Invoke(ah.NetworkId, ah.NodeId, ((int)Math.Round(at.X * 1000), (int)Math.Round(at.Y * 1000), (int)Math.Round(at.Z * 1000)));
+            return;
+        }
         if (Math.Abs(p.X - _down.X) + Math.Abs(p.Y - _down.Y) < 4 && !_pan) { if (PlaneToolActive?.Invoke() == true && PlaneAt(p, width, height, PlaneAltitudeM?.Invoke() ?? 0) is { } mm) PlaneClicked?.Invoke(mm); else Pick(p, width, height); }
     }
     public void Move(Point p)
     {
+        if (ActiveHandle is { } ah2) { HandlePreview = OnAxis(ah2, p, _width, _height); Invalidate?.Invoke(); return; }
         if (_last is not { } l || IsAnimating) return;
         if (_pan) { var k = Camera.Distance * 0.0012; double dx = (p.X - l.X) * k, dy = (p.Y - l.Y) * k; var (cy, sy) = (Math.Cos(Camera.Yaw), Math.Sin(Camera.Yaw)); Camera.Target = (Camera.Target.X - dx * cy + dy * Math.Sin(Camera.Pitch) * sy, Camera.Target.Y + dx * sy + dy * Math.Sin(Camera.Pitch) * cy, Camera.Target.Z); }
         else Camera.Orbit(-(p.X - l.X) * 0.01, (p.Y - l.Y) * 0.01);
