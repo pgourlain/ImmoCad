@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Platform;
+using static ImmeubleCad.Core.Translations;
 
 namespace ImmeubleCad.Desktop;
 
@@ -28,7 +29,7 @@ public static class MenuFactory
             : vm.RecentFiles.Select(f => new MenuItemSpec(Path.GetFileName(f), vm.OpenRecentCommand, f)).ToList();
         return new MenuSpec[]
         {
-            new("_Fichier",
+            new(T("menu.file"),
             [
                 new("Nouveau", vm.NewDocumentCommand, Key: Key.N, UseCommandKey: true),
                 new("Ouvrir…", vm.OpenCommand, Key: Key.O, UseCommandKey: true),
@@ -48,7 +49,7 @@ public static class MenuFactory
                         new("Nomenclature (CSV)", vm.ExportCommand, "csv"), new("Nomenclature (PDF)", vm.ExportCommand, "bom_pdf"),
                     ]),
             ]),
-            new("_Édition",
+            new(T("menu.edit"),
             [
                 new("Annuler", vm.UndoCommand, Key: Key.Z, UseCommandKey: true),
                 new("Rétablir", vm.RedoCommand, Key: Key.Z, Extra: KeyModifiers.Shift, UseCommandKey: true),
@@ -57,7 +58,7 @@ public static class MenuFactory
                 new("Supprimer la sélection", vm.DeleteSelectionCommand),
                 new("Copier la sélection sur tous les niveaux", vm.CopySelectionToAllLevelsCommand),
             ]),
-            new("_Niveau",
+            new(T("menu.level"),
             [
                 new("Ajouter un niveau", vm.AddLevelCommand),
                 new("Sélection → étage au-dessus", vm.MoveSelectionUpCommand, Key: Key.PageUp, UseCommandKey: true),
@@ -66,7 +67,7 @@ public static class MenuFactory
                 new("Aligner sur le niveau du dessous…", vm.SetToolCommand, "Align"),
                 new("Redresser les murs sélectionnés", vm.StraightenSelectionCommand),
             ]),
-            new("_Affichage",
+            new(T("menu.view"),
             [
                 new("Plan 2D", vm.SetModeCommand, "Plan", Key: Key.D2, UseCommandKey: true),
                 new("Élévation du mur sélectionné", vm.ShowElevationCommand),
@@ -77,7 +78,7 @@ public static class MenuFactory
                 new("Niveau du dessus en fantôme", vm.ToggleGhostAboveCommand),
                 new("Parties communes seulement", vm.ToggleCommonOnlyCommand),
             ]),
-            new("_Aide",
+            new(T("menu.help"),
             [
                 new("Ouvrir le dossier des journaux", new RelayAction(openLogs)),
                 new("Copier les informations système", new RelayAction(copyInfo)),

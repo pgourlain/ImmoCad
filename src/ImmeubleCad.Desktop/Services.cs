@@ -46,9 +46,9 @@ public sealed class AvaloniaDialogService(Window owner) : IDialogService
         var result = SaveChoice.Cancel;
         var w = new Window { Title = "ImmeubleCad", Width = 420, Height = 160, WindowStartupLocation = WindowStartupLocation.CenterOwner, CanResize = false };
         var panel = new StackPanel { Margin = new(20), Spacing = 16 };
-        panel.Children.Add(new TextBlock { Text = $"Enregistrer les modifications de « {documentName} » ?", TextWrapping = Avalonia.Media.TextWrapping.Wrap });
+        panel.Children.Add(new TextBlock { Text = ImmeubleCad.Core.Translations.T("dialog.save.changes", documentName), TextWrapping = Avalonia.Media.TextWrapping.Wrap });
         var buttons = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right };
-        foreach (var (label, choice) in new[] { ("Enregistrer", SaveChoice.Save), ("Ne pas enregistrer", SaveChoice.Discard), ("Annuler", SaveChoice.Cancel) })
+        foreach (var (label, choice) in new[] { (ImmeubleCad.Core.Translations.T("dialog.save"), SaveChoice.Save), (ImmeubleCad.Core.Translations.T("dialog.discard"), SaveChoice.Discard), (ImmeubleCad.Core.Translations.T("dialog.cancel"), SaveChoice.Cancel) })
         { var b = new Button { Content = label }; b.Click += (_, _) => { result = choice; w.Close(); }; buttons.Children.Add(b); }
         panel.Children.Add(buttons); w.Content = panel; await w.ShowDialog(owner); return result;
     }

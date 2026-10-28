@@ -359,7 +359,7 @@ public class ShellTests
     [Fact] public Task Menus_are_defined_once_and_rendered_with_shortcuts() => f.Session.Dispatch(() =>
     {
         var vm = new MainViewModel(); var specs = MenuFactory.Build(vm, () => { }, () => { }, () => { });
-        Assert.Equal(["_Fichier", "_Édition", "_Niveau", "_Affichage", "_Aide"], specs.Select(s => s.Header));
+        Assert.Equal(["_Fichier", "_Édition", "_Niveau", "_Affichage", "_Aide"], specs.Select(s => s.Header)); ImmeubleCad.Core.Translations.Language = "en"; Assert.Equal("_File", MenuFactory.Build(vm, () => { }, () => { }, () => { })[0].Header); ImmeubleCad.Core.Translations.Language = "fr";
         var menu = MenuFactory.ToMenu(specs); Assert.Equal(5, menu.Items.Count);
         var save = specs[0].Items.First(i => i.Header == "Enregistrer"); Assert.Equal(Avalonia.Input.Key.S, save.Key); Assert.True(save.UseCommandKey);
         Assert.NotEqual(Avalonia.Input.KeyModifiers.None, MenuFactory.CommandModifiers);

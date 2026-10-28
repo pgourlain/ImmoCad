@@ -648,3 +648,13 @@ public class PipeHandleToolTests
         Assert.False(t.Committed); Assert.NotNull(t.Refused); Assert.Equal(steps, h.Items.Count);
     }
 }
+
+public class TranslationTests
+{
+    [Fact] public void Every_key_exists_in_both_languages_and_formats()
+    {
+        Assert.Empty(Translations.FrenchKeys.Except(Translations.EnglishKeys)); Assert.Empty(Translations.EnglishKeys.Except(Translations.FrenchKeys));
+        Translations.Language = "en"; Assert.Equal("Ready", Translations.T("ready")); Assert.Equal("3 wall(s) selected", Translations.T("walls.selected", 3));
+        Translations.Language = "fr"; Assert.Equal("Prêt", Translations.T("ready")); Assert.Equal("unknown.key", Translations.T("unknown.key"));
+    }
+}

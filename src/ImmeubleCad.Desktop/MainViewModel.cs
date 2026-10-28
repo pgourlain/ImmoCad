@@ -7,6 +7,7 @@ using ImmeubleCad.Core.Import;
 using ImmeubleCad.Core.IO;
 using ImmeubleCad.Core.Export;
 using ImmeubleCad.Core.Model;
+using static ImmeubleCad.Core.Translations;
 using ImmeubleCad.Core.Geometry;
 using ImmeubleCad.Core.Catalog;
 using ImmeubleCad.Core.Networks;
@@ -66,8 +67,8 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private Guid _currentLevelId;
     [ObservableProperty] private ViewMode _mode = ViewMode.Plan;
     [ObservableProperty] private ToolKind _tool = ToolKind.Select;
-    [ObservableProperty] private string _status = "Prêt";
-    [ObservableProperty] private string _hint = "Cliquez un mur pour le sélectionner, glissez pour déplacer.";
+    [ObservableProperty] private string _status = T("ready");
+    [ObservableProperty] private string _hint = T("hint.select");
     public int WallThicknessMm { get; set; } = 200;
 
     // ---- Pipe selection (handles) ----
@@ -256,7 +257,7 @@ public partial class MainViewModel : ObservableObject
     public bool IsRiserTool => Tool == ToolKind.Riser;
     public bool IsPipeTool => Tool == ToolKind.DrawPipe;
     public bool IsPlaceTool => Tool == ToolKind.Place;
-    public string SelectionText => SelectedSegment != null ? "1 tuyau sélectionné" : SelectedWalls.Count == 0 ? "Aucune sélection" : $"{SelectedWalls.Count} mur(s) sélectionné(s)";
+    public string SelectionText => SelectedSegment != null ? T("pipe.selected") : SelectedWalls.Count == 0 ? T("no.selection") : T("walls.selected", SelectedWalls.Count);
 
     public MainViewModel() : this(startWithSample: true) { }
 
@@ -288,7 +289,7 @@ public partial class MainViewModel : ObservableObject
     partial void OnToolChanged(ToolKind value)
     {
         OnPropertyChanged(nameof(IsSelectTool)); OnPropertyChanged(nameof(IsDrawTool)); OnPropertyChanged(nameof(IsAlignTool)); OnPropertyChanged(nameof(IsRiserTool)); OnPropertyChanged(nameof(IsPipeTool)); OnPropertyChanged(nameof(IsPlaceTool));
-        Hint = value switch { ToolKind.DrawWall => "Cliquez les points du mur — Entrée pour finir — Échap pour annuler", ToolKind.Riser => "Cliquez pour poser une colonne (collée à 50 mm des murs)", ToolKind.DrawPipe => "Cliquez les points du tuyau — Entrée pour finir — Échap pour annuler", ToolKind.Place => "Cliquez pour poser l'objet de la palette", ToolKind.Align => "Cliquez un point de ce niveau, puis le même point sur le niveau du dessous (au moins 2 paires)", _ => "Cliquez un mur pour le sélectionner, glissez pour déplacer." }; if (value != ToolKind.Align) AlignCancel();
+        Hint = value switch { ToolKind.DrawWall => T("hint.draw.wall"), ToolKind.Riser => T("hint.riser"), ToolKind.DrawPipe => T("hint.draw.pipe"), ToolKind.Place => T("hint.place"), ToolKind.Align => T("hint.align"), _ => T("hint.select") }; if (value != ToolKind.Align) AlignCancel();
         Changed?.Invoke();
     }
 
@@ -342,13 +343,13 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand] private void MoveSelectionDown() => MoveSelectionToLevel(-1);
     private void MoveSelectionToLevel(int d)
     {
-        if (CurrentLevel is not { } l || SelectedWalls.Count == 0) { Status = "Sélectionnez d'abord des murs"; return; }
+        if (CurrentLevel is not { } l || SelectedWalls.Count == 0) { Status = T("status.need.selection"); return; }
         var i = Building.Levels.FindIndex(x => x.Id == l.Id) + d;
-        if (i < 0 || i >= Building.Levels.Count) { Status = "Pas d'étage dans cette direction"; return; }
+        if (i < 0 || i >= Building.Levels.Count) { Status = T("status.no.level.there"); return; }
         var target = Building.Levels[i]; var ids = SelectedWalls.ToList();
         Actions.MoveWalls(l.Id, ids, 0, 0, target.Id);
         CurrentLevelId = target.Id; SelectedWalls.Clear(); foreach (var id in ids) SelectedWalls.Add(id);
-        Status = $"{ids.Count} mur(s) déplacé(s) vers {target.Name}"; Refresh();
+        Status = T("status.walls.moved", ids.Count, target.Name); Refresh();
     }
 
     [RelayCommand] private void CopySelectionToAllLevels()
