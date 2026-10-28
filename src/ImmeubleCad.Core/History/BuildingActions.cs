@@ -465,16 +465,42 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
         return Geometry.SpaceFinder.Contains(sp.Outline, c) || sp.Outline.Any(p => Math.Abs(p.X - c.X) < 300 && Math.Abs(p.Y - c.Y) < 300);
     }
 
-    /// <summary>Straighten the given walls with the Plan straightener (mm), one history step.</summary>
+    /// <summary>Pure preview of Straighten: the new outline of each wall and nothing changed in the model.</summary>
+    public static IReadOnlyList<(Guid WallId, List<PointMm> Outline)> PreviewStraighten(Level l, IEnumerable<Guid> wallIds, double toleranceMm, double angleDeg)
+    {
+        var ids = wallIds.ToHashSet(); var res = new List<(Guid, List<PointMm>)>();
+        foreach (var w in l.Walls.Where(w => ids.Contains(w.Id)))
+            res.Add((w.Id, Plan.WallStraightener.Straighten(w.Footprint.Select(p => new Plan.PointPx(p.X, p.Y)).ToList(), toleranceMm, angleDeg).Select(p => new PointMm((int)Math.Round(p.X), (int)Math.Round(p.Y))).ToList()));
+        return res;
+    }
+
+    /// <summary>Straighten the given walls (one history step), then snap their corners onto the faces of neighbouring walls within the tolerance so junctions stay closed.</summary>
     public void StraightenWalls(Guid levelId, IEnumerable<Guid> wallIds, double toleranceMm = 30, double angleDeg = 5) =>
         Edit("Straighten walls", BuildingEventKind.WallChanged, () =>
         {
-            var l = Find(levelId); var ids = wallIds.ToHashSet();
-            foreach (var w in l.Walls.Where(w => ids.Contains(w.Id)))
-                w.Footprint = Plan.WallStraightener.Straighten(w.Footprint.Select(p => new Plan.PointPx(p.X, p.Y)).ToList(), toleranceMm, angleDeg)
-                    .Select(p => new PointMm((int)Math.Round(p.X), (int)Math.Round(p.Y))).ToList();
+            var l = Find(levelId); var ids = wallIds.ToHashSet(); var preview = PreviewStraighten(l, ids, toleranceMm, angleDeg).ToDictionary(x => x.WallId, x => x.Outline);
+            foreach (var w in l.Walls.Where(w => ids.Contains(w.Id))) w.Footprint = preview[w.Id];
+            SnapToNeighbours(l, ids, toleranceMm);
             return levelId;
         }, i => i);
+
+    /// <summary>"Make rectangular": replaces each wall by the best-fitting oriented rectangle. One history step.</summary>
+    public void MakeWallsRectangular(Guid levelId, IEnumerable<Guid> wallIds) =>
+        Edit("Make rectangular", BuildingEventKind.WallChanged, () =>
+        {
+            var l = Find(levelId); var ids = wallIds.ToHashSet();
+            foreach (var w in l.Walls.Where(w => ids.Contains(w.Id) && w.Footprint.Count >= 3))
+                w.Footprint = Plan.WallShapes.MakeRectangular(w.Footprint.Select(p => new Plan.PointPx(p.X, p.Y)).ToList()).Select(p => new PointMm((int)Math.Round(p.X), (int)Math.Round(p.Y))).ToList();
+            return levelId;
+        }, i => i);
+
+    private static void SnapToNeighbours(Level l, HashSet<Guid> moved, double tol)
+    {
+        var all = l.Walls.Select(w => (IReadOnlyList<Plan.PointPx>)w.Footprint.Select(p => new Plan.PointPx(p.X, p.Y)).ToList()).ToList();
+        var snapped = Plan.WallShapes.SnapJunctions(all, tol);
+        for (var i = 0; i < l.Walls.Count; i++)
+            if (moved.Contains(l.Walls[i].Id)) l.Walls[i].Footprint = snapped[i].Select(p => new PointMm((int)Math.Round(p.X), (int)Math.Round(p.Y))).ToList();
+    }
 
     /// <summary>Several risers at once (hot+cold…) at fixed spacing along X, from zFrom to zTo. One history step.</summary>
     public IReadOnlyList<Network> AddRiserTemplate(PointMm origin, int spacingMm, IReadOnlyList<NetworkType> types, int zFromMm, int zToMm, int diameterMm = 20) =>

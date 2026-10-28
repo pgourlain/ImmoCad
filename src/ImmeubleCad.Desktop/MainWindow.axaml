@@ -59,6 +59,7 @@
         <ToggleButton Classes="tool" Content="▢" ToolTip.Tip="Pièce (clic dans un espace fermé)" IsChecked="{Binding IsSpaceTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Space" />
         <ToggleButton Classes="tool" Content="№" ToolTip.Tip="Numéroter les caves" IsChecked="{Binding IsNumberTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="NumberCellars" />
         <ToggleButton Classes="tool" Content="⟷" ToolTip.Tip="Mesurer" IsChecked="{Binding IsMeasureTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Measure" />
+        <ToggleButton Classes="tool" Content="⟋" ToolTip.Tip="Redresser les murs sélectionnés (aperçu en vert, Entrée applique)" IsChecked="{Binding IsStraightenTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Straighten" />
         <ToggleButton Classes="tool" Content="⌖" ToolTip.Tip="Aligner sur le niveau du dessous (par points)" IsChecked="{Binding IsAlignTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Align" />
         <Separator Margin="0,6" />
         <Button Classes="tool" Content="⤒" ToolTip.Tip="Déplacer la sélection à l'étage au-dessus (Ctrl+PgUp)" Command="{Binding MoveSelectionUpCommand}" />
@@ -99,6 +100,11 @@
             <NumericUpDown Value="{Binding RiserDiameter}" Minimum="8" Maximum="200" FormatString="0 &quot;mm&quot;" />
             <NumericUpDown Value="{Binding RiserSpacing}" Minimum="50" Maximum="1000" FormatString="Entraxe 0 &quot;mm&quot;" />
             <CheckBox Content="Tout le bâtiment" IsChecked="{Binding RiserWholeBuilding}" />
+            <Separator />
+            <TextBlock Text="REDRESSER" Classes="caption" />
+            <NumericUpDown Value="{Binding StraightenTolerance}" Minimum="0" Maximum="300" FormatString="Tolérance 0 &quot;mm&quot;" />
+            <NumericUpDown Value="{Binding StraightenAngle}" Minimum="0" Maximum="20" FormatString="Angle 0&quot;°&quot;" />
+            <Button Content="Rendre rectangulaire" Command="{Binding MakeRectangularCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
             <Separator />
             <TextBlock Text="TUYAU" Classes="caption" />
             <ComboBox ItemsSource="{Binding NetworkTypes}" SelectedItem="{Binding PipeType}" HorizontalAlignment="Stretch" />

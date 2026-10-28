@@ -560,3 +560,25 @@ public class ThreeDTests
         vm.SetModeCommand.Execute("Plan"); Assert.True(vm.IsPlan);
     }, CancellationToken.None);
 }
+
+public class StraightenUiTests
+{
+    private readonly HeadlessFixture f = new();
+
+    [Fact] public Task Straighten_tool_previews_counts_applies_on_enter_and_cancels_on_escape() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(startWithSample: false) { Settings = new() }; vm.NewDocumentCommand.Execute(null);
+        vm.Actions.ImportWalls(vm.CurrentLevel!.Id, [new List<PointMm> { new(0, 0), new(500, 6), new(1000, 0), new(1500, 5), new(2000, 0), new(2000, 200), new(1000, 194), new(0, 200) }]); vm.Refresh();
+        var w = new MainWindow { DataContext = vm, Width = 1280, Height = 820 }; w.Show(); w.UpdateLayout();
+        vm.SetToolCommand.Execute("Straighten"); Assert.Null(vm.StraightenPreview());                  // nothing selected yet
+        vm.SelectWalls([vm.CurrentLevel!.Walls[0].Id], false);
+        var pv = vm.StraightenPreview()!.Value; Assert.Equal("8 → 4 segments", pv.Info);
+        w.CaptureRenderedFrame()!.Save(Path.Combine(AppContext.BaseDirectory, "screenshots", "straighten.png"));
+        Assert.Equal(8, vm.CurrentLevel!.Walls[0].Footprint.Count);                                    // preview did not touch the model
+        var steps = vm.History.Items.Count; w.KeyPress(Avalonia.Input.Key.Escape, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.Escape, null);
+        vm.SetToolCommand.Execute("Straighten"); vm.StraightenSelectionCommand.Execute(null);
+        Assert.Equal(4, vm.CurrentLevel!.Walls[0].Footprint.Count); Assert.Equal(steps + 1, vm.History.Items.Count);
+        vm.UndoCommand.Execute(null); Assert.Equal(8, vm.CurrentLevel!.Walls[0].Footprint.Count);
+        vm.MakeRectangularCommand.Execute(null); Assert.Equal(4, vm.CurrentLevel!.Walls[0].Footprint.Count);
+    }, CancellationToken.None);
+}

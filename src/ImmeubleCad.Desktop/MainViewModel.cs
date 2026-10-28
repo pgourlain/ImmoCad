@@ -16,7 +16,7 @@ using ImmeubleCad.Core.Tools;
 namespace ImmeubleCad.Desktop;
 
 public enum ViewMode { Plan, Solid, Wireframe, Elevation }
-public enum ToolKind { Select, DrawWall, Align, Riser, DrawPipe, Place, Door, Window, Space, Measure, NumberCellars }
+public enum ToolKind { Select, DrawWall, Align, Riser, DrawPipe, Place, Door, Window, Space, Measure, NumberCellars, Straighten }
 
 /// <summary>One button of the level bar.</summary>
 /// <summary>One open building with its own history, pictures and file.</summary>
@@ -397,6 +397,7 @@ public partial class MainViewModel : ObservableObject
     public bool IsSpaceTool => Tool == ToolKind.Space;
     public bool IsMeasureTool => Tool == ToolKind.Measure;
     public bool IsNumberTool => Tool == ToolKind.NumberCellars;
+    public bool IsStraightenTool => Tool == ToolKind.Straighten;
     public string SelectionText => SelectedSegment != null ? T("pipe.selected") : SelectedWalls.Count == 0 ? T("no.selection") : T("walls.selected", SelectedWalls.Count);
 
     public MainViewModel() : this(startWithSample: true) { }
@@ -428,8 +429,8 @@ public partial class MainViewModel : ObservableObject
     partial void OnModeChanged(ViewMode value) { OnPropertyChanged(nameof(Is3D)); OnPropertyChanged(nameof(IsElevation)); OnPropertyChanged(nameof(IsPlan)); Changed?.Invoke(); }
     partial void OnToolChanged(ToolKind value)
     {
-        OnPropertyChanged(nameof(IsSelectTool)); OnPropertyChanged(nameof(IsDrawTool)); OnPropertyChanged(nameof(IsAlignTool)); OnPropertyChanged(nameof(IsRiserTool)); OnPropertyChanged(nameof(IsPipeTool)); OnPropertyChanged(nameof(IsPlaceTool)); OnPropertyChanged(nameof(IsDoorTool)); OnPropertyChanged(nameof(IsWindowTool)); OnPropertyChanged(nameof(IsSpaceTool)); OnPropertyChanged(nameof(IsMeasureTool)); OnPropertyChanged(nameof(IsNumberTool)); MeasurePoints.Clear(); NumberPending.Clear();
-        Hint = value switch { ToolKind.DrawWall => T("hint.draw.wall"), ToolKind.Riser => T("hint.riser"), ToolKind.DrawPipe => T("hint.draw.pipe"), ToolKind.Place => T("hint.place"), ToolKind.Align => T("hint.align"), ToolKind.Door => T("hint.door"), ToolKind.Window => T("hint.window"), ToolKind.Space => T("hint.space"), ToolKind.Measure => T("hint.measure"), ToolKind.NumberCellars => T("hint.number"), _ => T("hint.select") }; if (value != ToolKind.Align) AlignCancel();
+        OnPropertyChanged(nameof(IsSelectTool)); OnPropertyChanged(nameof(IsDrawTool)); OnPropertyChanged(nameof(IsAlignTool)); OnPropertyChanged(nameof(IsRiserTool)); OnPropertyChanged(nameof(IsPipeTool)); OnPropertyChanged(nameof(IsPlaceTool)); OnPropertyChanged(nameof(IsDoorTool)); OnPropertyChanged(nameof(IsWindowTool)); OnPropertyChanged(nameof(IsSpaceTool)); OnPropertyChanged(nameof(IsMeasureTool)); OnPropertyChanged(nameof(IsNumberTool)); OnPropertyChanged(nameof(IsStraightenTool)); MeasurePoints.Clear(); NumberPending.Clear();
+        Hint = value switch { ToolKind.DrawWall => T("hint.draw.wall"), ToolKind.Riser => T("hint.riser"), ToolKind.DrawPipe => T("hint.draw.pipe"), ToolKind.Place => T("hint.place"), ToolKind.Align => T("hint.align"), ToolKind.Door => T("hint.door"), ToolKind.Window => T("hint.window"), ToolKind.Space => T("hint.space"), ToolKind.Measure => T("hint.measure"), ToolKind.NumberCellars => T("hint.number"), ToolKind.Straighten => T("hint.straighten"), _ => T("hint.select") }; if (value != ToolKind.Align) AlignCancel();
         Changed?.Invoke();
     }
 
@@ -533,12 +534,27 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand] private void ToggleGhostAbove() { GhostAbove = !GhostAbove; Changed?.Invoke(); }
     [RelayCommand] private void ToggleCommonOnly() { CommonOnly = !CommonOnly; Status = CommonOnly ? "Parties communes seulement" : "Tout afficher"; Changed?.Invoke(); }
 
+    [ObservableProperty] private int _straightenTolerance = 30;
+    [ObservableProperty] private int _straightenAngle = 5;
+    /// <summary>Live preview for the Straighten tool: outlines + "47 → 4 segments".</summary>
+    public (IReadOnlyList<(Guid WallId, List<PointMm> Outline)> Shapes, string Info)? StraightenPreview()
+    {
+        if (CurrentLevel is not { } l || SelectedWalls.Count == 0) return null;
+        var shapes = BuildingActions.PreviewStraighten(l, SelectedWalls.ToList(), StraightenTolerance, StraightenAngle);
+        var before = l.Walls.Where(w => SelectedWalls.Contains(w.Id)).Sum(w => w.Footprint.Count); var after = shapes.Sum(x => x.Outline.Count);
+        return (shapes, $"{before} → {after} segments");
+    }
+    [RelayCommand] private void MakeRectangular()
+    {
+        if (CurrentLevel is not { } l || SelectedWalls.Count == 0) { Status = T("status.need.selection"); return; }
+        Actions.MakeWallsRectangular(l.Id, SelectedWalls.ToList()); Status = "Murs rendus rectangulaires"; Refresh();
+    }
     /// <summary>Straightens the selected walls (tolerance 30 mm, 5°) as one history step.</summary>
     [RelayCommand] private void StraightenSelection()
     {
         if (CurrentLevel is not { } l || SelectedWalls.Count == 0) { Status = "Sélectionnez des murs à redresser"; return; }
         var before = l.Walls.Where(w => SelectedWalls.Contains(w.Id)).Sum(w => w.Footprint.Count);
-        Actions.StraightenWalls(l.Id, SelectedWalls.ToList()); var after = CurrentLevel!.Walls.Where(w => SelectedWalls.Contains(w.Id)).Sum(w => w.Footprint.Count);
+        Actions.StraightenWalls(l.Id, SelectedWalls.ToList(), StraightenTolerance, StraightenAngle); var after = CurrentLevel!.Walls.Where(w => SelectedWalls.Contains(w.Id)).Sum(w => w.Footprint.Count);
         Status = $"Redressé : {before} → {after} segments"; Refresh();
     }
 

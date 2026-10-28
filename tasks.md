@@ -144,7 +144,7 @@ JPG plans of different levels rarely fit exactly on top of each other (different
 
 **3d — Wall fitting (optional for the MVP, needed for clean editing)**
 
-- [ ] `WallFitter` (Plan): from traced outlines, find pairs of parallel sides → wall center segments with a thickness; keep the polygon when fitting fails.
+- [x] `WallFitter` (Plan): from traced outlines, find pairs of parallel sides → wall center segments with a thickness; keep the polygon when fitting fails. *(Plan only; the importer keeps the traced polygons, WallFitter is not wired into the import yet)*
 
 **3e — Straighten walls (clean up scan artifacts)**
 
@@ -157,11 +157,11 @@ Walls traced from a scan are often slightly crooked or made of many short broken
   4. **Snap angles:** lines within N degrees (default 5°, slider) of the main axes become exactly parallel or perpendicular to them; 45° optional.
   5. **Merge:** collinear neighbor lines become one; corners rebuilt as line intersections.
   6. **Regularize thickness (option):** two parallel faces of a wall are made exactly parallel and the thickness rounded (to 10 mm, or to a standard list: 50, 70, 100, 150, 200, 250, 300…).
-- [ ] Straighten tool and Wall › Straighten command (shortcut): works on the selection (click, Shift+click, box or lasso, or all walls of the level). Live preview: the straightened outline drawn over the original in another color, with the segment count before → after (e.g. "47 → 4 segments"). Tolerance and angle sliders in the options bar; Enter applies, Escape cancels. One history step for the whole selection.
-- [ ] "Make rectangular" for a single straight wall: replace it by the best-fitting rectangle (oriented minimal-area rectangle on the main axis), i.e. one clean wall with a center line and a thickness.
-- [ ] Optional at the end of the import wizard: "Straighten all detected walls" checkbox with the same settings (on by default for scanned plans).
-- [ ] Adjacent walls keep touching: after straightening, endpoints within the tolerance of another wall's face are snapped onto it (no gaps or overlaps at T and L junctions).
-- [ ] Tests on synthetic walls: noisy straight wall → 4 segments; L-shaped wall with saw teeth → 6 segments; wall rotated 12° → straightened along 12°, not 0°; tolerance 0 → unchanged; determinism (pinned output).
+- [x] Straighten tool and Wall › Straighten command (shortcut): works on the selection (click, Shift+click, box or lasso, or all walls of the level). Live preview: the straightened outline drawn over the original in another color, with the segment count before → after (e.g. "47 → 4 segments"). Tolerance and angle sliders in the options bar; Enter applies, Escape cancels. One history step for the whole selection. *(select with click/Shift/box; live green preview with 'N → M segments'; Enter applies, Esc cancels; no lasso)*
+- [x] "Make rectangular" for a single straight wall: replace it by the best-fitting rectangle (oriented minimal-area rectangle on the main axis), i.e. one clean wall with a center line and a thickness.
+- [x] Optional at the end of the import wizard: "Straighten all detected walls" checkbox with the same settings (on by default for scanned plans).
+- [x] Adjacent walls keep touching: after straightening, endpoints within the tolerance of another wall's face are snapped onto it (no gaps or overlaps at T and L junctions).
+- [x] Tests on synthetic walls: noisy straight wall → 4 segments; L-shaped wall with saw teeth → 6 segments; wall rotated 12° → straightened along 12°, not 0°; tolerance 0 → unchanged; determinism (pinned output).
 
 **Validation (3e)**
 

@@ -201,8 +201,9 @@ public class PlanView : Control
     protected override void OnKeyDown(KeyEventArgs e)
     {
         if (Vm is not { } vm) return;
+        if (vm.IsStraightenTool && e.Key == Key.Enter) { vm.StraightenSelectionCommand.Execute(null); vm.SetToolCommand.Execute("Select"); InvalidateVisual(); e.Handled = true; return; }
         if (vm.IsNumberTool && e.Key == Key.Enter) { vm.NumberCommit(); InvalidateVisual(); e.Handled = true; return; }
-        if (e.Key == Key.Escape && (vm.IsDoorTool || vm.IsWindowTool || vm.IsSpaceTool || vm.IsMeasureTool || vm.IsNumberTool || vm.IsPlaceTool || vm.IsRiserTool)) { vm.SetToolCommand.Execute("Select"); e.Handled = true; return; }
+        if (e.Key == Key.Escape && (vm.IsDoorTool || vm.IsWindowTool || vm.IsSpaceTool || vm.IsMeasureTool || vm.IsNumberTool || vm.IsPlaceTool || vm.IsRiserTool || vm.IsStraightenTool)) { vm.SetToolCommand.Execute("Select"); e.Handled = true; return; }
         if (vm.IsAlignTool)
         {
             if (e.Key == Key.Enter) vm.AlignApply(); else if (e.Key == Key.Back) vm.AlignUndoPair(); else if (e.Key == Key.Escape) { vm.AlignCancel(); vm.SetToolCommand.Execute("Select"); } else return;
@@ -294,6 +295,18 @@ public class PlanView : Control
                 if (!string.IsNullOrEmpty(o.Label)) { var cm = ax.PointAt(o.PositionMm); var ft = Txt(o.Label, 10, Brushes.SteelBlue); var sp = ToScreen(cm); ctx.DrawText(ft, new Point(sp.X - ft.Width / 2, sp.Y - 18)); }
             }
         }
+    }
+
+    private void DrawStraightenPreview(DrawingContext ctx)
+    {
+        if (Vm is not { IsStraightenTool: true } vm || vm.StraightenPreview() is not { } pv) return;
+        foreach (var (_, outline) in pv.Shapes)
+        {
+            var g = new StreamGeometry(); using (var c = g.Open()) { c.BeginFigure(ToScreen(outline[0]), false); foreach (var p in outline.Skip(1)) c.LineTo(ToScreen(p)); c.EndFigure(true); }
+            ctx.DrawGeometry(null, new Pen(Brushes.LimeGreen, 2.5), g);                 // straightened outline over the original
+            foreach (var p in outline) ctx.DrawRectangle(Brushes.White, new Pen(Brushes.LimeGreen, 1.5), new Rect(ToScreen(p).X - 3, ToScreen(p).Y - 3, 6, 6));
+        }
+        var first = ToScreen(pv.Shapes[0].Outline[0]); ctx.DrawText(Txt(pv.Info + " — Entrée pour appliquer", 13, Brushes.ForestGreen), new Point(first.X + 10, first.Y - 22));
     }
 
     private void DrawMeasure(DrawingContext ctx)
@@ -394,7 +407,7 @@ public class PlanView : Control
         DrawOpenings(ctx, l, dark);
         DrawNetworks(ctx, l, dark);
         DrawHandles(ctx, l);
-        DrawMeasure(ctx);
+        DrawMeasure(ctx); DrawStraightenPreview(ctx);
         if (_gesture == Gesture.Move && (_delta.X != 0 || _delta.Y != 0))   // ghost of the move
             DrawWalls(ctx, l, new SolidColorBrush(Color.FromArgb(110, 255, 140, 0)), new Pen(Brushes.OrangeRed, 1.2, DashStyle.Dash), _delta, Vm.SelectedWalls, null, onlySelected: true);
         if (_gesture == Gesture.Box)

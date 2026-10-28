@@ -711,3 +711,27 @@ public class SceneMapperTests
         Assert.Equal(8, objs.Count(o => o.Kind == ImmeubleCad.Scene.SceneKind.Wall));           // RDC + R+1 only: the cut hides R+2
     }
 }
+
+public class StraightenActionTests
+{
+    [Fact] public void Preview_changes_nothing_apply_is_one_step_and_junctions_stay_closed()
+    {
+        var b = new Building(); var h = new BuildingHistory(); var a = new BuildingActions(b, h, new BuildingEventsService()); var l = a.AddLevel("RDC", 0);
+        var crooked = a.AddWall(l.Id, [new(0, 0), new(1000, 6), new(2000, 0), new(2000, 200), new(1000, 194), new(0, 200)]);
+        var wall = a.AddWall(l.Id, [new(0, 400), new(2000, 400), new(2000, 600), new(0, 600)]);
+        var branch = a.AddWall(l.Id, [new(900, 207), new(1100, 207), new(1100, 390), new(900, 390)]);      // 7 mm short of the first wall's face
+        var before = BuildingJson.Serialize(b); var steps = h.Items.Count;
+        var prev = BuildingActions.PreviewStraighten(b.Levels[0], [crooked.Id], 20, 5); Assert.Equal(4, prev[0].Outline.Count); Assert.Equal(before, BuildingJson.Serialize(b)); Assert.Equal(steps, h.Items.Count);
+        a.StraightenWalls(l.Id, [crooked.Id, branch.Id], 20, 5);
+        Assert.Equal(steps + 1, h.Items.Count); Assert.Equal(4, b.Levels[0].Walls[0].Footprint.Count);
+        var top = b.Levels[0].Walls[0].Footprint.Max(p => p.Y); Assert.Equal(top, b.Levels[0].Walls[2].Footprint.Min(p => p.Y));        // branch touches the face: no gap
+        h.Undo(b); Assert.Equal(before, BuildingJson.Serialize(b));
+    }
+
+    [Fact] public void Make_rectangular_is_one_undoable_step()
+    {
+        var b = new Building(); var h = new BuildingHistory(); var a = new BuildingActions(b, h, new BuildingEventsService()); var l = a.AddLevel("RDC", 0);
+        var w = a.AddWall(l.Id, [new(0, 0), new(500, 5), new(1000, 0), new(1003, 150), new(500, 148), new(0, 150)]); var before = BuildingJson.Serialize(b);
+        a.MakeWallsRectangular(l.Id, [w.Id]); Assert.Equal(4, b.Levels[0].Walls[0].Footprint.Count); h.Undo(b); Assert.Equal(before, BuildingJson.Serialize(b));
+    }
+}
