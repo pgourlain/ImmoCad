@@ -8,7 +8,7 @@ dotnet publish "$ROOT/src/ImmoCad.Desktop" -c Release -r "$RID" --self-contained
 cp "$ROOT/LICENSE" "$ROOT/THIRD-PARTY-NOTICES.txt" "$OUT/publish/"
 cp "$ROOT/packaging/icon/icon-256.png" "$OUT/publish/immocad.png"
 case "$RID" in
-  win-*)   (cd "$OUT/publish" && zip -qr "../ImmoCad-$VERSION-$RID.zip" .) ;;
+  win-*)   powershell.exe -NoProfile -Command "Compress-Archive -Path '$(cygpath -w "$OUT/publish")\\*' -DestinationPath '$(cygpath -w "$OUT")\\ImmoCad-$VERSION-$RID.zip' -Force" ;;
   linux-*)
     cp "$ROOT/packaging/immocad.desktop" "$OUT/publish/"
     tar -C "$OUT/publish" -czf "$OUT/ImmoCad-$VERSION-$RID.tar.gz" . ;;
