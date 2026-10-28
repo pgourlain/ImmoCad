@@ -1,0 +1,53 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:ImmeubleCad.Desktop" x:Class="ImmeubleCad.Desktop.ImportWizard" x:DataType="vm:ImportWizardViewModel"
+        Title="Importer un plan" Width="1100" Height="740" WindowStartupLocation="CenterOwner">
+  <DockPanel>
+    <Border DockPanel.Dock="Right" Width="300" Padding="16" Background="{DynamicResource SystemChromeLowColor}">
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,12,0,0">
+          <Button x:Name="BackBtn" Content="Précédent" Click="OnBack" />
+          <Button x:Name="NextBtn" Content="Suivant" Classes="accent" Click="OnNext" />
+        </StackPanel>
+        <StackPanel Spacing="10">
+          <TextBlock x:Name="Title" FontSize="18" FontWeight="SemiBold" />
+          <TextBlock x:Name="Help" TextWrapping="Wrap" Opacity="0.75" />
+
+          <StackPanel x:Name="PStraighten" Spacing="8">
+            <Button Content="Redresser automatiquement" Click="OnAutoDeskew" HorizontalAlignment="Stretch" />
+            <TextBlock Text="{Binding Angle, StringFormat='Angle : {0:0.0}°'}" />
+            <Slider Minimum="-10" Maximum="10" Value="{Binding Angle}" TickFrequency="0.1" PointerReleased="OnAngleChanged" />
+          </StackPanel>
+
+          <StackPanel x:Name="PCalibrate" Spacing="8" IsVisible="False">
+            <CheckBox Content="Échelles X et Y séparées (plan étiré)" IsChecked="{Binding TwoAxes}" />
+            <TextBlock Text="Distance réelle (m) entre les 2 premiers points" />
+            <NumericUpDown Value="{Binding DistanceMetres}" Minimum="0.1" Maximum="500" Increment="0.1" FormatString="0.00" />
+            <StackPanel IsVisible="{Binding TwoAxes}">
+              <TextBlock Text="Distance réelle (m) entre les 2 points suivants (vertical)" />
+              <NumericUpDown Value="{Binding DistanceVMetres}" Minimum="0.1" Maximum="500" Increment="0.1" FormatString="0.00" />
+            </StackPanel>
+            <TextBlock x:Name="CalText" FontWeight="SemiBold" />
+          </StackPanel>
+
+          <StackPanel x:Name="PDetect" Spacing="6" IsVisible="False">
+            <Button Content="Épaisseur auto" Click="OnAutoThickness" HorizontalAlignment="Stretch" />
+            <TextBlock Text="{Binding Threshold, StringFormat='Seuil : {0} (0 = auto)'}" />
+            <Slider Minimum="0" Maximum="255" Value="{Binding Threshold}" PointerReleased="OnDetectParam" />
+            <TextBlock Text="{Binding MinThickness, StringFormat='Épaisseur min : {0} px'}" />
+            <Slider Minimum="1" Maximum="60" Value="{Binding MinThickness}" PointerReleased="OnDetectParam" />
+            <TextBlock Text="{Binding BridgeGap, StringFormat='Comblement : {0} px'}" />
+            <Slider Minimum="0" Maximum="30" Value="{Binding BridgeGap}" PointerReleased="OnDetectParam" />
+            <TextBlock Text="{Binding MinArea, StringFormat='Surface min : {0} px'}" />
+            <Slider Minimum="1" Maximum="2000" Value="{Binding MinArea}" PointerReleased="OnDetectParam" />
+            <CheckBox Content="Redresser tous les murs" IsChecked="{Binding StraightenWalls}" />
+          </StackPanel>
+
+          <StackPanel x:Name="PReview" Spacing="6" IsVisible="False">
+            <TextBlock x:Name="ReviewText" />
+          </StackPanel>
+        </StackPanel>
+      </DockPanel>
+    </Border>
+    <vm:ImageCanvas x:Name="Canvas" />
+  </DockPanel>
+</Window>

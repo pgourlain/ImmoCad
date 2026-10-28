@@ -39,7 +39,10 @@ public partial class MainWindow : Window
         var f = (await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions { Title = "Plan", FileTypeFilter = new[] { FilePickerFileTypes.ImageAll } })).FirstOrDefault();
         if (f == null) return;
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        var n = Vm.ImportPlan(f.Path.LocalPath, 0.1);
+        var wiz = new ImportWizard(File.ReadAllBytes(f.Path.LocalPath));
+        await wiz.ShowDialog(this);
+        if (!wiz.Accepted) return;
+        var n = Vm.ApplyWizard(wiz.Result);
         Log.LogInformation("Import plan {Path}: {N} shapes in {Ms} ms", f.Path.LocalPath, n, sw.ElapsedMilliseconds);
     });
 

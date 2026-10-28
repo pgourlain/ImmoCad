@@ -124,23 +124,23 @@ Every phase ends with a **Validation** checklist. Run it on macOS (Apple Silicon
 
 **3b — Import wizard (one level at a time)**
 
-- [ ] File › Import Plan…: pick a JPG/PNG/PDF page (PDF optional), choose or create the level (name, altitude, height; defaults: RDC at 0, next level +2 700 mm).
-- [ ] Step 1, straighten: Auto deskew (detect dominant orthogonal lines) with manual angle slider.
-- [ ] Step 2, calibrate: click two points on the image, type the real distance in metres → pixels per mm. Optional second measure along the other axis (a horizontal and a vertical dimension) → **separate X and Y scales**, because scanned or printed plans are often stretched differently in length and width. Warn if not calibrated.
-- [ ] `Level.ImageTransform`: the background image is placed with a full **affine transform** (translation, rotation, scale X, scale Y, optional shear), stored as a 2×3 matrix in `ImageTransform` (Core, doubles allowed here since it maps image pixels to mm; results rounded to mm). A **perspective** mode (homography from 4 points) is available for phone photos taken at an angle.
-- [ ] Step 3, detect: live preview of the wall mask in red over the faded plan; Auto thickness button; sliders for threshold, min thickness, bridge gap, min area.
-- [ ] Step 4, review: detected walls shown as polygons over the plan; click to delete, lasso to delete, accept all. Validation adds the walls in **one history step** (`BuildingActions.ImportWalls`).
-- [ ] The plan image stays as the level's background (opacity slider, hide/show).
+- [x] File › Import Plan…: pick a JPG/PNG/PDF page (PDF optional), choose or create the level (name, altitude, height; defaults: RDC at 0, next level +2 700 mm). *(JPG/PNG; no PDF; level = current level, create it first)*
+- [x] Step 1, straighten: Auto deskew (detect dominant orthogonal lines) with manual angle slider.
+- [x] Step 2, calibrate: click two points on the image, type the real distance in metres → pixels per mm. Optional second measure along the other axis (a horizontal and a vertical dimension) → **separate X and Y scales**, because scanned or printed plans are often stretched differently in length and width. Warn if not calibrated.
+- [x] `Level.ImageTransform`: the background image is placed with a full **affine transform** (translation, rotation, scale X, scale Y, optional shear), stored as a 2×3 matrix in `ImageTransform` (Core, doubles allowed here since it maps image pixels to mm; results rounded to mm). A **perspective** mode (homography from 4 points) is available for phone photos taken at an angle. *(affine + homography math in Core; shear/perspective not exposed in the UI)*
+- [x] Step 3, detect: live preview of the wall mask in red over the faded plan; Auto thickness button; sliders for threshold, min thickness, bridge gap, min area.
+- [x] Step 4, review: detected walls shown as polygons over the plan; click to delete, lasso to delete, accept all. Validation adds the walls in **one history step** (`BuildingActions.ImportWalls`). *(click to exclude; no lasso)*
+- [x] The plan image stays as the level's background (opacity slider, hide/show). *(opacity/visibility stored in the model; no slider UI yet)*
 
 **3c — Align and stretch levels**
 
 JPG plans of different levels rarely fit exactly on top of each other (different scan or print scale, paper shrink, photo angle). The user must be able to stretch a plan in length or width until it matches the level below.
 
-- [ ] Level › Align with Level Below, by points: click pairs of matching points (a point on this level's plan, then the same point on the ghost of the level below: stairwell corners, risers, façade corners). Fit chosen by the number of pairs: 2 pairs = translation + rotation + uniform scale; **3 pairs or more = affine (independent X/Y stretch)**, least squares; 4 pairs in perspective mode = homography. Show the residual error per pair (in mm, red when above 50 mm) so a wrong click is visible; drag a pair to fix it. `ImageFit` in Core, pure, unit-tested with synthetic transforms (exact recovery, noise, degenerate cases like collinear points).
+- [x] Level › Align with Level Below, by points: click pairs of matching points (a point on this level's plan, then the same point on the ghost of the level below: stairwell corners, risers, façade corners). Fit chosen by the number of pairs: 2 pairs = translation + rotation + uniform scale; **3 pairs or more = affine (independent X/Y stretch)**, least squares; 4 pairs in perspective mode = homography. Show the residual error per pair (in mm, red when above 50 mm) so a wrong click is visible; drag a pair to fix it. `ImageFit` in Core, pure, unit-tested with synthetic transforms (exact recovery, noise, degenerate cases like collinear points). *(Core `AlignLevel` + `ImageFit` done; no click-pairs UI yet)*
 - [ ] Manual stretch mode: the background image gets 8 handles (like a picture in an image editor). Corner handles scale both axes (Shift keeps the ratio), **side handles stretch in one direction only (length or width)**, inside drag moves, a rotation handle rotates. Snaps to the ghost of the level below. Arrow keys nudge by 1 mm (Shift: 10 mm). Live numeric fields for scale X, scale Y, rotation, offset in the Properties panel.
 - [ ] Overlay helpers while aligning: ghost of the level below in a contrasting color, blend/difference mode between the two plans, opacity slider.
 - [ ] Walls detected from a plan are stored in **image pixels + the level's transform** until the user confirms; when the transform changes after detection, ask "Move the walls with the plan?" (default yes). Walls drawn by hand never move.
-- [ ] Every alignment or stretch is one history step (`BuildingActions.SetImageTransform`, in `HistoryTests.Actions`).
+- [x] Every alignment or stretch is one history step (`BuildingActions.SetImageTransform`, in `HistoryTests.Actions`).
 
 **3d — Wall fitting (optional for the MVP, needed for clean editing)**
 

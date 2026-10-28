@@ -414,3 +414,26 @@ public class AlignTests
         Assert.Null(a.AlignLevel(up.Id, new[] { ((0.0, 0.0), (0.0, 0.0)), ((1.0, 1.0), (1.0, 1.0)), ((2.0, 2.0), (2.0, 2.0)) }));
     }
 }
+
+public class WizardMathTests
+{
+    [Fact] public void Calibration_one_and_two_axes_and_transform()
+    {
+        Assert.Equal(0.1, ImmeubleCad.Core.Import.PlanImport.PxPerMm((0, 0), (300, 400), 5), 9);   // 500 px = 5 m
+        var c = ImmeubleCad.Core.Import.PlanImport.TwoAxis((0, 0), (500, 0), 5, (0, 0), (0, 485), 5); // stretched in height
+        Assert.Equal(0.1, c.PxPerMmX, 9); Assert.Equal(0.097, c.PxPerMmY, 9);
+        var m = ImmeubleCad.Core.Import.PlanImport.TransformFor(new(0.1, 0.1), 100);
+        Assert.Equal(1000.0, m[5]);       // bottom row of the picture at Y=0 → top at 10 m
+        Assert.Equal(-10.0, m[4]);
+    }
+
+    [Fact] public void Rotate_returns_png_with_expected_size()
+    {
+        var raw = Enumerable.Repeat((byte)200, 100 * 50).ToArray();
+        using var img = new ImageMagick.MagickImage(raw, new ImageMagick.PixelReadSettings(100, 50, ImageMagick.StorageType.Char, "I"));
+        var png = img.ToByteArray(ImageMagick.MagickFormat.Png);
+        Assert.Equal((100, 50), ImmeubleCad.Core.Import.PlanImport.Size(png));
+        var (w, h) = ImmeubleCad.Core.Import.PlanImport.Size(ImmeubleCad.Core.Import.PlanImport.Rotate(png, 90));
+        Assert.Equal((50, 100), (w, h));
+    }
+}

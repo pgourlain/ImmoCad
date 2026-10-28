@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using ImmeubleCad.Core.Model;
 using ImmeubleCad.Core.Tools;
 
@@ -25,6 +26,14 @@ public class PlanView : Control
     private enum Gesture { None, Box, Move }
     private Gesture _gesture; private Point _start; private Point _now; private PointMm _startMm; private (int X, int Y) _delta;
     private bool _addToSelection;
+
+    private readonly Dictionary<string, Bitmap> _bitmaps = new();
+    private Bitmap? Background(Level l)
+    {
+        if (l.BackgroundImage is not { } n || Vm?.Images.TryGetValue(n, out var data) != true) return null;
+        if (!_bitmaps.TryGetValue(n, out var bmp)) _bitmaps[n] = bmp = new Bitmap(new MemoryStream(data!));
+        return bmp;
+    }
 
     public PlanView() { Focusable = true; ClipToBounds = true; }
 
@@ -144,6 +153,13 @@ public class PlanView : Control
         if (!_fitted) FitAll();
         DrawGrid(ctx, dark);
         if (Vm?.CurrentLevel is not { } l) return;
+        if (l.BackgroundVisible && l.ImageTransform is { Length: 6 } tr && Background(l) is { } bg)
+        {
+            // pixels → mm (affine) → screen; axis-aligned or rotated drawing through a matrix
+            var m = new Matrix(tr[0] * Scale, -tr[3] * Scale, tr[1] * Scale, -tr[4] * Scale, Offset.X + tr[2] * Scale, Bounds.Height - Offset.Y - tr[5] * Scale);
+            using (ctx.PushTransform(m)) using (ctx.PushOpacity(l.BackgroundOpacity))
+                ctx.DrawImage(bg, new Rect(bg.PixelSize.ToSize(1)));
+        }
         var below = Vm.Building.Levels.LastOrDefault(x => x.AltitudeMm < l.AltitudeMm);
         if (below != null) DrawWalls(ctx, below, new SolidColorBrush(Color.FromArgb(55, 60, 140, 255)), null, null);
         var wallFill = new SolidColorBrush(dark ? Color.FromRgb(190, 192, 198) : Color.FromRgb(70, 72, 78));

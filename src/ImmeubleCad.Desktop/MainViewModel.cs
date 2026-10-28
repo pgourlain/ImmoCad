@@ -22,6 +22,8 @@ public partial class MainViewModel : ObservableObject
     public BuildingActions Actions { get; private set; }
     public ObservableCollection<LevelItem> Levels { get; } = new();
     public HashSet<Guid> SelectedWalls { get; } = new();
+    /// <summary>Background pictures by name (stored under images/ in the .immeuble file).</summary>
+    public Dictionary<string, byte[]> Images { get; private set; } = new();
 
     [ObservableProperty] private Guid _currentLevelId;
     [ObservableProperty] private ViewMode _mode = ViewMode.Plan;
@@ -144,12 +146,19 @@ public partial class MainViewModel : ObservableObject
         Actions.ImportWalls(lv.Id, rects); Status = $"{rects.Count} mur(s) ajouté(s)"; Refresh();
     }
 
-    public void SaveTo(string path) { BuildingFile.Save(Building, path); History.MarkClean(); FilePath = path; Status = "Enregistré " + Path.GetFileName(path); }
+    public void SaveTo(string path) { BuildingFile.Save(Building, path, Images); History.MarkClean(); FilePath = path; Status = "Enregistré " + Path.GetFileName(path); }
     public void LoadFrom(string path)
     {
-        var (b, _) = BuildingFile.Load(path); var h = new BuildingHistory();
-        Load((b, h)); FilePath = path; Status = "Ouvert " + Path.GetFileName(path);
+        var (b, imgs) = BuildingFile.Load(path); var h = new BuildingHistory();
+        Load((b, h)); Images = imgs; FilePath = path; Status = "Ouvert " + Path.GetFileName(path);
     }
+    /// <summary>Applies a finished wizard to the current level: walls + background, one history step each.</summary>
+    public int ApplyWizard(ImportWizardViewModel w)
+    {
+        if (CurrentLevel is not { } l) return 0;
+        var n = w.Apply(Actions, l, Images); Status = $"{n} groupe(s) de murs importé(s)"; Refresh(); return n;
+    }
+
     public int ImportPlan(string imagePath, double pxPerMm)
     {
         if (CurrentLevel is not { } l) return 0;
