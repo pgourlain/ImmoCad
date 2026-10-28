@@ -96,6 +96,13 @@ public sealed class ViewportController
         _last = p; Invalidate?.Invoke();
     }
     public void Wheel(double dy) { if (IsAnimating) return; Camera.Zoom(dy > 0 ? 0.9 : 1.1); Invalidate?.Invoke(); }
+    /// <summary>Looks from the given angles (animated, shortest way round), keeping target and distance.</summary>
+    public void LookFrom(double yaw, double pitch)
+    {
+        var cur = Current(); var d = Math.IEEERemainder(yaw - cur.Yaw, 2 * Math.PI);
+        Start(cur, cur with { Yaw = cur.Yaw + d, Pitch = pitch, OrthoBlend = 0 }, () => Invalidate?.Invoke()); Invalidate?.Invoke();
+    }
+
     public void Preset(string name)
     {
         switch (name) { case "top": Camera.Top(); break; case "front": Camera.Yaw = 0; Camera.Pitch = 0.02; break; case "side": Camera.Yaw = Math.PI / 2; Camera.Pitch = 0.02; break; default: Camera.Iso(); break; }

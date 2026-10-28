@@ -8,6 +8,8 @@ public readonly record struct SnapResult(PointMm Point, SnapKind Kind);
 public sealed class Snapper
 {
     public int GridMm { get; set; } = 100;
+    /// <summary>True: points always land on the grid (after corner/midpoint/orthogonal snaps). False: free placement.</summary>
+    public bool SnapToGrid { get; set; } = true;
     public int ToleranceMm { get; set; } = 150;
 
     public SnapResult Snap(PointMm p, IEnumerable<IReadOnlyList<PointMm>> polygons, PointMm? from = null)
@@ -32,11 +34,7 @@ public sealed class Snapper
             if (dy <= ToleranceMm && dx > dy) return new(new(p.X, f.Y), SnapKind.Orthogonal);
             if (dx <= ToleranceMm && dy > dx) return new(new(f.X, p.Y), SnapKind.Orthogonal);
         }
-        if (GridMm > 0)
-        {
-            var g = new PointMm(Round(p.X), Round(p.Y));
-            if (D2(p, g) <= (long)ToleranceMm * ToleranceMm) return new(g, SnapKind.Grid);
-        }
+        if (SnapToGrid && GridMm > 0) return new(new PointMm(Round(p.X), Round(p.Y)), SnapKind.Grid);
         return new(p, SnapKind.None);
     }
     private int Round(int v) => (int)Math.Round((double)v / GridMm) * GridMm;

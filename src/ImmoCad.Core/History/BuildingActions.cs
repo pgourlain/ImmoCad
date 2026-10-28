@@ -116,6 +116,29 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
             return levelId;
         }, i => i);
 
+    /// <summary>Pastes copies of the given walls (clipboard) on a level, shifted by (dx, dy). Returns the ids of the new walls. One history step.</summary>
+    public IReadOnlyList<Guid> PasteWalls(Guid levelId, IEnumerable<Wall> templates, int dx, int dy)
+    {
+        var ids = new List<Guid>(); var src = templates.ToList();
+        if (src.Count == 0) return ids;
+        PointMm Sh(PointMm q) => new(q.X + dx, q.Y + dy);
+        Edit("Paste walls", BuildingEventKind.WallAdded, () =>
+        {
+            ids.Clear();
+            foreach (var w in src)
+            {
+                var c = new Wall
+                {
+                    Footprint = w.Footprint.Select(Sh).ToList(), Holes = w.Holes.Select(h => h.Select(Sh).ToList()).ToList(), HeightMm = w.HeightMm, Label = w.Label, Stability = w.Stability,
+                    Openings = w.Openings.Select(o => new Opening { Kind = o.Kind, PositionMm = o.PositionMm, WidthMm = o.WidthMm, HeightMm = o.HeightMm, SillMm = o.SillMm, SwingLeft = o.SwingLeft, SwingOut = o.SwingOut, Label = o.Label, Stability = o.Stability }).ToList(),
+                };
+                Find(levelId).Walls.Add(c); ids.Add(c.Id);
+            }
+            return levelId;
+        }, i => i);
+        return ids;
+    }
+
     public void SetWallProperties(Guid levelId, IEnumerable<Guid> wallIds, string? label, int? heightMm) =>
         Edit("Wall properties", BuildingEventKind.WallChanged, () =>
         {
@@ -468,6 +491,15 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
         Edit("Move opening", BuildingEventKind.WallChanged, () =>
         {
             var o = Find(levelId).Walls.First(w => w.Id == wallId).Openings.First(o => o.Id == openingId); o.PositionMm = positionMm; if (widthMm is { } wd) o.WidthMm = wd; return openingId;
+        }, i => i);
+
+    /// <summary>Edits a door/window: size, sill, swing, label. One history step.</summary>
+    public void SetOpeningProperties(Guid levelId, Guid wallId, Guid openingId, int widthMm, int heightMm, int sillMm, bool swingLeft, bool swingOut, string? label) =>
+        Edit("Opening properties", BuildingEventKind.WallChanged, () =>
+        {
+            var o = Find(levelId).Walls.First(w => w.Id == wallId).Openings.First(o => o.Id == openingId);
+            o.WidthMm = Math.Max(100, widthMm); o.HeightMm = Math.Max(100, heightMm); o.SillMm = Math.Max(0, sillMm); o.SwingLeft = swingLeft; o.SwingOut = swingOut; o.Label = label;
+            return openingId;
         }, i => i);
 
     public void DeleteOpening(Guid levelId, Guid wallId, Guid openingId) =>

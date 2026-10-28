@@ -202,12 +202,23 @@
           </DockPanel>
         </TabItem>
         <TabItem vm:L.Header="tab.properties">
-          <StackPanel Spacing="6" Margin="0,6">
+          <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Spacing="6" Margin="0,6,10,6">
             <TextBlock Text="{Binding SelectionText}" FontWeight="SemiBold" />
             <TextBox vm:L.Watermark="wm.label" Text="{Binding PropLabel}" />
             <NumericUpDown Value="{Binding PropHeight}" Minimum="0" Maximum="10000" Increment="50" vm:L.Format="fmt.height.level" />
             <NumericUpDown Value="{Binding PropThickness}" Minimum="0" Maximum="1000" Increment="10" vm:L.Format="fmt.thickness" />
             <Button vm:L.Content="prop.apply.thickness" Command="{Binding ApplyThicknessCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+            <Separator />
+            <StackPanel Spacing="6" IsVisible="{Binding SelectedOpeningVisible}">
+              <TextBlock vm:L.Text="opening.title" Classes="caption" />
+              <TextBox vm:L.Watermark="wm.label" Text="{Binding OpLabel}" />
+              <NumericUpDown Value="{Binding OpWidth}" Minimum="100" Maximum="6000" Increment="50" vm:L.Format="fmt.op.width" />
+              <NumericUpDown Value="{Binding OpHeight}" Minimum="100" Maximum="4000" Increment="50" vm:L.Format="fmt.op.height" />
+              <NumericUpDown Value="{Binding OpSill}" Minimum="0" Maximum="3000" Increment="50" vm:L.Format="fmt.op.sill" />
+              <CheckBox vm:L.Content="op.swingleft" IsChecked="{Binding OpSwingLeft}" />
+              <CheckBox vm:L.Content="op.swingout" IsChecked="{Binding OpSwingOut}" />
+              <Button vm:L.Content="btn.apply" Command="{Binding ApplyOpeningCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+            </StackPanel>
             <Separator />
             <TextBlock vm:L.Text="extent.title" Classes="caption" />
             <TextBlock Text="{Binding ExtentInfo}" Classes="caption" />
@@ -236,7 +247,7 @@
             <Button vm:L.Content="bg.apply" Command="{Binding ApplyImageFieldsCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
             <Separator />
             <Button vm:L.Content="btn.apply" Command="{Binding ApplyPropertiesCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
-          </StackPanel>
+          </StackPanel></ScrollViewer>
         </TabItem>
       </TabControl>
     </Border>

@@ -311,6 +311,7 @@ public class HandleUiTests
         var vm = new MainViewModel(); var w = new MainWindow { DataContext = vm, Width = 1280, Height = 820 }; w.Show();
         w.UpdateLayout(); w.CaptureRenderedFrame();
         var plan = w.FindControl<PlanView>("Plan")!; Avalonia.Point At(int x, int y) => plan.TranslatePoint(plan.ToScreenForTest(new(x, y)), w)!.Value;
+        vm.ToggleSnapToGridCommand.Execute(null);                    // exact deltas: the grid step depends on the zoom
         var steps = vm.History.Items.Count; var first = vm.CurrentLevel!.Walls[0].Footprint[0];
         w.MouseDown(At(-300, -300), Avalonia.Input.MouseButton.Left); w.MouseMove(At(4000, 1500)); w.MouseMove(At(9000, 7000)); w.MouseUp(At(9000, 7000), Avalonia.Input.MouseButton.Left);
         Assert.Equal(4, vm.SelectedWalls.Count);
@@ -681,6 +682,7 @@ public class EquipmentUiTests
         var steps = vm.History.Items.Count; vm.EqLabel = "Radiateur séjour"; vm.EqWidth = 1400; vm.ApplyEquipmentCommand.Execute(null);
         Assert.Equal(steps + 1, vm.History.Items.Count); Assert.Equal("Radiateur séjour", vm.Building.Equipment[0].Label); Assert.Equal(1400, cat.With(vm.Building.Equipment[0].Parameters).WidthMm);
         // drag it 500 mm along the wall
+        vm.ToggleSnapToGridCommand.Execute(null);
         var before = vm.Building.Equipment[0].Position; steps = vm.History.Items.Count;
         w.MouseDown(At(before.X + 400, before.Y + 50), Avalonia.Input.MouseButton.Left); w.MouseMove(At(before.X + 600, before.Y + 50)); w.MouseMove(At(before.X + 900, before.Y + 50)); w.MouseUp(At(before.X + 900, before.Y + 50), Avalonia.Input.MouseButton.Left);
         Assert.Equal(steps + 1, vm.History.Items.Count); Assert.Equal(before.X + 500, vm.Building.Equipment[0].Position.X);
@@ -1101,5 +1103,108 @@ public class NorthUpTests
         var wall = vm.CurrentLevel!.Walls[0]; var inside = wall.Footprint.Aggregate((a, b) => new(a.X + b.X, a.Y + b.Y)); var c = new ImmoCad.Core.Model.PointMm(inside.X / wall.Footprint.Count, inside.Y / wall.Footprint.Count);
         var at = plan.TranslatePoint(plan.ToScreenForTest(c), w)!.Value; w.MouseDown(at, Avalonia.Input.MouseButton.Left); w.MouseUp(at, Avalonia.Input.MouseButton.Left); Assert.Contains(wall.Id, vm.SelectedWalls);   // a click still finds the wall
         vm.ToggleNorthUpCommand.Execute(null); Assert.Equal(0, plan.ViewRotationRad); Assert.Equal("Bâtiment aligné", vm.Status); w.Close();
+    }, CancellationToken.None);
+
+    [Fact] public Task Keyboard_shortcuts_undo_redo_select_all_delete_and_tools() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(startWithSample: false) { Settings = new() }; vm.NewDocumentCommand.Execute(null);
+        vm.Actions.ImportWalls(vm.CurrentLevel!.Id, [new List<PointMm> { new(0, 0), new(2000, 0), new(2000, 200), new(0, 200) }]); vm.Refresh();
+        var w = new MainWindow { DataContext = vm, Width = 1280, Height = 820 }; w.Show(); w.UpdateLayout();
+        var cmd = MenuFactory.CommandModifiers == Avalonia.Input.KeyModifiers.Meta ? Avalonia.Input.RawInputModifiers.Meta : Avalonia.Input.RawInputModifiers.Control;
+        void Press(Avalonia.Input.Key k, Avalonia.Input.RawInputModifiers m = Avalonia.Input.RawInputModifiers.None) => w.KeyPress(k, m, Avalonia.Input.PhysicalKey.None, null);
+        Press(Avalonia.Input.Key.A, cmd); Assert.Single(vm.SelectedWalls);
+        Press(Avalonia.Input.Key.Delete); Assert.Empty(vm.CurrentLevel!.Walls);
+        Press(Avalonia.Input.Key.Z, cmd); Assert.Single(vm.CurrentLevel!.Walls);
+        Press(Avalonia.Input.Key.Z, cmd | Avalonia.Input.RawInputModifiers.Shift); Assert.Empty(vm.CurrentLevel!.Walls);
+        Press(Avalonia.Input.Key.Z, cmd); Press(Avalonia.Input.Key.Y, cmd); Assert.Empty(vm.CurrentLevel!.Walls);
+        Press(Avalonia.Input.Key.W); Assert.Equal(ToolKind.DrawWall, vm.Tool);
+        Press(Avalonia.Input.Key.Escape); Assert.Equal(ToolKind.Select, vm.Tool);
+    }, CancellationToken.None);
+
+    [Fact] public Task Snap_to_grid_follows_the_zoom_and_can_be_switched_off() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(startWithSample: false) { Settings = new() }; vm.NewDocumentCommand.Execute(null);
+        var w = new MainWindow { DataContext = vm, Width = 1280, Height = 820 }; w.Show(); w.UpdateLayout(); w.CaptureRenderedFrame();
+        var plan = w.FindControl<PlanView>("Plan")!;
+        plan.Scale = 0.1; plan.Zoom("in"); w.CaptureRenderedFrame();                          // 0.125 px/mm: a 10 px grid is 100 mm
+        Assert.True(vm.SnapToGrid); Assert.Equal(100, plan.Snapper.GridMm);
+        plan.Scale = 0.5; plan.InvalidateVisual(); w.CaptureRenderedFrame(); Assert.Equal(20, plan.Snapper.GridMm);   // zoomed in: finer grid
+        plan.Scale = 0.02; plan.InvalidateVisual(); w.CaptureRenderedFrame(); Assert.Equal(500, plan.Snapper.GridMm); // zoomed out: coarser grid
+        Assert.Equal(new(1000, 500), plan.Snapper.Snap(new(1190, 430), []).Point);
+        vm.ToggleSnapToGridCommand.Execute(null); Assert.False(vm.SnapToGrid);
+        plan.InvalidateVisual(); w.CaptureRenderedFrame(); Assert.Equal(new(1190, 430), plan.Snapper.Snap(new(1190, 430), []).Point);
+        w.Close();
+    }, CancellationToken.None);
+
+    [Fact] public Task Select_tool_picks_a_riser_space_drag_pans_and_ctrl_drag_rotates() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(); var w = new MainWindow { DataContext = vm, Width = 1280, Height = 820 }; w.Show(); w.UpdateLayout(); w.CaptureRenderedFrame();
+        var plan = w.FindControl<PlanView>("Plan")!; Avalonia.Point At(int x, int y) => plan.TranslatePoint(plan.ToScreenForTest(new(x, y)), w)!.Value;
+        var L = Avalonia.Input.MouseButton.Left; var none = Avalonia.Input.RawInputModifiers.None;
+        w.MouseDown(At(300, 300), L); w.MouseUp(At(300, 300), L);
+        Assert.NotNull(vm.SelectedSegment); Assert.True(ImmoCad.Core.Networks.NetworkQueries.IsVertical(ImmoCad.Core.Networks.NetworkQueries.All(vm.Building).First(s => s.Segment.Id == vm.SelectedSegment!.Value.SegmentId)));
+        var off = plan.Offset; var from = At(2000, 2000);
+        w.KeyPress(Avalonia.Input.Key.Space, none, Avalonia.Input.PhysicalKey.Space, " ");                       // Space held: drag pans
+        w.MouseDown(from, L); w.MouseMove(from + new Avalonia.Point(40, 25)); w.MouseUp(from + new Avalonia.Point(40, 25), L);
+        w.KeyRelease(Avalonia.Input.Key.Space, none, Avalonia.Input.PhysicalKey.Space, null);
+        Assert.Equal(off.X + 40, plan.Offset.X, 3); Assert.Equal(off.Y - 25, plan.Offset.Y, 3);
+        var c = new Avalonia.Point(plan.Bounds.Width / 2, plan.Bounds.Height / 2); var a = plan.TranslatePoint(new(c.X + 100, c.Y), w)!.Value; var b = plan.TranslatePoint(new(c.X, c.Y + 100), w)!.Value;
+        w.MouseDown(a, L, Avalonia.Input.RawInputModifiers.Control); w.MouseMove(b, Avalonia.Input.RawInputModifiers.Control); w.MouseUp(b, L, Avalonia.Input.RawInputModifiers.Control);
+        Assert.Equal(Math.PI / 2, plan.UserRotationRad, 2);                   // a quarter turn about the viewport centre
+        plan.Zoom("fit"); Assert.Equal(0, plan.UserRotationRad);
+        w.Close();
+    }, CancellationToken.None);
+
+    [Fact] public Task Select_tool_selects_a_door_edits_its_values_and_deletes_it() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(startWithSample: false) { Settings = new() }; vm.NewDocumentCommand.Execute(null);
+        vm.Actions.ImportWalls(vm.CurrentLevel!.Id, [new List<PointMm> { new(0, 0), new(4000, 0), new(4000, 200), new(0, 200) }]); vm.Refresh();
+        var w = new MainWindow { DataContext = vm, Width = 1280, Height = 820 }; w.Show(); w.UpdateLayout(); w.CaptureRenderedFrame();
+        var plan = w.FindControl<PlanView>("Plan")!; Avalonia.Point At(int x, int y) => plan.TranslatePoint(plan.ToScreenForTest(new(x, y)), w)!.Value;
+        var L = Avalonia.Input.MouseButton.Left;
+        vm.SetToolCommand.Execute("Door"); w.MouseDown(At(1000, 100), L); w.MouseUp(At(1000, 100), L);
+        Assert.Single(vm.CurrentLevel!.Walls[0].Openings); vm.SetToolCommand.Execute("Select");
+        w.MouseDown(At(1000, 100), L); w.MouseUp(At(1000, 100), L);
+        Assert.NotNull(vm.SelectedOpening); Assert.True(vm.SelectedOpeningVisible);
+        var steps = vm.History.Items.Count; vm.OpWidth = 1000; vm.OpSwingOut = true; vm.OpLabel = "Entrée"; vm.ApplyOpeningCommand.Execute(null);
+        var o = vm.CurrentLevel!.Walls[0].Openings[0]; Assert.Equal(1000, o.WidthMm); Assert.True(o.SwingOut); Assert.Equal("Entrée", o.Label); Assert.Equal(steps + 1, vm.History.Items.Count);
+        vm.UndoCommand.Execute(null); Assert.Equal(800, vm.CurrentLevel!.Walls[0].Openings[0].WidthMm);
+        w.MouseDown(At(1000, 100), L); w.MouseUp(At(1000, 100), L);
+        w.KeyPress(Avalonia.Input.Key.Delete, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.Delete, null);
+        Assert.Empty(vm.CurrentLevel!.Walls[0].Openings); Assert.Null(vm.SelectedOpening);
+        w.Close();
+    }, CancellationToken.None);
+
+    [Fact] public void Wall_rectangle_lies_on_the_chosen_side_of_the_drawing_line()
+    {
+        var a = new PointMm(0, 0); var b = new PointMm(1000, 0);
+        List<PointMm> R(ImmoCad.Core.Geometry.WallAlign al) => ImmoCad.Core.Geometry.WallGeometry.Rectangle(a, b, 200, al).ToList();
+        Assert.Equal((-100, 100), (R(ImmoCad.Core.Geometry.WallAlign.Center).Min(p => p.Y), R(ImmoCad.Core.Geometry.WallAlign.Center).Max(p => p.Y)));
+        Assert.Equal((0, 200), (R(ImmoCad.Core.Geometry.WallAlign.Left).Min(p => p.Y), R(ImmoCad.Core.Geometry.WallAlign.Left).Max(p => p.Y)));     // left of an east-going line = north
+        Assert.Equal((-200, 0), (R(ImmoCad.Core.Geometry.WallAlign.Right).Min(p => p.Y), R(ImmoCad.Core.Geometry.WallAlign.Right).Max(p => p.Y)));
+    }
+
+    [Fact] public Task Space_changes_the_wall_side_while_drawing_with_a_dashed_preview_and_the_view_cube_changes_the_view() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(startWithSample: false) { Settings = new() }; vm.NewDocumentCommand.Execute(null);
+        var w = new MainWindow { DataContext = vm, Width = 1280, Height = 820 }; w.Show(); w.UpdateLayout(); w.CaptureRenderedFrame();
+        var plan = w.FindControl<PlanView>("Plan")!; Avalonia.Point At(int x, int y) => plan.TranslatePoint(plan.ToScreenForTest(new(x, y)), w)!.Value;
+        var L = Avalonia.Input.MouseButton.Left; var none = Avalonia.Input.RawInputModifiers.None;
+        vm.ToggleSnapToGridCommand.Execute(null); vm.SetToolCommand.Execute("DrawWall");
+        w.MouseDown(At(0, 0), L); w.MouseUp(At(0, 0), L); w.MouseMove(At(3000, 0));
+        w.CaptureRenderedFrame()!.Save(Path.Combine(AppContext.BaseDirectory, "screenshots", "wall-preview.png"));
+        Assert.Equal(ImmoCad.Core.Geometry.WallAlign.Center, vm.WallAlign);
+        w.KeyPress(Avalonia.Input.Key.Space, none, Avalonia.Input.PhysicalKey.Space, " "); Assert.Equal(ImmoCad.Core.Geometry.WallAlign.Left, vm.WallAlign);
+        w.MouseDown(At(3000, 0), L); w.MouseUp(At(3000, 0), L); w.KeyPress(Avalonia.Input.Key.Enter, none, Avalonia.Input.PhysicalKey.Enter, null);
+        var fp = vm.CurrentLevel!.Walls[0].Footprint; Assert.Equal(0, fp.Min(p => p.Y)); Assert.Equal(200, fp.Max(p => p.Y));
+        // view cube
+        vm.SetToolCommand.Execute("Select"); vm.SetModeCommand.Execute("Solid"); w.UpdateLayout();
+        var cube = w.Cube; var c = w.View3D.Controller; c.Animate = false; cube.Controller = c; cube.Measure(new(112, 112)); cube.Arrange(new(0, 0, 112, 112));
+        c.Camera.Yaw = 0; c.Camera.Pitch = 0.02; Assert.Equal(ViewCube.Face.Front, cube.FaceAt(new(56, 58)));
+        c.Camera.Yaw = Math.PI / 4; c.Camera.Pitch = Math.PI / 5;
+        var top = Enumerable.Range(0, 112).SelectMany(y => Enumerable.Range(0, 112).Select(x => new Avalonia.Point(x, y))).First(p => cube.FaceAt(p) == ViewCube.Face.Top);
+        cube.Click(top); Assert.InRange(c.Camera.Pitch, Math.PI / 2 - 0.02, Math.PI / 2);
+        c.Camera.Yaw = 0; c.Camera.Pitch = 0.02; cube.Click(new(56, 58)); Assert.Equal(0, c.Camera.Yaw, 3);
+        w.Close();
     }, CancellationToken.None);
 }

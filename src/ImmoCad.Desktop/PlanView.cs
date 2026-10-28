@@ -14,7 +14,7 @@ using static ImmoCad.Core.Translations;
 namespace ImmoCad.Desktop;
 
 /// <summary>
-/// 2D plan. Select tool: click a wall, Shift+click to add, drag on empty space = box select, drag a selected wall = move
+/// 2D plan. Select tool: click a wall / pipe / riser, Shift+click to add to the selection, Space+drag (or middle button) pans, Ctrl(⌘)+drag rotates the view, drag on empty space = box select, drag a selected wall = move
 /// (one history step on release), arrows nudge. Draw tool: hybrid click/drag chain. Wheel zooms, middle button pans.
 /// </summary>
 public class PlanView : Control
@@ -27,6 +27,10 @@ public class PlanView : Control
     public event Action<PointMm>? CursorMoved;
 
     private Point? _pan;
+    private Point? _rotFrom;
+    private bool _space;       // Space held: drag pans
+    /// <summary>View rotation chosen by the user (Ctrl/⌘+drag), added to the north-up rotation.</summary>
+    public double UserRotationRad { get; set; }
     private bool _fitted;
     private enum Gesture { None, Box, Move }
     private Gesture _gesture; private Point _start; private Point _now; private PointMm _startMm; private (int X, int Y) _delta;
@@ -40,7 +44,9 @@ public class PlanView : Control
         return bmp;
     }
 
-    public PlanView() { Focusable = true; ClipToBounds = true; DataContextChanged += (_, _) => { if (Vm != null) { Vm.FocusRequested += CenterOn; Vm.ViewFitRequested += RefitNextRender; } }; }
+    public PlanView() { Focusable = true; ClipToBounds = true; DataContextChanged += (_, _) => { if (Vm != null) { Vm.FocusRequested += CenterOn; Vm.ViewFitRequested += RefitNextRender; } };
+        AddHandler(PointerTouchPadGestureMagnifyEvent, (_, e) => { ZoomAt(e.GetPosition(this), Math.Exp(e.Delta.X)); e.Handled = true; });   // trackpad pinch
+    }
 
     private ToolKind? _chainKind;
     private bool IsChain => Vm is { IsDrawTool: true } or { IsPipeTool: true };
@@ -111,10 +117,21 @@ public class PlanView : Control
         return null;
     }
 
+    private SegmentRef? HitRiser(Point p)
+    {
+        if (Vm?.CurrentLevel is not { } l) return null;
+        foreach (var r in NetworkQueries.RisersAt(Vm.Building, l).Where(x => x.Network.Visible && !x.Network.Locked))
+        {
+            var c = ToScreen(new PointMm(r.A.X, r.A.Y)); var rad = Math.Max(5, r.Segment.DiameterMm * Scale) + 2;
+            if ((p.X - c.X) * (p.X - c.X) + (p.Y - c.Y) * (p.Y - c.Y) <= rad * rad) return r;
+        }
+        return null;
+    }
+
     private ToolPointer HandlePointer(PointerEventArgs e) { var p = e.GetPosition(this); return new ToolPointer(ToMm(p), p.X, p.Y); }
 
     /// <summary>"North up": the whole view is turned about the viewport centre so that true north points up (needs a placed building).</summary>
-    public double ViewRotationRad => Vm is { NorthUp: true, Building.Site: { } s } ? s.RotationDeg * Math.PI / 180 : 0;
+    public double ViewRotationRad => (Vm is { NorthUp: true, Building.Site: { } s } ? s.RotationDeg * Math.PI / 180 : 0) + UserRotationRad;
     private Point Rot(Point p, double angle)
     {
         if (angle == 0) return p;
@@ -125,6 +142,28 @@ public class PlanView : Control
     public PointMm ToMm(Point p) { var u = Rot(p, -ViewRotationRad); return new((int)Math.Round((u.X - Offset.X) / Scale), (int)Math.Round((Bounds.Height - u.Y - Offset.Y) / Scale)); }
     internal Point ToScreenForTest(PointMm p) => ToScreen(p);
     private Point ToScreen(PointMm p) => Rot(new(Offset.X + p.X * Scale, Bounds.Height - Offset.Y - p.Y * Scale), ViewRotationRad);
+
+    /// <summary>Moves the drawing by a screen vector (accounts for the view rotation).</summary>
+    private void PanBy(double dx, double dy)
+    {
+        var a = ViewRotationRad; double c = Math.Cos(a), s = Math.Sin(a);
+        double ux = dx * c + dy * s, uy = -dx * s + dy * c;
+        Offset = (Offset.X + ux, Offset.Y - uy);
+    }
+
+    /// <summary>Zooms about the point p (screen) keeping the drawing under it fixed.</summary>
+    private void ZoomAt(Point p, double factor)
+    {
+        var before = ToMm(p); Scale = Math.Clamp(Scale * factor, 0.005, 5);
+        var after = ToScreen(before); PanBy(p.X - after.X, p.Y - after.Y); InvalidateVisual();
+    }
+
+    /// <summary>"in", "out" (about the centre) or "fit" (fit everything, drop the user rotation).</summary>
+    public void Zoom(string how)
+    {
+        if (how == "fit") { UserRotationRad = 0; FitAll(); InvalidateVisual(); return; }
+        ZoomAt(new Point(Bounds.Width / 2, Bounds.Height / 2), how == "in" ? 1.25 : 1 / 1.25);
+    }
 
     public void FitAll()
     {
@@ -149,8 +188,12 @@ public class PlanView : Control
     private Wall? HitWall(PointMm p) => Vm?.CurrentLevel?.Walls.LastOrDefault(w =>
         ImmoCad.Core.Geometry.SpaceFinder.Contains(w.Footprint, p) && !w.Holes.Any(h => ImmoCad.Core.Geometry.SpaceFinder.Contains(h, p)));
 
+    /// <summary>The snapper follows the visible grid and the Snap-to-grid toggle.</summary>
+    private void SyncSnap() { if (Vm is not { } v) return; Snapper.SnapToGrid = v.SnapToGrid; Snapper.GridMm = v.SnapToGrid ? Math.Max(1, (int)Math.Round(NiceStepMm(10))) : 0; }
+
     private ToolPointer TP(PointerEventArgs e)
     {
+        SyncSnap();
         var p = e.GetPosition(this);
         var prev = DrawTool?.Points.Count > 0 ? DrawTool.Points[^1] : (PointMm?)null;
         return new ToolPointer(Snapper.Snap(ToMm(p), Polys(), prev).Point, p.X, p.Y);
@@ -158,9 +201,9 @@ public class PlanView : Control
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
-        Focus();
+        Focus(); SyncSnap();
         var props = e.GetCurrentPoint(this).Properties; var p = e.GetPosition(this);
-        if (props.IsMiddleButtonPressed) { _pan = p; return; }
+        if (props.IsMiddleButtonPressed) { _pan = p; e.Pointer.Capture(this); return; }
         if (Vm is not { } vm) return;
         if (props.IsRightButtonPressed)
         {
@@ -195,6 +238,8 @@ public class PlanView : Control
         if (vm.IsPlaceTool) { vm.PlaceFromPalette(ToMm(p)); return; }
         foreach (var (rect, lvl, c) in _arrows)
             if (rect.Contains(p)) { vm.SelectLevelCommand.Execute(lvl); CenterOn(c); return; }
+        if (_space) { _pan = p; e.Pointer.Capture(this); return; }                                                                                                // Space+drag: pan
+        if ((e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Meta)) && HitHandle(p) == null) { _rotFrom = p; e.Pointer.Capture(this); return; }   // Ctrl/⌘+drag: rotate
 
         // equipment: port handle starts Connect, body selects/moves
         if (vm.SelectedEquipment is { } se && EquipmentCatalog.Find(se.CatalogId)?.With(se.Parameters) is { } sc && vm.CurrentLevel is { } sl)
@@ -203,26 +248,34 @@ public class PlanView : Control
         if (HitEquipment(ToMm(p)) is { } heq) { vm.SelectEquipment(heq.Id); _eqDrag = (heq.Id, heq.Position, ToMm(p)); e.Pointer.Capture(this); InvalidateVisual(); return; }
         // pipe handles and pipe bodies come before walls
         if (_handleTool != null && _handleTool.State == ToolState.Placing) { _handleTool.ForceElbow = e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Alt); _handleTool.Down(HandlePointer(e)); FinishHandle(vm); return; }
-        if (HitHandle(p) is { } h) { _handleTool = new PipeHandleTool(vm.Actions, h.Seg.Network.Id, h.Seg.Segment.Id, h.Handle, vm.Snapper_GridMm()) { ForceElbow = e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Alt) }; _typed = ""; _handleTool.Down(HandlePointer(e)); e.Pointer.Capture(this); InvalidateVisual(); return; }
+        if (HitHandle(p) is { } h) { _handleTool = new PipeHandleTool(vm.Actions, h.Seg.Network.Id, h.Seg.Segment.Id, h.Handle, Snapper.GridMm) { ForceElbow = e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Alt) }; _typed = ""; _handleTool.Down(HandlePointer(e)); e.Pointer.Capture(this); InvalidateVisual(); return; }
+        if (HitRiser(p) is { } riser) { vm.SelectSegment(riser.Network.Id, riser.Segment.Id); InvalidateVisual(); return; }
         if (HitPipe(p) is { } pipe)
         {
             vm.SelectSegment(pipe.Network.Id, pipe.Segment.Id);
-            _handleTool = new PipeHandleTool(vm.Actions, pipe.Network.Id, pipe.Segment.Id, PipeHandle.Body, vm.Snapper_GridMm()); _typed = ""; _handleTool.Down(HandlePointer(e)); e.Pointer.Capture(this); InvalidateVisual(); return;
+            _handleTool = new PipeHandleTool(vm.Actions, pipe.Network.Id, pipe.Segment.Id, PipeHandle.Body, Snapper.GridMm); _typed = ""; _handleTool.Down(HandlePointer(e)); e.Pointer.Capture(this); InvalidateVisual(); return;
         }
         vm.ClearSegment(); if (vm.SelectedEquipmentId != null) vm.SelectEquipment(null);
         _start = _now = p;
-        if (vm.HitOpening(ToMm(p)) is { } oh) { _openingDrag = oh; e.Pointer.Capture(this); return; } _startMm = ToMm(p); _delta = (0, 0); _addToSelection = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+        if (vm.HitOpening(ToMm(p)) is { } oh) { vm.SelectOpening(oh.Wall.Id, oh.Opening.Id); _openingDrag = oh; e.Pointer.Capture(this); return; } _startMm = ToMm(p); _delta = (0, 0); _addToSelection = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
         var hit = HitWall(_startMm);
         if (hit != null && vm.SelectedWalls.Contains(hit.Id) && !_addToSelection) _gesture = Gesture.Move;       // drag the group
         else if (hit != null) { vm.SelectWalls([hit.Id], _addToSelection); _gesture = Gesture.Move; }            // select then drag
-        else { if (!_addToSelection) vm.SelectWalls([], false); _gesture = Gesture.Box; }
+        else { if (!_addToSelection) { vm.SelectWalls([], false); vm.ClearOpening(); } _gesture = Gesture.Box; }
         e.Pointer.Capture(this); InvalidateVisual();
     }
 
     protected override void OnPointerMoved(PointerEventArgs e)
     {
-        var p = e.GetPosition(this);
-        if (_pan is { } l) { Offset = (Offset.X + p.X - l.X, Offset.Y - (p.Y - l.Y)); _pan = p; InvalidateVisual(); return; }
+        var p = e.GetPosition(this); SyncSnap();
+        if (_pan is { } l) { PanBy(p.X - l.X, p.Y - l.Y); _pan = p; InvalidateVisual(); return; }
+        if (_rotFrom is { } rf)
+        {
+            double cx = Bounds.Width / 2, cy = Bounds.Height / 2;
+            var d = Math.Atan2(p.Y - cy, p.X - cx) - Math.Atan2(rf.Y - cy, rf.X - cx);
+            if (d > Math.PI) d -= 2 * Math.PI; else if (d < -Math.PI) d += 2 * Math.PI;
+            UserRotationRad += d; _rotFrom = p; InvalidateVisual(); return;
+        }
         CursorMoved?.Invoke(ToMm(p));
         if (Vm is not { } vm) return;
         _hover = ToMm(p);
@@ -254,7 +307,8 @@ public class PlanView : Control
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
-        _pan = null; e.Pointer.Capture(null);
+        var wasView = _pan != null || _rotFrom != null; _pan = null; _rotFrom = null; e.Pointer.Capture(null);
+        if (wasView) return;
         if (Vm is not { } vm) return;
         if (IsChain) { DrawTool?.Up(TP(e)); InvalidateVisual(); return; }
         if (_handleTool != null) { _handleTool.Up(HandlePointer(e)); if (_handleTool.State == ToolState.Committed) FinishHandle(vm); else if (_handleTool.State == ToolState.Placing && _handleTool.Handle == PipeHandle.Body) { _handleTool.Cancel(); _handleTool = null; vm.AfterEdit(); } /* a plain click on the body only selects */ InvalidateVisual(); return; }
@@ -275,14 +329,21 @@ public class PlanView : Control
 
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
     {
-        var p = e.GetPosition(this); var before = ToMm(p);
-        Scale = Math.Clamp(Scale * (e.Delta.Y > 0 ? 1.15 : 1 / 1.15), 0.005, 5);
-        Offset = (p.X - before.X * Scale, Bounds.Height - p.Y - before.Y * Scale); InvalidateVisual();
+        var cmd = e.KeyModifiers.HasFlag(MenuFactory.CommandModifiers);
+        if (OperatingSystem.IsMacOS() && !cmd)
+        {   // trackpad: two-finger scroll pans (pinch zooms, ⌘+scroll zooms)
+            PanBy(e.Delta.X * 40, e.Delta.Y * 40); InvalidateVisual(); e.Handled = true; return;
+        }
+        ZoomAt(e.GetPosition(this), Math.Pow(1.15, Math.Clamp(e.Delta.Y, -3, 3)));
     }
+
+    protected override void OnLostFocus(FocusChangedEventArgs e) { _space = false; Cursor = null; base.OnLostFocus(e); }
+    protected override void OnKeyUp(KeyEventArgs e) { if (e.Key == Key.Space) { _space = false; Cursor = null; e.Handled = true; } base.OnKeyUp(e); }
 
     protected override void OnKeyDown(KeyEventArgs e)
     {
         if (Vm is not { } vm) return;
+        if (e.Key == Key.Space && !IsChain && _handleTool == null) { _space = true; Cursor = new Cursor(StandardCursorType.Hand); e.Handled = true; return; }
         if (vm.IsStraightenTool && e.Key == Key.Enter) { vm.StraightenSelectionCommand.Execute(null); vm.SetToolCommand.Execute("Select"); InvalidateVisual(); e.Handled = true; return; }
         if (vm.IsNumberTool && e.Key == Key.Enter) { vm.NumberCommit(); InvalidateVisual(); e.Handled = true; return; }
         if (e.Key == Key.Escape && (vm.IsDoorTool || vm.IsWindowTool || vm.IsSpaceTool || vm.IsMeasureTool || vm.IsNumberTool || vm.IsPlaceTool || vm.IsRiserTool || vm.IsStraightenTool)) { vm.SetToolCommand.Execute("Select"); e.Handled = true; return; }
@@ -293,6 +354,7 @@ public class PlanView : Control
         }
         if (DrawTool != null && IsChain)
         {
+            if (e.Key == Key.Space && vm.IsDrawTool) { vm.CycleWallAlign(); InvalidateVisual(); e.Handled = true; return; }
             var ch = e.Key >= Key.D0 && e.Key <= Key.D9 ? (char)('0' + (e.Key - Key.D0)) : e.Key >= Key.NumPad0 && e.Key <= Key.NumPad9 ? (char)('0' + (e.Key - Key.NumPad0)) : e.Key is Key.OemPeriod or Key.OemComma or Key.Decimal ? '.' : e.Key == Key.OemMinus ? '-' : '\0';
             if (ch != '\0' && DrawTool.Points.Count > 0) { if (_chainField == 0) _chainTyped += ch; else _chainAngle += ch; InvalidateVisual(); e.Handled = true; return; }
             if (e.Key == Key.Tab && DrawTool.Points.Count > 0 && _chainTyped.Length > 0) { _chainField = 1 - _chainField; InvalidateVisual(); e.Handled = true; return; }
@@ -378,6 +440,7 @@ public class PlanView : Control
                 var cut = new StreamGeometry(); using (var cx = cut.Open()) { cx.BeginFigure(ToScreen(Q(c0, 1)), true); cx.LineTo(ToScreen(Q(c1, 1))); cx.LineTo(ToScreen(Q(c1, -1))); cx.LineTo(ToScreen(Q(c0, -1))); cx.EndFigure(true); }
                 ctx.DrawGeometry(bg, null, cut);                                                                                       // hole in the wall
                 var pen = new Pen(dark ? Brushes.Gainsboro : Brushes.Black, 1.2);
+                if (Vm.SelectedOpening?.OpeningId == o.Id) ctx.DrawGeometry(new SolidColorBrush(Color.FromArgb(70, 255, 120, 0)), new Pen(Brushes.OrangeRed, 2), cut);
                 if (o.Kind == OpeningKind.Window) { foreach (var side in new[] { 1.0, 0.0, -1.0 }) ctx.DrawLine(pen, ToScreen(Q(c0, side)), ToScreen(Q(c1, side))); }
                 else if (o.Kind == OpeningKind.Door)
                 {   // leaf perpendicular to the wall at the hinge, arc swept by the free end
@@ -399,6 +462,37 @@ public class PlanView : Control
                 if (!string.IsNullOrEmpty(o.Label)) { var cm = ax.PointAt(o.PositionMm); var ft = Txt(o.Label, 10, Brushes.SteelBlue); var sp = ToScreen(cm); ctx.DrawText(ft, new Point(sp.X - ft.Width / 2, sp.Y - 18)); }
             }
         }
+    }
+
+    /// <summary>Dashed outline of the wall being drawn (its real thickness, on the chosen side of the drawing line), for the segments placed so far and the one under the cursor.</summary>
+    private void DrawWallPreview(DrawingContext ctx, DrawChainTool t)
+    {
+        var vm = Vm!; var fill = new SolidColorBrush(Color.FromArgb(40, 255, 120, 0)); var dash = new Pen(Brushes.OrangeRed, 1.3, DashStyle.Dash);
+        void One(PointMm a, PointMm b)
+        {
+            var r = ImmoCad.Core.Geometry.WallGeometry.Rectangle(a, b, vm.WallThicknessMm, vm.WallAlign).Select(ToScreen).ToList(); if (r.Count < 4) return;
+            ctx.DrawGeometry(fill, dash, Poly(r.ToArray()));
+        }
+        for (var i = 1; i < t.Points.Count; i++) One(t.Points[i - 1], t.Points[i]);
+        if (t.Preview is { } pv && t.Points.Count > 0) One(t.Points[^1], pv);
+        var label = Txt(T("align." + vm.WallAlign.ToString().ToLowerInvariant()) + "  ·  " + T("align.hint"), 12, Brushes.OrangeRed);
+        ctx.DrawText(label, new Point(12, Bounds.Height - 44));
+    }
+
+    /// <summary>The plan's origin (0, 0): X axis in red, Y axis in green.</summary>
+    private void DrawOrigin(DrawingContext ctx, bool dark)
+    {
+        var o = ToScreen(new PointMm(0, 0)); if (o.X < -50 || o.Y < -50 || o.X > Bounds.Width + 50 || o.Y > Bounds.Height + 50) return;
+        var ax = ToScreen(new PointMm(1, 0)) - o; var ay = ToScreen(new PointMm(0, 1)) - o;
+        Point Dir(Point v) { var l = Math.Sqrt(v.X * v.X + v.Y * v.Y); return l < 1e-9 ? new Point(1, 0) : new Point(v.X / l * 46, v.Y / l * 46); }
+        var dx = Dir(ax); var dy = Dir(ay); var px = new Pen(Brushes.IndianRed, 2, lineCap: PenLineCap.Round); var py = new Pen(Brushes.SeaGreen, 2, lineCap: PenLineCap.Round);
+        ctx.DrawLine(px, o, o + dx); ctx.DrawLine(py, o, o + dy);
+        void Head(Point tip, Point d, IPen pen) { var n = new Point(-d.Y / 46 * 4, d.X / 46 * 4); var back = new Point(d.X / 46 * 8, d.Y / 46 * 8); ctx.DrawLine(pen, tip, tip - back + n); ctx.DrawLine(pen, tip, tip - back - n); }
+        Head(o + dx, dx, px); Head(o + dy, dy, py);
+        var tb = dark ? Brushes.Gainsboro : Brushes.DimGray;
+        ctx.DrawText(Txt("X", 12, Brushes.IndianRed), o + dx + new Point(4, -8)); ctx.DrawText(Txt("Y", 12, Brushes.SeaGreen), o + dy + new Point(4, -8));
+        ctx.DrawEllipse(dark ? Brushes.Black : Brushes.White, new Pen(tb, 1.6), o, 4, 4);
+        ctx.DrawText(Txt(T("plan.origin") + " (0, 0)", 11, tb), o + new Point(-6, 6));
     }
 
     private void DrawStraightenPreview(DrawingContext ctx)
@@ -480,6 +574,7 @@ public class PlanView : Control
         {
             var c = NetworkQueries.ColorOf(r.Network.Type); var p = ToScreen(new PointMm(r.A.X, r.A.Y)); var rad = Math.Max(5, r.Segment.DiameterMm * Scale);
             ctx.DrawEllipse(new SolidColorBrush(Color.FromRgb(c.R, c.G, c.B)), new Pen(Brushes.Black, 1), p, rad, rad);
+            if (Vm.SelectedSegment?.SegmentId == r.Segment.Id) ctx.DrawEllipse(null, new Pen(Brushes.OrangeRed, 2.5), p, rad + 3, rad + 3);
             foreach (var dir in new[] { +1, -1 })
                 if (NetworkQueries.NextLevelReached(b, r, l, dir) is { } next)
                 {
@@ -525,7 +620,9 @@ public class PlanView : Control
         var dark = ActualThemeVariant == Avalonia.Styling.ThemeVariant.Dark;
         ctx.FillRectangle(Tokens.Brush(this, "PlanBackground", dark ? Color.FromRgb(30, 32, 36) : Color.FromRgb(250, 250, 248)), new Rect(Bounds.Size));
         if (!_fitted) FitAll();
+        SyncSnap();
         using (ctx.PushTransform(RotationMatrix())) DrawGrid(ctx, dark);
+        DrawOrigin(ctx, dark);
         if (Vm?.CurrentLevel is not { } l) return;
         if (l.BackgroundVisible && l.ImageTransform is { Length: 6 } tr0 && Background(l) is { } bg)
         {
@@ -574,6 +671,7 @@ public class PlanView : Control
         if (DrawTool is { Points.Count: > 0 } t)
         {
             var pen = new Pen(Brushes.OrangeRed, 2);
+            if (Vm.IsDrawTool) DrawWallPreview(ctx, t);
             for (var i = 1; i < t.Points.Count; i++) ctx.DrawLine(pen, ToScreen(t.Points[i - 1]), ToScreen(t.Points[i]));
             if (t.Preview is { } pv)
             {
@@ -606,14 +704,44 @@ public class PlanView : Control
         }
         var label = new FormattedText($"{l.DisplayName}  ·  {l.AltitudeMm / 1000.0:0.0} m", System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 14, dark ? Brushes.Gainsboro : Brushes.DimGray);
         ctx.DrawText(label, new Point(12, 8));
+        DrawScaleBar(ctx, dark);
     }
 
+    /// <summary>Smallest "nice" step (1, 2, 5 × 10ⁿ mm) that is at least <paramref name="minPx"/> pixels wide at the current zoom.</summary>
+    private double NiceStepMm(double minPx)
+    {
+        var raw = minPx / Scale; var pow = Math.Pow(10, Math.Floor(Math.Log10(raw))); var m = raw / pow;
+        return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * pow;
+    }
+
+    private static string Length(double mm) => mm >= 1000 ? $"{mm / 1000:0.##} m" : mm >= 10 ? $"{mm / 10:0.##} cm" : $"{mm:0.##} mm";
+
+    /// <summary>Grid spacing adapts to the zoom (minor lines ≥ 10 px apart, a stronger line every 5th); the scale bar and grid size tell the spacing.</summary>
     private void DrawGrid(DrawingContext ctx, bool dark)
     {
-        var step = Scale * 1000; if (step < 8) return;
+        var minorMm = NiceStepMm(10); var step = minorMm * Scale; var major = step * 5;
         var minor = new Pen(Tokens.Brush(this, "PlanGrid", dark ? Color.FromRgb(44, 47, 52) : Color.FromRgb(236, 236, 232)), 1);
-        for (var x = Offset.X % step; x < Bounds.Width; x += step) ctx.DrawLine(minor, new(x, 0), new(x, Bounds.Height));
-        for (var y = (Bounds.Height - Offset.Y) % step; y < Bounds.Height; y += step) ctx.DrawLine(minor, new(0, y), new(Bounds.Width, y));
+        var strong = new Pen(dark ? new SolidColorBrush(Color.FromRgb(62, 66, 72)) : new SolidColorBrush(Color.FromRgb(218, 218, 212)), 1);
+        // the view may be rotated: cover the circle that contains the viewport
+        double cx = Bounds.Width / 2, cy = Bounds.Height / 2, r = Math.Sqrt(cx * cx + cy * cy);
+        var k0 = (int)Math.Floor((cx - r - Offset.X) / step); var k1 = (int)Math.Ceiling((cx + r - Offset.X) / step);
+        for (var k = k0; k <= k1; k++) { var x = Offset.X + k * step; ctx.DrawLine(k % 5 == 0 ? strong : minor, new(x, cy - r), new(x, cy + r)); }
+        var y0 = Bounds.Height - Offset.Y;
+        var j0 = (int)Math.Floor((y0 - cy - r) / step); var j1 = (int)Math.Ceiling((y0 - cy + r) / step);
+        for (var k = j0; k <= j1; k++) { var y = y0 - k * step; ctx.DrawLine(k % 5 == 0 ? strong : minor, new(cx - r, y), new(cx + r, y)); }
+        _ = major;
+    }
+
+    /// <summary>Scale bar (bottom left) with end ticks and half-way tick, plus the grid spacing.</summary>
+    private void DrawScaleBar(DrawingContext ctx, bool dark)
+    {
+        var barMm = NiceStepMm(90); var w = barMm * Scale; var brush = dark ? Brushes.Gainsboro : Brushes.DimGray; var pen = new Pen(brush, 1.5);
+        double x = 14, y = Bounds.Height - 22;
+        ctx.DrawLine(pen, new(x, y), new(x + w, y));
+        for (var i = 0; i <= 4; i++) { var tx = x + w * i / 4; ctx.DrawLine(pen, new(tx, y), new(tx, y - (i % 2 == 0 ? 8 : 4))); }
+        ctx.DrawText(Txt("0", 11, brush), new Point(x - 3, y + 2));
+        var end = Txt(Length(barMm), 11, brush); ctx.DrawText(end, new Point(x + w - end.Width / 2, y + 2));
+        var grid = Txt(T(Vm?.SnapToGrid == true ? "plan.grid.snap" : "plan.grid", Length(NiceStepMm(10))), 11, brush); ctx.DrawText(grid, new Point(x + w + 18, y - 6));
     }
 
     private void DrawWalls(DrawingContext ctx, Level l, IBrush fill, IPen? pen, (int X, int Y)? shift, IReadOnlySet<Guid>? selected = null, IBrush? selFill = null, bool onlySelected = false)

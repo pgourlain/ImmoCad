@@ -12,8 +12,23 @@ public readonly record struct WallAxis(PointMm A, PointMm B, double Length, int 
     }
 }
 
+/// <summary>Where the wall lies relative to the drawn line: centred on it, or entirely on its left / right side (looking along the drawing direction).</summary>
+public enum WallAlign { Center, Left, Right }
+
 public static class WallGeometry
 {
+    /// <summary>Wall rectangle along the drawn line a→b with the given alignment (corners: a+side1, b+side1, b+side2, a+side2).</summary>
+    public static IEnumerable<PointMm> Rectangle(PointMm a, PointMm b, int thicknessMm, WallAlign align)
+    {
+        double dx = b.X - a.X, dy = b.Y - a.Y; var len = Math.Sqrt(dx * dx + dy * dy);
+        if (len < 1e-9) return [];
+        double lx = -dy / len, ly = dx / len;                                                  // left normal
+        double o1 = align switch { WallAlign.Center => thicknessMm / 2.0, WallAlign.Left => thicknessMm, _ => 0 };
+        double o2 = align switch { WallAlign.Center => -thicknessMm / 2.0, WallAlign.Left => 0, _ => -thicknessMm };
+        PointMm P(PointMm c, double o) => new((int)Math.Round(c.X + lx * o), (int)Math.Round(c.Y + ly * o));
+        return [P(a, o1), P(b, o1), P(b, o2), P(a, o2)];
+    }
+
     public static WallAxis? Axis(Wall w)
     {
         var f = w.Footprint; if (f.Count < 3) return null;

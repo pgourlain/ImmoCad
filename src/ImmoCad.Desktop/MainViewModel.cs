@@ -78,6 +78,13 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _status = T("ready");
     [ObservableProperty] private string _hint = T("hint.select");
     public int WallThicknessMm { get; set; } = 200;
+    /// <summary>Side of the drawn line the new wall lies on (Space cycles it while drawing).</summary>
+    public ImmoCad.Core.Geometry.WallAlign WallAlign { get; private set; } = ImmoCad.Core.Geometry.WallAlign.Center;
+    public void CycleWallAlign()
+    {
+        WallAlign = (ImmoCad.Core.Geometry.WallAlign)(((int)WallAlign + 1) % 3);
+        Status = T("align." + WallAlign.ToString().ToLowerInvariant()); OnPropertyChanged(nameof(WallAlign)); Changed?.Invoke();
+    }
 
     // ---- 3D ----
     [ObservableProperty] private bool _xRay;
@@ -113,7 +120,7 @@ public partial class MainViewModel : ObservableObject
 
     public void SelectEquipment(Guid? id)
     {
-        SelectedEquipmentId = id; if (id != null) { SelectedWalls.Clear(); SelectedSegment = null; }
+        SelectedEquipmentId = id; if (id != null) { SelectedWalls.Clear(); SelectedSegment = null; SelectedOpening = null; }
         if (SelectedEquipment is { } e)
         {
             var cat = EquipmentCatalog.Find(e.CatalogId)?.With(e.Parameters); EqLabel = e.Label ?? ""; EqElevation = e.ElevationMm; EqRotation = e.RotationDeg;
@@ -218,9 +225,12 @@ public partial class MainViewModel : ObservableObject
 
     // ---- Pipe selection (handles) ----
     public (Guid NetworkId, Guid SegmentId)? SelectedSegment { get; private set; }
-    public void SelectSegment(Guid networkId, Guid segmentId) { SelectedWalls.Clear(); SelectedEquipmentId = null; SelectedSegment = (networkId, segmentId); RefreshExtent(); Status = T("pipe.selected.hint"); OnPropertyChanged(nameof(SelectionText)); Changed?.Invoke(); }
+    public void SelectSegment(Guid networkId, Guid segmentId) { SelectedOpening = null; SelectedWalls.Clear(); SelectedEquipmentId = null; SelectedSegment = (networkId, segmentId); RefreshExtent(); Status = T("pipe.selected.hint"); OnPropertyChanged(nameof(SelectionText)); Changed?.Invoke(); }
     public void ClearSegment() { SelectedSegment = null; }
     public int Snapper_GridMm() => 50;
+    /// <summary>Snap to the visible grid (View › Snap to grid, F9).</summary>
+    public bool SnapToGrid { get; private set; } = true;
+    [RelayCommand] private void ToggleSnapToGrid() { SnapToGrid = !SnapToGrid; Status = T(SnapToGrid ? "snap.on" : "snap.off"); OnPropertyChanged(nameof(SnapToGrid)); Changed?.Invoke(); }
     public void AfterEdit(string? message = null) { if (message != null) Status = message; Refresh(); }
 
     // ---- Network tool options ----
@@ -319,10 +329,31 @@ public partial class MainViewModel : ObservableObject
         Status = kind == OpeningKind.Door ? T("door.added", o.WidthMm) : T("window.added"); Refresh();
     }
 
+    // ---- Door / window selection and properties ----
+    private (Guid WallId, Guid OpeningId)? _selectedOpening;
+    public (Guid WallId, Guid OpeningId)? SelectedOpening { get => _selectedOpening; private set { _selectedOpening = value; OnPropertyChanged(nameof(SelectedOpeningVisible)); } }
+    public bool SelectedOpeningVisible => _selectedOpening != null;
+    public Opening? SelectedOpeningModel => SelectedOpening is { } s ? CurrentLevel?.Walls.FirstOrDefault(w => w.Id == s.WallId)?.Openings.FirstOrDefault(o => o.Id == s.OpeningId) : null;
+    [ObservableProperty] private int _opWidth; [ObservableProperty] private int _opHeight; [ObservableProperty] private int _opSill; [ObservableProperty] private string _opLabel = "";
+    [ObservableProperty] private bool _opSwingLeft; [ObservableProperty] private bool _opSwingOut;
+    public void SelectOpening(Guid wallId, Guid openingId)
+    {
+        SelectedWalls.Clear(); SelectedSegment = null; SelectedEquipmentId = null; SelectedOpening = (wallId, openingId);
+        if (SelectedOpeningModel is { } o) { OpWidth = o.WidthMm; OpHeight = o.HeightMm; OpSill = o.SillMm; OpLabel = o.Label ?? ""; OpSwingLeft = o.SwingLeft; OpSwingOut = o.SwingOut; }
+        Status = T("opening.selected"); OnPropertyChanged(nameof(SelectionText)); Changed?.Invoke();
+    }
+    public void ClearOpening() { if (SelectedOpening == null) return; SelectedOpening = null; OnPropertyChanged(nameof(SelectionText)); }
+    [RelayCommand] private void ApplyOpening()
+    {
+        if (SelectedOpening is not { } s || CurrentLevel is not { } l) return;
+        Actions.SetOpeningProperties(l.Id, s.WallId, s.OpeningId, OpWidth, OpHeight, OpSill, OpSwingLeft, OpSwingOut, OpLabel.Length == 0 ? null : OpLabel);
+        Refresh(); SelectOpening(s.WallId, s.OpeningId); Status = T("opening.modified");
+    }
+
     public void MoveOpeningTo(Wall wall, Opening o, PointMm to)
     {
         if (CurrentLevel is not { } l || WallGeometry.PositionAlong(wall, to, 2000) is not { } pos) return;
-        Actions.MoveOpening(l.Id, wall.Id, o.Id, (int)Math.Round(pos)); Status = T("opening.moved"); Refresh();
+        Actions.MoveOpening(l.Id, wall.Id, o.Id, (int)Math.Round(pos)); Refresh(); SelectOpening(wall.Id, o.Id); Status = T("opening.moved");
     }
 
     /// <summary>Space tool: flood-fill from the click inside the walls; refused with a hint when the room is not closed.</summary>
@@ -519,7 +550,7 @@ public partial class MainViewModel : ObservableObject
     public bool IsNumberTool => Tool == ToolKind.NumberCellars;
     public bool IsStraightenTool => Tool == ToolKind.Straighten;
     public bool IsStretchTool => Tool == ToolKind.Stretch;
-    public string SelectionText => SelectedSegment != null ? T("pipe.selected") : SelectedWalls.Count == 0 ? T("no.selection") : T("walls.selected", SelectedWalls.Count);
+    public string SelectionText => SelectedOpening != null ? T("opening.selected") : SelectedSegment != null ? T("pipe.selected") : SelectedWalls.Count == 0 ? T("no.selection") : T("walls.selected", SelectedWalls.Count);
 
     public MainViewModel() : this(startWithSample: true) { }
 
@@ -591,7 +622,7 @@ public partial class MainViewModel : ObservableObject
 
     public void SelectWalls(IEnumerable<Guid> ids, bool add)
     {
-        if (ids.Any()) { SelectedSegment = null; SelectedEquipmentId = null; }
+        if (ids.Any()) { SelectedSegment = null; SelectedEquipmentId = null; SelectedOpening = null; }
         if (!add) SelectedWalls.Clear();
         foreach (var id in ids) SelectedWalls.Add(id);
         Status = SelectionText; OnPropertyChanged(nameof(SelectionText)); Changed?.Invoke();
@@ -641,9 +672,37 @@ public partial class MainViewModel : ObservableObject
 
     [RelayCommand] private void DeleteSelection()
     {
+        if (SelectedOpening is { } so && CurrentLevel is { } ol) { Actions.DeleteOpening(ol.Id, so.WallId, so.OpeningId); SelectedOpening = null; Status = T("deleted"); Refresh(); return; }
         if (CurrentLevel is not { } l || SelectedWalls.Count == 0) return;
         Actions.DeleteWalls(l.Id, SelectedWalls.ToList()); SelectedWalls.Clear(); Status = T("deleted"); Refresh();
     }
+
+    // clipboard (walls with their openings); pasting on the source level shifts each copy by 500 mm
+    private List<Wall> _clip = []; private Guid _clipLevel; private int _pasteCount;
+    public bool CanPaste => _clip.Count > 0;
+    [RelayCommand] private void Copy()
+    {
+        if (CurrentLevel is not { } l || SelectedWalls.Count == 0) return;
+        _clip = l.Walls.Where(w => SelectedWalls.Contains(w.Id)).Select(CloneWall).ToList(); _clipLevel = l.Id; _pasteCount = 0; Status = T("clip.copied");
+    }
+    [RelayCommand] private void Cut() { if (SelectedWalls.Count == 0) return; Copy(); DeleteSelection(); Status = T("clip.cut"); }
+    [RelayCommand] private void Paste()
+    {
+        if (CurrentLevel is not { } l) return;
+        if (_clip.Count == 0) { Status = T("clip.empty"); return; }
+        _pasteCount++; var d = l.Id == _clipLevel ? 500 * _pasteCount : 0;
+        var ids = Actions.PasteWalls(l.Id, _clip, d, d); Refresh(); SelectWalls(ids, false); Status = T("clip.pasted");
+    }
+    [RelayCommand] private void Duplicate() { if (SelectedWalls.Count == 0) return; Copy(); Paste(); }
+    private static Wall CloneWall(Wall w) => new()
+    {
+        Footprint = w.Footprint.ToList(), Holes = w.Holes.Select(h => h.ToList()).ToList(), HeightMm = w.HeightMm, Label = w.Label, Stability = w.Stability,
+        Openings = w.Openings.Select(o => new Opening { Kind = o.Kind, PositionMm = o.PositionMm, WidthMm = o.WidthMm, HeightMm = o.HeightMm, SillMm = o.SillMm, SwingLeft = o.SwingLeft, SwingOut = o.SwingOut, Label = o.Label, Stability = o.Stability }).ToList(),
+    };
+
+    /// <summary>Raised by the zoom commands; the window forwards it to the plan view ("in", "out", "fit").</summary>
+    public event Action<string>? PlanZoomRequested;
+    [RelayCommand] private void ZoomPlan(string how) => PlanZoomRequested?.Invoke(how);
 
     [RelayCommand] private void SelectAll() { if (CurrentLevel is { } l) SelectWalls(l.Walls.Select(w => w.Id), false); }
     [RelayCommand] private void SetTool(string t) => Tool = Enum.Parse<ToolKind>(t);
@@ -892,13 +951,12 @@ public partial class MainViewModel : ObservableObject
     public void CommitWalls(IReadOnlyList<PointMm> pts)
     {
         if (CurrentLevel is not { } lv) return;
-        var rects = new List<IEnumerable<PointMm>>(); var h = WallThicknessMm / 2;
+        var rects = new List<IEnumerable<PointMm>>();
         for (var i = 1; i < pts.Count; i++)
         {
             double dx = pts[i].X - pts[i - 1].X, dy = pts[i].Y - pts[i - 1].Y; var len = Math.Sqrt(dx * dx + dy * dy);
             if (len < 1) continue;
-            int nx = (int)Math.Round(-dy / len * h), ny = (int)Math.Round(dx / len * h);
-            rects.Add([new(pts[i - 1].X + nx, pts[i - 1].Y + ny), new(pts[i].X + nx, pts[i].Y + ny), new(pts[i].X - nx, pts[i].Y - ny), new(pts[i - 1].X - nx, pts[i - 1].Y - ny)]);
+            rects.Add(ImmoCad.Core.Geometry.WallGeometry.Rectangle(pts[i - 1], pts[i], WallThicknessMm, WallAlign));
         }
         if (rects.Count == 0) return;
         Actions.ImportWalls(lv.Id, rects); Status = T("walls.added", rects.Count); Refresh();

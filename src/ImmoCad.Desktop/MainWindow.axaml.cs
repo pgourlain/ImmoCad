@@ -23,6 +23,16 @@ public partial class MainWindow : Window
         }
         else View3D = new Viewport3D();
         View3DHost.Children.Add(View3D.Control);
+        Cube.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right; Cube.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top; Cube.Margin = new Avalonia.Thickness(0, 10, 14, 0); Cube.ZIndex = 10;
+        View3DHost.Children.Add(Cube); AttachCube();
+    }
+
+    /// <summary>Orientation cube over the 3D view: it redraws whenever the viewport redraws (camera moved).</summary>
+    public ViewCube Cube { get; } = new();
+    private void AttachCube()
+    {
+        var c = View3D.Controller; Cube.Controller = c; var inner = c.Invalidate;
+        c.Invalidate = () => { inner?.Invoke(); Cube.InvalidateVisual(); };
     }
 
     /// <summary>OpenGL when the platform provides it; tests and IMMOCAD_SOFTWARE=1 use the software viewport.</summary>
@@ -33,13 +43,58 @@ public partial class MainWindow : Window
         if (View3D is Viewport3D) return;
         Log.LogWarning("OpenGL unavailable ({Reason}); using the software 3D viewport", reason);
         var old = View3D; var sw = new Viewport3D { DataContext = Vm }; sw.Controller.Wireframe = old.Controller.Wireframe; sw.Controller.XRay = old.Controller.XRay;
-        View3DHost.Children.Remove(old.Control); View3D = sw; View3DHost.Children.Add(sw.Control); if (Vm.Is3D) sw.Rebuild();
+        View3DHost.Children.Remove(old.Control); View3D = sw; View3DHost.Children.Insert(0, sw.Control); AttachCube(); if (Vm.Is3D) sw.Rebuild();
     }
 
     // Tab (and the segmented control) switches 2D / 3D / wireframe without losing context: the 3D camera starts as a top view matching the plan's framing.
     private void OnWindowKey(object? s, Avalonia.Input.KeyEventArgs e)
     {
-        if (e.Key == Avalonia.Input.Key.Tab && Vm.HasDocument && (e.Source is not TextBox)) { Vm.CycleViewCommand.Execute(null); e.Handled = true; }
+        if (e.Handled || e.Source is TextBox || !Vm.HasDocument) return;
+        var K = e.Key;
+        if (K == Avalonia.Input.Key.Tab) { Vm.CycleViewCommand.Execute(null); e.Handled = true; return; }
+        var cmd = MenuFactory.CommandModifiers; var mods = e.KeyModifiers;
+        if (mods.HasFlag(cmd))
+        {   // ⌘ on macOS, Ctrl elsewhere; fallback for when the menu accelerators do not reach the focused control
+            var shift = mods.HasFlag(Avalonia.Input.KeyModifiers.Shift);
+            switch (K)
+            {
+                case Avalonia.Input.Key.Z when shift: Vm.RedoCommand.Execute(null); break;
+                case Avalonia.Input.Key.Z: Vm.UndoCommand.Execute(null); break;
+                case Avalonia.Input.Key.Y: Vm.RedoCommand.Execute(null); break;
+                case Avalonia.Input.Key.A: Vm.SelectAllCommand.Execute(null); break;
+                case Avalonia.Input.Key.C: Vm.CopyCommand.Execute(null); break;
+                case Avalonia.Input.Key.X: Vm.CutCommand.Execute(null); break;
+                case Avalonia.Input.Key.V: Vm.PasteCommand.Execute(null); break;
+                case Avalonia.Input.Key.D: Vm.DuplicateCommand.Execute(null); break;
+                case Avalonia.Input.Key.OemPlus or Avalonia.Input.Key.Add: Vm.ZoomPlanCommand.Execute("in"); break;
+                case Avalonia.Input.Key.OemMinus or Avalonia.Input.Key.Subtract: Vm.ZoomPlanCommand.Execute("out"); break;
+                case Avalonia.Input.Key.D0 or Avalonia.Input.Key.NumPad0: Vm.ZoomPlanCommand.Execute("fit"); break;
+                case Avalonia.Input.Key.S when shift: Vm.SaveAsCommand.Execute(null); break;
+                case Avalonia.Input.Key.S: Vm.SaveCommand.Execute(null); break;
+                case Avalonia.Input.Key.N: Vm.NewDocumentCommand.Execute(null); break;
+                case Avalonia.Input.Key.O: Vm.OpenCommand.Execute(null); break;
+                case Avalonia.Input.Key.W: Vm.CloseTabCommand.Execute(-1); break;
+                case Avalonia.Input.Key.E: Vm.ExportCommand.Execute("ask"); break;
+                default: return;
+            }
+            e.Handled = true; return;
+        }
+        if (mods != Avalonia.Input.KeyModifiers.None) return;
+        switch (K)      // single-letter tools (plan view)
+        {
+            case Avalonia.Input.Key.F9: Vm.ToggleSnapToGridCommand.Execute(null); break;
+            case Avalonia.Input.Key.Delete: Vm.DeleteSelectionCommand.Execute(null); break;
+            case Avalonia.Input.Key.Escape: Vm.SetToolCommand.Execute("Select"); break;
+            case Avalonia.Input.Key.V: Vm.SetToolCommand.Execute("Select"); break;
+            case Avalonia.Input.Key.W: Vm.SetToolCommand.Execute("DrawWall"); break;
+            case Avalonia.Input.Key.P: Vm.SetToolCommand.Execute("DrawPipe"); break;
+            case Avalonia.Input.Key.D: Vm.SetToolCommand.Execute("Door"); break;
+            case Avalonia.Input.Key.N: Vm.SetToolCommand.Execute("Window"); break;
+            case Avalonia.Input.Key.S: Vm.SetToolCommand.Execute("Space"); break;
+            case Avalonia.Input.Key.M: Vm.SetToolCommand.Execute("Measure"); break;
+            default: return;
+        }
+        e.Handled = true;
     }
 
     private bool HandleTransition(ViewMode from, ViewMode to, Action done)
@@ -84,6 +139,7 @@ public partial class MainWindow : Window
             Vm.RecentFiles.CollectionChanged += (_, _) => BuildMenus(); Vm.LanguageRefreshed += BuildMenus;
             Plan.CursorMoved += p => Vm.Status = $"X {p.X / 1000.0:0.00} m   Y {p.Y / 1000.0:0.00} m";
             Vm.TransitionHandler = HandleTransition;
+            Vm.PlanZoomRequested += how => Plan.Zoom(how);
             KeyDown += OnWindowKey;
             BuildMenus(); Plan.Invalidate();
         };
