@@ -6,13 +6,18 @@ using ImmeubleCad.Core.History;
 using ImmeubleCad.Core.Import;
 using ImmeubleCad.Core.IO;
 using ImmeubleCad.Core.Model;
+using ImmeubleCad.Core.Catalog;
+using ImmeubleCad.Core.Networks;
+using ImmeubleCad.Core.Tools;
 
 namespace ImmeubleCad.Desktop;
 
 public enum ViewMode { Plan, Solid, Wireframe }
-public enum ToolKind { Select, DrawWall, Align }
+public enum ToolKind { Select, DrawWall, Align, Riser, DrawPipe, Place }
 
 /// <summary>One button of the level bar.</summary>
+public sealed record NetworkItem(Guid Id, string Name, string Type, bool Visible, bool Locked, string ColorHex);
+public sealed record PaletteItem(string Id, string Category, string Name, string Glyph);
 public sealed record LevelItem(Guid Id, string Name, string Altitude, bool IsCurrent, int WallCount);
 
 public partial class MainViewModel : ObservableObject
@@ -21,6 +26,11 @@ public partial class MainViewModel : ObservableObject
     public BuildingHistory History { get; private set; } = new();
     public BuildingActions Actions { get; private set; }
     public ObservableCollection<LevelItem> Levels { get; } = new();
+    public ObservableCollection<NetworkItem> Networks { get; } = new();
+    public ObservableCollection<PaletteItem> Palette { get; } = new();
+    public ObservableCollection<string> Recent { get; } = new();
+    public NetworkType[] NetworkTypes { get; } = Enum.GetValues<NetworkType>();
+    public string[] RiserTemplates { get; } = ["Simple", "EF + ECS", "Chauffage aller + retour", "EF + ECS + EU"];
     public HashSet<Guid> SelectedWalls { get; } = new();
     /// <summary>Background pictures by name (stored under images/ in the .immeuble file).</summary>
     public Dictionary<string, byte[]> Images { get; private set; } = new();
@@ -31,6 +41,112 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _status = "Prêt";
     [ObservableProperty] private string _hint = "Cliquez un mur pour le sélectionner, glissez pour déplacer.";
     public int WallThicknessMm { get; set; } = 200;
+
+    // ---- Network tool options ----
+    [ObservableProperty] private NetworkType _riserType = NetworkType.ColdWater;
+    [ObservableProperty] private int _riserDiameter = 16;
+    [ObservableProperty] private int _riserSpacing = 150;
+    [ObservableProperty] private string _riserTemplate = "Simple";
+    [ObservableProperty] private bool _riserWholeBuilding = true;
+    [ObservableProperty] private int _riserFromIndex;
+    [ObservableProperty] private int _riserToIndex = 99;
+    [ObservableProperty] private NetworkType _pipeType = NetworkType.HeatingSupply;
+    [ObservableProperty] private int _pipeDiameter = 22;
+    [ObservableProperty] private int _pipeElevation = 2400;
+    [ObservableProperty] private string? _paletteId;
+    [ObservableProperty] private string _search = "";
+    [ObservableProperty] private string _propLabel = "";
+    [ObservableProperty] private int _propHeight;
+    partial void OnRiserTypeChanged(NetworkType value) => RiserDiameter = NetworkQueries.DefaultDiameter(value);
+    partial void OnPipeTypeChanged(NetworkType value) => PipeDiameter = NetworkQueries.DefaultDiameter(value);
+    partial void OnSearchChanged(string value) => RebuildPalette();
+
+    private void RebuildPalette()
+    {
+        Palette.Clear();
+        foreach (var e in EquipmentCatalog.Default.Where(e => Search.Length == 0 || e.Name.Contains(Search, StringComparison.OrdinalIgnoreCase) || e.Category.Contains(Search, StringComparison.OrdinalIgnoreCase)))
+            Palette.Add(new PaletteItem(e.Id, e.Category, e.Name, e.Inline ? "⊗" : e.Category == "Sanitary" ? "◍" : "▤"));
+    }
+
+    // ---- Risers ----
+    /// <summary>Places a riser (or a template of several) at the point, snapped 50 mm from wall faces. One history step.</summary>
+    public void PlaceRiser(PointMm at)
+    {
+        if (Building.Levels.Count == 0) return;
+        var polys = CurrentLevel?.Walls.Select(w => (IReadOnlyList<PointMm>)w.Footprint) ?? [];
+        var p = RiserSnap.Snap(at, polys);
+        var lo = Math.Clamp(RiserFromIndex, 0, Building.Levels.Count - 1); var hi = Math.Clamp(RiserToIndex, 0, Building.Levels.Count - 1);
+        var from = RiserWholeBuilding ? Building.Levels[0].AltitudeMm : Building.Levels[Math.Min(lo, hi)].AltitudeMm;
+        var to = RiserWholeBuilding ? Building.Levels[^1].AltitudeMm + Building.Levels[^1].HeightMm : Building.Levels[Math.Max(lo, hi)].AltitudeMm + Building.Levels[Math.Max(lo, hi)].HeightMm;
+        var (types, spacing) = RiserTemplate switch
+        {
+            "EF + ECS" => ([NetworkType.ColdWater, NetworkType.DomesticHotWater], RiserSpacing),
+            "Chauffage aller + retour" => ([NetworkType.HeatingSupply, NetworkType.HeatingReturn], RiserSpacing),
+            "EF + ECS + EU" => ([NetworkType.ColdWater, NetworkType.DomesticHotWater, NetworkType.Drainage], RiserSpacing),
+            _ => (new List<NetworkType> { RiserType }, 0),
+        };
+        Actions.AddRiserTemplate(p, spacing, types, from, to, RiserDiameter);
+        Status = $"{types.Count} colonne(s) posée(s)"; Refresh();
+    }
+
+    // ---- Horizontal pipes (plan): constrained to X/Y at the chosen height above the floor ----
+    public void CommitPipe(IReadOnlyList<PointMm> pts)
+    {
+        if (CurrentLevel is not { } l || pts.Count < 2) return;
+        var z = l.AltitudeMm + PipeElevation;
+        var net = Building.Networks.FirstOrDefault(n => n.Type == PipeType && !n.Locked) is { } ex ? ex : Actions.AddNetwork(PipeType.ToString(), PipeType);
+        Actions.AddPipeRun(net.Id, pts.Select(p => new PointMm3(p.X, p.Y, z)).ToList(), PipeDiameter);
+        Status = $"{pts.Count - 1} tronçon(s)"; Refresh();
+    }
+
+    // ---- Palette objects ----
+    public string? PlacementHint(PointMm at)
+    {
+        var e = PaletteId == null ? null : EquipmentCatalog.Find(PaletteId); if (e == null || CurrentLevel is not { } l) return null;
+        if (!e.Inline) return null;
+        return FindPipeFor(at, l, e) is null ? "Une vanne doit être posée sur un tuyau" : null;
+    }
+
+    private (SegmentRef Seg, PointMm3 P)? FindPipeFor(PointMm at, Level l, CatalogEntry e)
+    {
+        var near = NetworkQueries.Nearest(Building, new PointMm3(at.X, at.Y, l.AltitudeMm + PipeElevation), 250, s => !s.Network.Locked && !NetworkQueries.IsVertical(s) && s.A.Z >= l.AltitudeMm && s.A.Z < l.AltitudeMm + l.HeightMm);
+        near ??= NetworkQueries.Nearest(Building, new PointMm3(at.X, at.Y, l.AltitudeMm + 1000), 250, s => !s.Network.Locked && NetworkQueries.IsVertical(s));
+        return near is { } n && PlacementRules.Check(e, n.Point, n.Segment.Network).Valid ? (n.Segment, n.Point) : null;
+    }
+
+    public void PlaceFromPalette(PointMm at)
+    {
+        if (PaletteId == null || CurrentLevel is not { } l) { Status = "Choisissez un objet dans la palette"; return; }
+        var e = EquipmentCatalog.Find(PaletteId)!;
+        if (e.Inline)
+        {
+            if (FindPipeFor(at, l, e) is not { } hit) { Status = "Une vanne doit être posée sur un tuyau"; return; }
+            Actions.InsertComponent(hit.Seg.Network.Id, hit.Seg.Segment.Id, hit.P, e.Id); Status = $"{e.Name} posé(e) sur le tuyau";
+        }
+        else
+        {
+            // snap against the nearest wall face, oriented along it; default height from the catalog
+            var polys = l.Walls.Select(w => (IReadOnlyList<PointMm>)w.Footprint); var p = RiserSnap.Snap(at, polys, offsetMm: e.DepthMm / 2, reachMm: 400);
+            Actions.AddEquipment(l.Id, e.Id, p, e.DefaultElevationMm); Status = $"{e.Name} posé(e)";
+        }
+        Recent.Remove(e.Id); Recent.Insert(0, e.Id); if (Recent.Count > 6) Recent.RemoveAt(6);
+        Refresh();
+    }
+
+    [RelayCommand] private void SelectPalette(string id) { PaletteId = id; Tool = ToolKind.Place; Hint = EquipmentCatalog.Find(id)?.Inline == true ? "Cliquez sur un tuyau pour poser l'élément" : "Cliquez pour poser l'objet"; }
+    [RelayCommand] private void ToggleNetwork(Guid id)
+    {
+        var n = Building.Networks.First(x => x.Id == id); Actions.SetNetworkDisplay(id, !n.Visible, n.Locked); Refresh();
+    }
+    [RelayCommand] private void LockNetwork(Guid id)
+    {
+        var n = Building.Networks.First(x => x.Id == id); Actions.SetNetworkDisplay(id, n.Visible, !n.Locked); Refresh();
+    }
+    [RelayCommand] private void ApplyProperties()
+    {
+        if (CurrentLevel is not { } l || SelectedWalls.Count == 0) return;
+        Actions.SetWallProperties(l.Id, SelectedWalls.ToList(), PropLabel.Length == 0 ? null : PropLabel, PropHeight <= 0 ? null : PropHeight); Status = "Propriétés appliquées"; Refresh();
+    }
 
     // ---- Align with the level below: pairs (point on this level → same point on the level below) ----
     public List<((double X, double Y) From, (double X, double Y) To)> AlignPairs { get; } = new();
@@ -67,9 +183,12 @@ public partial class MainViewModel : ObservableObject
     public bool IsSelectTool => Tool == ToolKind.Select;
     public bool IsDrawTool => Tool == ToolKind.DrawWall;
     public bool IsAlignTool => Tool == ToolKind.Align;
+    public bool IsRiserTool => Tool == ToolKind.Riser;
+    public bool IsPipeTool => Tool == ToolKind.DrawPipe;
+    public bool IsPlaceTool => Tool == ToolKind.Place;
     public string SelectionText => SelectedWalls.Count == 0 ? "Aucune sélection" : $"{SelectedWalls.Count} mur(s) sélectionné(s)";
 
-    public MainViewModel() { Actions = null!; Load(SampleBuilding.Create()); }
+    public MainViewModel() { Actions = null!; RebuildPalette(); Load(SampleBuilding.Create()); }
 
     private void Load((Building B, BuildingHistory H) s)
     {
@@ -80,8 +199,8 @@ public partial class MainViewModel : ObservableObject
     partial void OnModeChanged(ViewMode value) => OnPropertyChanged(nameof(Is3D));
     partial void OnToolChanged(ToolKind value)
     {
-        OnPropertyChanged(nameof(IsSelectTool)); OnPropertyChanged(nameof(IsDrawTool)); OnPropertyChanged(nameof(IsAlignTool));
-        Hint = value switch { ToolKind.DrawWall => "Cliquez les points du mur — Entrée pour finir — Échap pour annuler", ToolKind.Align => "Cliquez un point de ce niveau, puis le même point sur le niveau du dessous (au moins 2 paires)", _ => "Cliquez un mur pour le sélectionner, glissez pour déplacer." }; if (value != ToolKind.Align) AlignCancel();
+        OnPropertyChanged(nameof(IsSelectTool)); OnPropertyChanged(nameof(IsDrawTool)); OnPropertyChanged(nameof(IsAlignTool)); OnPropertyChanged(nameof(IsRiserTool)); OnPropertyChanged(nameof(IsPipeTool)); OnPropertyChanged(nameof(IsPlaceTool));
+        Hint = value switch { ToolKind.DrawWall => "Cliquez les points du mur — Entrée pour finir — Échap pour annuler", ToolKind.Riser => "Cliquez pour poser une colonne (collée à 50 mm des murs)", ToolKind.DrawPipe => "Cliquez les points du tuyau — Entrée pour finir — Échap pour annuler", ToolKind.Place => "Cliquez pour poser l'objet de la palette", ToolKind.Align => "Cliquez un point de ce niveau, puis le même point sur le niveau du dessous (au moins 2 paires)", _ => "Cliquez un mur pour le sélectionner, glissez pour déplacer." }; if (value != ToolKind.Align) AlignCancel();
         Changed?.Invoke();
     }
 
@@ -92,6 +211,11 @@ public partial class MainViewModel : ObservableObject
         Levels.Clear();
         foreach (var l in Building.Levels.AsEnumerable().Reverse()) // top level first, like an elevator
             Levels.Add(new LevelItem(l.Id, l.Name, $"{l.AltitudeMm / 1000.0:0.0} m", l.Id == CurrentLevel?.Id, l.Walls.Count));
+        Networks.Clear();
+        foreach (var n in Building.Networks)
+        { var c = NetworkQueries.ColorOf(n.Type); Networks.Add(new NetworkItem(n.Id, n.Name, n.Type.ToString(), n.Visible, n.Locked, $"#{c.R:X2}{c.G:X2}{c.B:X2}")); }
+        var sel = CurrentLevel?.Walls.FirstOrDefault(w => SelectedWalls.Contains(w.Id));
+        if (sel != null) { PropLabel = sel.Label ?? ""; PropHeight = sel.HeightMm ?? 0; }
         OnPropertyChanged(nameof(CurrentLevel)); OnPropertyChanged(nameof(SelectionText));
         Changed?.Invoke();
     }

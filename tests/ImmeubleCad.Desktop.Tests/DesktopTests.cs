@@ -189,3 +189,47 @@ public class AlignUiTests
         Assert.False(vm.AlignApply()); Assert.Equal(steps, vm.History.Items.Count);
     }, CancellationToken.None);
 }
+
+public class NetworkUiTests
+{
+    private readonly HeadlessFixture f = new();
+
+    [Fact] public Task Riser_template_pipe_valve_radiator_and_undo() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(); var nets = vm.Building.Networks.Count; var steps = vm.History.Items.Count;
+        vm.RiserTemplate = "EF + ECS"; vm.PlaceRiser(new(1000, 1000));
+        Assert.Equal(nets + 2, vm.Building.Networks.Count); Assert.Equal(steps + 1, vm.History.Items.Count);
+        vm.SetToolCommand.Execute("DrawPipe"); vm.PipeType = ImmeubleCad.Core.Model.NetworkType.HeatingSupply; vm.PipeElevation = 2400;
+        vm.CommitPipe([new(300, 300), new(3000, 300), new(3000, 2500)]);
+        var net = vm.Building.Networks.First(n => n.Type == ImmeubleCad.Core.Model.NetworkType.HeatingSupply && n.Segments.Any(s => vm.Building.Networks.SelectMany(x => x.Nodes).Any(nd => nd.Position.Z == 2400)));
+        Assert.Contains(net.Nodes, n => n.Position == new ImmeubleCad.Core.Model.PointMm3(3000, 300, 2400));
+        // valve: refuses off-pipe, accepts on the pipe
+        vm.SelectPaletteCommand.Execute("shutoff-valve");
+        var segs = vm.Building.Networks.Sum(n => n.Segments.Count);
+        vm.PlaceFromPalette(new(1500, 2200)); Assert.Equal(segs, vm.Building.Networks.Sum(n => n.Segments.Count)); Assert.Contains("tuyau", vm.Status);
+        Assert.NotNull(vm.PlacementHint(new(1500, 2200))); Assert.Null(vm.PlacementHint(new(1500, 310)));
+        vm.PlaceFromPalette(new(1500, 310)); Assert.Equal(segs + 1, vm.Building.Networks.Sum(n => n.Segments.Count));
+        Assert.Contains(vm.Building.Networks.SelectMany(n => n.Nodes), n => n.Component == "shutoff-valve");
+        vm.SelectPaletteCommand.Execute("radiator"); var eq = vm.Building.Equipment.Count; vm.PlaceFromPalette(new(5000, 260)); Assert.Equal(eq + 1, vm.Building.Equipment.Count);
+        vm.UndoCommand.Execute(null); Assert.Equal(eq, vm.Building.Equipment.Count);
+    }, CancellationToken.None);
+
+    [Fact] public Task Networks_panel_toggle_and_lock_and_properties() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(); var id = vm.Networks[0].Id;
+        vm.ToggleNetworkCommand.Execute(id); Assert.False(vm.Building.Networks[0].Visible); Assert.False(vm.Networks[0].Visible);
+        vm.LockNetworkCommand.Execute(id); Assert.True(vm.Building.Networks[0].Locked);
+        vm.SelectWalls([vm.CurrentLevel!.Walls[0].Id], false); vm.PropLabel = "Porteur"; vm.PropHeight = 2600; vm.ApplyPropertiesCommand.Execute(null);
+        Assert.Equal("Porteur", vm.CurrentLevel!.Walls[0].Label); Assert.Equal(2600, vm.CurrentLevel.Walls[0].HeightMm);
+    }, CancellationToken.None);
+
+    [Fact] public Task Window_with_panels_renders() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(); var w = new MainWindow { DataContext = vm }; w.Show();
+        vm.RiserTemplate = "Chauffage aller + retour"; vm.PlaceRiser(new(4000, 3000));
+        vm.CommitPipe([new(300, 600), new(4000, 600), new(4000, 3000)]);
+        vm.SelectPaletteCommand.Execute("radiator"); vm.PlaceFromPalette(new(2500, 260));
+        var dir = Path.Combine(AppContext.BaseDirectory, "screenshots"); Directory.CreateDirectory(dir);
+        w.CaptureRenderedFrame()!.Save(Path.Combine(dir, "networks.png")); w.Close();
+    }, CancellationToken.None);
+}

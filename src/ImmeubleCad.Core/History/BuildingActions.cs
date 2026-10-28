@@ -116,6 +116,26 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
             return levelId;
         }, i => i);
 
+    public void SetWallProperties(Guid levelId, IEnumerable<Guid> wallIds, string? label, int? heightMm) =>
+        Edit("Wall properties", BuildingEventKind.WallChanged, () =>
+        {
+            var ids = wallIds.ToHashSet();
+            foreach (var w in Find(levelId).Walls.Where(w => ids.Contains(w.Id))) { w.Label = label; w.HeightMm = heightMm; }
+            return levelId;
+        }, i => i);
+
+    public void SetEquipmentProperties(Guid equipmentId, string? label, int elevationMm, int rotationDeg) =>
+        Edit("Equipment properties", BuildingEventKind.LevelChanged, () =>
+        {
+            var e = building.Equipment.First(x => x.Id == equipmentId); e.Label = label; e.ElevationMm = elevationMm; e.RotationDeg = rotationDeg; return equipmentId;
+        }, i => i);
+
+    public void DeleteEquipment(Guid equipmentId) =>
+        Edit("Delete equipment", BuildingEventKind.LevelChanged, () => { building.Equipment.RemoveAll(e => e.Id == equipmentId); return equipmentId; }, i => i);
+
+    public void DeleteNetwork(Guid networkId) =>
+        Edit("Delete network", BuildingEventKind.NetworkChanged, () => { building.Networks.RemoveAll(n => n.Id == networkId); return networkId; }, i => i);
+
     public void DeleteWalls(Guid levelId, IEnumerable<Guid> wallIds) =>
         Edit("Delete walls", BuildingEventKind.WallRemoved, () => { var ids = wallIds.ToHashSet(); Find(levelId).Walls.RemoveAll(w => ids.Contains(w.Id)); return levelId; }, i => i);
 

@@ -479,3 +479,37 @@ public class NetworkEditTests
         Assert.Equal(new PointMm(2000, 2000), RiserSnap.Snap(new(2000, 2000), [wall, corner])); // far from walls: untouched
     }
 }
+
+public class NetworkQueryTests
+{
+    [Fact] public void Risers_horizontals_and_arrows_per_level()
+    {
+        var (b, _) = SampleBuilding.Create();
+        var rdc = b.Levels[0]; var r1 = b.Levels[1];
+        Assert.Equal(2, NetworkQueries.RisersAt(b, rdc).Count());
+        var riser = NetworkQueries.RisersAt(b, r1).First();
+        Assert.Equal(b.Levels[2].Id, NetworkQueries.NextLevelReached(b, riser, r1, +1)!.Id);
+        Assert.Equal(rdc.Id, NetworkQueries.NextLevelReached(b, riser, r1, -1)!.Id);
+        Assert.Null(NetworkQueries.NextLevelReached(b, riser, b.Levels[2], +1));
+        Assert.Empty(NetworkQueries.HorizontalAt(b, rdc));
+    }
+
+    [Fact] public void Nearest_finds_pipe_within_reach()
+    {
+        var b = new Building(); var a = new BuildingActions(b, new BuildingHistory(), new BuildingEventsService());
+        var n = a.AddNetwork("N", NetworkType.ColdWater); a.AddPipeRun(n.Id, [new(0, 0, 2400), new(3000, 0, 2400)]);
+        var hit = NetworkQueries.Nearest(b, new(1000, 40, 2400), 100);
+        Assert.NotNull(hit); Assert.Equal(new PointMm3(1000, 0, 2400), hit!.Value.Point);
+        Assert.Null(NetworkQueries.Nearest(b, new(1000, 500, 2400), 100));
+    }
+
+    [Fact] public void Wall_and_equipment_properties_are_single_steps_with_exact_undo()
+    {
+        var b = new Building(); var h = new BuildingHistory(); var a = new BuildingActions(b, h, new BuildingEventsService()); var l = a.AddLevel("RDC", 0);
+        var w = a.AddWall(l.Id, [new(0, 0), new(1000, 0), new(1000, 200)]); var e = a.AddEquipment(l.Id, "radiator", new(0, 0), 150);
+        var before = BuildingJson.Serialize(b);
+        a.SetWallProperties(l.Id, [w.Id], "Porteur", 2500); a.SetEquipmentProperties(e.Id, "Radiateur séjour", 200, 90); a.DeleteEquipment(e.Id);
+        Assert.Empty(b.Equipment); Assert.Equal("Porteur", b.Levels[0].Walls[0].Label);
+        h.Undo(b); Assert.Equal("Radiateur séjour", b.Equipment[0].Label); h.Undo(b); h.Undo(b); Assert.Equal(before, BuildingJson.Serialize(b));
+    }
+}

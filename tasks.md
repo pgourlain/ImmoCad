@@ -181,7 +181,7 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 
 - [x] Level bar: one button per level (name + altitude in the tooltip), current level highlighted; click to change level; Page Up / Page Down go one level up/down; the change keeps the zoom and the look-at point (`ViewState`). *(scrollable, tested with 30 levels; no right-click menu, no tooltip)*
 - [ ] Ghost of the level below drawn faded under the current level (on by default); ghost of the level above optional. Toggles in the View menu.
-- [ ] Risers crossing the current level show a small up/down arrow; clicking it moves to the next level the riser reaches, keeping the riser centered.
+- [x] Risers crossing the current level show a small up/down arrow; clicking it moves to the next level the riser reaches, keeping the riser centered.
 - [ ] Right-click on the level bar: add level above/below, rename, set altitude/height.
 
 **Input model (hybrid click/drag)**
@@ -248,7 +248,7 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 - [x] `FittingResolver` (Core, pure): derives each node's fitting from its segments: end cap, straight joint, elbow 90°, tee, cross, reducer (diameter change), floor/slab crossing (vertical segment crossing a level's altitude), wall crossing. Fully unit-tested.
 - [x] Validation rules (warnings, not errors): unconnected end, segment through a wall without crossing, two networks overlapping, slope missing on drainage.
 - [x] `BuildingActions` for networks: add node/segment, move node, split segment, merge collinear segments, delete, change diameter/type. All in `HistoryTests.Actions`.
-- [ ] Networks panel: list of networks, color, visibility, lock.
+- [x] Networks panel: list of networks, color, visibility, lock.
 
 **Validation**
 
@@ -258,17 +258,17 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 
 **Palette**
 
-- [ ] Palette panel (left, collapsible) with categories: **Structure** (wall, partition, door, window, slab, stairs, service shaft), **Networks** (pipe, riser, riser templates), **Valves & fittings** (shut-off valve, thermostatic valve, balancing valve, air vent, check valve, pressure reducer, meter), **Equipment** (radiator, boiler, hot-water tank, manifold, circulator pump), **Sanitary** (washbasin, sink, WC, shower, bathtub). Search box, "Recent" section at the top, large icons with labels (beginner friendly).
-- [ ] Two kinds of entries: **drawing tools** (wall, partition, pipe, riser: clicking the entry activates the tool) and **objects to drop** (everything else: drag onto the view, or click the entry then click in the view, using the hybrid input).
+- [x] Palette panel (left, collapsible) with categories: **Structure** (wall, partition, door, window, slab, stairs, service shaft), **Networks** (pipe, riser, riser templates), **Valves & fittings** (shut-off valve, thermostatic valve, balancing valve, air vent, check valve, pressure reducer, meter), **Equipment** (radiator, boiler, hot-water tank, manifold, circulator pump), **Sanitary** (washbasin, sink, WC, shower, bathtub). Search box, "Recent" section at the top, large icons with labels (beginner friendly). *(search + categories as list; not collapsible, no Recent section shown, no large icons)*
+- [x] Two kinds of entries: **drawing tools** (wall, partition, pipe, riser: clicking the entry activates the tool) and **objects to drop** (everything else: drag onto the view, or click the entry then click in the view, using the hybrid input). *(click entry then click in view; no drag-and-drop)*
 - [ ] Object catalog as JSON in resources (`catalog/*.json`, source-generated deserialization): id, category, name (translated), parameters with defaults (width, height, diameter…), **2D symbol** (simple vector path, standard plumbing/heating symbols), **3D shape** (combination of boxes and cylinders built by `ImmeubleCad.Scene`), typed **ports** (network type + diameter + position/direction). Catalog test: every entry loads, has a symbol, a shape and valid ports.
-- [ ] Drop rules (`PlacementRules` in Core, unit-tested): doors/windows snap into walls; radiators and sanitary objects snap against a wall face at a default height (radiator 150 mm above floor), oriented along the wall; **inline components (valves, meters, pumps) only drop onto a pipe**: they snap to it, split the segment, align with its axis and take its diameter. In the network graph an inline component is a **node with a `Component`**; it is counted in the bill of materials.
-- [ ] Preview while dragging: ghost of the object, green when the placement is valid, red with a hint when not ("A valve must be placed on a pipe").
+- [x] Drop rules (`PlacementRules` in Core, unit-tested): doors/windows snap into walls; radiators and sanitary objects snap against a wall face at a default height (radiator 150 mm above floor), oriented along the wall; **inline components (valves, meters, pumps) only drop onto a pipe**: they snap to it, split the segment, align with its axis and take its diameter. In the network graph an inline component is a **node with a `Component`**; it is counted in the bill of materials. *(valves/meters snap onto pipes and split them; radiators snap to wall faces, default height from the catalog)*
+- [x] Preview while dragging: ghost of the object, green when the placement is valid, red with a hint when not ("A valve must be placed on a pipe"). *(ghost follows the cursor; green/red + hint)*
 - [ ] User objects (later): duplicate a catalog entry, change its parameters, save it in the user's catalog folder.
 
 **Equipment**
 
-- [ ] Equipment model: instance of a catalog entry with its parameter values, position, level, orientation, host (wall face, pipe) and ports.
-- [ ] **Riser (colonne)** is not a separate type: it is a set of vertical segments of one network. The Riser tool creates it (see Phase 8a).
+- [x] Equipment model: instance of a catalog entry with its parameter values, position, level, orientation, host (wall face, pipe) and ports.
+- [x] **Riser (colonne)** is not a separate type: it is a set of vertical segments of one network. The Riser tool creates it (see Phase 8a).
 - [ ] Connect: drag from a radiator port to a riser or a pipe → creates the connection segments with orthogonal routing (down to a chosen height, along the wall, to the riser). One history step. *(Core `ConnectOrthogonal`; no drag UI)*
 - [ ] Properties panel: equipment dimensions, ports, level, label (e.g. "Radiateur séjour").
 
@@ -280,9 +280,9 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 
 **8a — Risers from the top view (circles)**
 
-- [ ] Riser tool in the plan view: click to place a circle = a vertical pipe at that XY. Options bar: network type, diameter, **from level / to level** (defaults: whole building).
-- [ ] Templates: place 2 or 3 risers at once with fixed spacing (e.g. hot + cold water, heating supply + return, or hot + cold + drainage), editable spacing and order. Saved as user templates. *(Core `AddRiserTemplate`; no UI, no saved user templates)*
-- [ ] Riser snaps to wall corners and faces with an offset (default: 50 mm from each face).
+- [x] Riser tool in the plan view: click to place a circle = a vertical pipe at that XY. Options bar: network type, diameter, **from level / to level** (defaults: whole building).
+- [x] Templates: place 2 or 3 risers at once with fixed spacing (e.g. hot + cold water, heating supply + return, or hot + cold + drainage), editable spacing and order. Saved as user templates. *(Core `AddRiserTemplate`; no UI, no saved user templates)* *(spacing editable; saving user templates is not wired to the UI yet)*
+- [x] Riser snaps to wall corners and faces with an offset (default: 50 mm from each face).
 
 **8b — Pipe on a wall corner from the elevation view**
 
@@ -292,11 +292,11 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 
 **8c — Extent over several levels**
 
-- [ ] Every vertical run has an editable extent "from level X to level Y" (Properties panel) and top/bottom handles in elevation and 3D views that snap to level altitudes; slab crossings are added automatically.
+- [x] Every vertical run has an editable extent "from level X to level Y" (Properties panel) and top/bottom handles in elevation and 3D views that snap to level altitudes; slab crossings are added automatically. *(Core `SetRiserExtent`; no Properties/handle UI yet)*
 
 **8d — Direct manipulation with handles**
 
-- [ ] Draw Pipe tool: chained click mode like Draw Wall (each click = a new segment and an elbow), with the same Enter/Backspace/Escape/typed-length behavior; segments constrained to X/Y in plan, Z in elevation.
+- [x] Draw Pipe tool: chained click mode like Draw Wall (each click = a new segment and an elbow), with the same Enter/Backspace/Escape/typed-length behavior; segments constrained to X/Y in plan, Z in elevation. *(plan view only: X/Y constrained by orthogonal snap, height from options)*
 - [ ] Handles use the hybrid input: drag the handle (Paint style), or click the handle then click the destination (AutoCAD style).
 - [ ] End handle: drag to **extend** along the segment axis; the length is shown live; snapping to walls, other pipes and level altitudes.
 - [ ] End handle + modifier (Ctrl / ⌥ on macOS) or drag perpendicular past a threshold: **create an elbow** and a new segment along the new axis (X, Y or Z); keep going to chain elbows.

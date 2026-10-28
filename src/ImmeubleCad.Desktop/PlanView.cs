@@ -4,6 +4,8 @@ using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using ImmeubleCad.Core.Model;
+using ImmeubleCad.Core.Networks;
+using ImmeubleCad.Core.Catalog;
 using ImmeubleCad.Core.Tools;
 
 namespace ImmeubleCad.Desktop;
@@ -37,7 +39,17 @@ public class PlanView : Control
 
     public PlanView() { Focusable = true; ClipToBounds = true; }
 
-    public void Invalidate() { if (Vm?.IsDrawTool == true) { if (DrawTool == null) DrawTool = new DrawChainTool(Vm.CommitWalls); } else DrawTool = null; InvalidateVisual(); }
+    private ToolKind? _chainKind;
+    private bool IsChain => Vm is { IsDrawTool: true } or { IsPipeTool: true };
+    public void Invalidate()
+    {
+        if (Vm is { IsDrawTool: true }) { if (_chainKind != ToolKind.DrawWall) { DrawTool = new DrawChainTool(Vm.CommitWalls); _chainKind = ToolKind.DrawWall; } }
+        else if (Vm is { IsPipeTool: true }) { if (_chainKind != ToolKind.DrawPipe) { DrawTool = new DrawChainTool(Vm.CommitPipe); _chainKind = ToolKind.DrawPipe; } }
+        else { DrawTool = null; _chainKind = null; }
+        InvalidateVisual();
+    }
+    private readonly List<(Rect Rect, Guid LevelId, PointMm Center)> _arrows = new();
+    private PointMm _hover;
 
     public PointMm ToMm(Point p) => new((int)Math.Round((p.X - Offset.X) / Scale), (int)Math.Round((Bounds.Height - p.Y - Offset.Y) / Scale));
     private Point ToScreen(PointMm p) => new(Offset.X + p.X * Scale, Bounds.Height - Offset.Y - p.Y * Scale);
@@ -71,7 +83,11 @@ public class PlanView : Control
         if (Vm is not { } vm) return;
         if (props.IsRightButtonPressed) { DrawTool?.Cancel(); _gesture = Gesture.None; InvalidateVisual(); return; }
         if (vm.IsAlignTool) { var m = ToMm(p); vm.AlignClick(m.X, m.Y); InvalidateVisual(); return; }
-        if (vm.IsDrawTool) { DrawTool ??= new DrawChainTool(vm.CommitWalls); DrawTool.Down(TP(e)); e.Pointer.Capture(this); InvalidateVisual(); return; }
+        if (IsChain) { Invalidate(); DrawTool!.Down(TP(e)); e.Pointer.Capture(this); InvalidateVisual(); return; }
+        if (vm.IsRiserTool) { vm.PlaceRiser(ToMm(p)); return; }
+        if (vm.IsPlaceTool) { vm.PlaceFromPalette(ToMm(p)); return; }
+        foreach (var (rect, lvl, c) in _arrows)
+            if (rect.Contains(p)) { vm.SelectLevelCommand.Execute(lvl); CenterOn(c); return; }
 
         _start = _now = p; _startMm = ToMm(p); _delta = (0, 0); _addToSelection = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
         var hit = HitWall(_startMm);
@@ -87,7 +103,9 @@ public class PlanView : Control
         if (_pan is { } l) { Offset = (Offset.X + p.X - l.X, Offset.Y - (p.Y - l.Y)); _pan = p; InvalidateVisual(); return; }
         CursorMoved?.Invoke(ToMm(p));
         if (Vm is not { } vm) return;
-        if (vm.IsDrawTool) { DrawTool?.Move(TP(e)); InvalidateVisual(); return; }
+        _hover = ToMm(p);
+        if (IsChain) { DrawTool?.Move(TP(e)); InvalidateVisual(); return; }
+        if (vm.IsPlaceTool || vm.IsRiserTool) { InvalidateVisual(); return; }
         if (_gesture == Gesture.None) return;
         _now = p;
         if (_gesture == Gesture.Move)
@@ -104,7 +122,8 @@ public class PlanView : Control
     {
         _pan = null; e.Pointer.Capture(null);
         if (Vm is not { } vm) return;
-        if (vm.IsDrawTool) { DrawTool?.Up(TP(e)); InvalidateVisual(); return; }
+        if (IsChain) { DrawTool?.Up(TP(e)); InvalidateVisual(); return; }
+        if (vm.IsRiserTool || vm.IsPlaceTool || vm.IsAlignTool) return;
         if (_gesture == Gesture.Move && Math.Abs(_now.X - _start.X) + Math.Abs(_now.Y - _start.Y) > 3) vm.MoveSelection(_delta.X, _delta.Y);
         else if (_gesture == Gesture.Box)
         {
@@ -130,7 +149,7 @@ public class PlanView : Control
             if (e.Key == Key.Enter) vm.AlignApply(); else if (e.Key == Key.Back) vm.AlignUndoPair(); else if (e.Key == Key.Escape) { vm.AlignCancel(); vm.SetToolCommand.Execute("Select"); } else return;
             InvalidateVisual(); e.Handled = true; return;
         }
-        if (DrawTool != null && vm.IsDrawTool)
+        if (DrawTool != null && IsChain)
         {
             if (e.Key == Key.Enter) DrawTool.Finish(); else if (e.Key == Key.Back) DrawTool.Backspace(); else if (e.Key == Key.Escape) { DrawTool.Cancel(); vm.SetToolCommand.Execute("Select"); }
             InvalidateVisual(); return;
@@ -152,6 +171,54 @@ public class PlanView : Control
         e.Handled = true;
     }
 
+        public void CenterOn(PointMm c) => Offset = (Bounds.Width / 2 - c.X * Scale, Bounds.Height / 2 - c.Y * Scale);
+
+    private void DrawNetworks(DrawingContext ctx, Level l, bool dark)
+    {
+        _arrows.Clear();
+        var b = Vm!.Building;
+        foreach (var s in NetworkQueries.HorizontalAt(b, l).Where(x => x.Network.Visible))
+        {
+            var c = NetworkQueries.ColorOf(s.Network.Type); var w = Math.Max(2.0, s.Segment.DiameterMm * Scale * 1.2);
+            ctx.DrawLine(new Pen(new SolidColorBrush(Color.FromRgb(c.R, c.G, c.B)), w, lineCap: PenLineCap.Round), ToScreen(new PointMm(s.A.X, s.A.Y)), ToScreen(new PointMm(s.B.X, s.B.Y)));
+        }
+        foreach (var n in b.Networks.Where(n => n.Visible))
+            foreach (var node in n.Nodes.Where(n2 => n2.Component != null && n2.Position.Z >= l.AltitudeMm && n2.Position.Z < l.AltitudeMm + l.HeightMm))
+            {
+                var p = ToScreen(new PointMm(node.Position.X, node.Position.Y));
+                ctx.DrawEllipse(Brushes.White, new Pen(Brushes.Black, 1.5), p, 6, 6); ctx.DrawLine(new Pen(Brushes.Black, 1.5), p + new Point(-4, -4), p + new Point(4, 4)); ctx.DrawLine(new Pen(Brushes.Black, 1.5), p + new Point(-4, 4), p + new Point(4, -4));
+            }
+        foreach (var r in NetworkQueries.RisersAt(b, l).Where(x => x.Network.Visible))
+        {
+            var c = NetworkQueries.ColorOf(r.Network.Type); var p = ToScreen(new PointMm(r.A.X, r.A.Y)); var rad = Math.Max(5, r.Segment.DiameterMm * Scale);
+            ctx.DrawEllipse(new SolidColorBrush(Color.FromRgb(c.R, c.G, c.B)), new Pen(Brushes.Black, 1), p, rad, rad);
+            foreach (var dir in new[] { +1, -1 })
+                if (NetworkQueries.NextLevelReached(b, r, l, dir) is { } next)
+                {
+                    var tip = p + new Point(rad + 6 + (dir > 0 ? 0 : 10), 0); var up = dir > 0;
+                    var g = new StreamGeometry(); using (var cx = g.Open()) { cx.BeginFigure(tip + new Point(0, up ? -5 : 5), true); cx.LineTo(tip + new Point(-4, up ? 3 : -3)); cx.LineTo(tip + new Point(4, up ? 3 : -3)); cx.EndFigure(true); }
+                    ctx.DrawGeometry(dark ? Brushes.Gainsboro : Brushes.DimGray, null, g);
+                    _arrows.Add((new Rect(tip.X - 7, tip.Y - 8, 14, 16), next.Id, new PointMm(r.A.X, r.A.Y)));
+                }
+        }
+        foreach (var e in b.Equipment.Where(q => q.LevelId == l.Id))
+        {
+            var cat = EquipmentCatalog.Find(e.CatalogId); var w = (cat?.WidthMm ?? 500) * Scale; var d = Math.Max(6, (cat?.DepthMm ?? 100) * Scale);
+            var p = ToScreen(e.Position);
+            ctx.DrawRectangle(Brushes.White, new Pen(Brushes.SlateBlue, 1.5), new Rect(p.X, p.Y - d, w, d));
+            if (e.CatalogId == "radiator") for (var k = 1; k < 6; k++) ctx.DrawLine(new Pen(Brushes.SlateBlue, 1), new Point(p.X + w * k / 6, p.Y - d), new Point(p.X + w * k / 6, p.Y));
+            if (!string.IsNullOrEmpty(e.Label)) ctx.DrawText(new FormattedText(e.Label, System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 11, dark ? Brushes.Gainsboro : Brushes.DimGray), p + new Point(0, 2));
+        }
+        // placement ghost: green when valid, red with a hint when not
+        if ((Vm.IsPlaceTool || Vm.IsRiserTool) && Bounds.Contains(ToScreen(_hover)))
+        {
+            var hint = Vm.IsPlaceTool ? Vm.PlacementHint(_hover) : null; var ok = hint == null;
+            var col = ok ? Colors.LimeGreen : Colors.Red; var p = ToScreen(_hover);
+            ctx.DrawEllipse(new SolidColorBrush(Color.FromArgb(70, col.R, col.G, col.B)), new Pen(new SolidColorBrush(col), 2), p, 10, 10);
+            if (!ok) ctx.DrawText(new FormattedText(hint!, System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 12, Brushes.Red), p + new Point(14, -8));
+        }
+    }
+
     public override void Render(DrawingContext ctx)
     {
         var dark = ActualThemeVariant == Avalonia.Styling.ThemeVariant.Dark;
@@ -171,6 +238,7 @@ public class PlanView : Control
         var wallFill = new SolidColorBrush(dark ? Color.FromRgb(190, 192, 198) : Color.FromRgb(70, 72, 78));
         var sel = new SolidColorBrush(Color.FromRgb(255, 140, 0));
         DrawWalls(ctx, l, wallFill, new Pen(new SolidColorBrush(dark ? Colors.Black : Colors.Black), 0.8), null, Vm.SelectedWalls, sel);
+        DrawNetworks(ctx, l, dark);
         if (_gesture == Gesture.Move && (_delta.X != 0 || _delta.Y != 0))   // ghost of the move
             DrawWalls(ctx, l, new SolidColorBrush(Color.FromArgb(110, 255, 140, 0)), new Pen(Brushes.OrangeRed, 1.2, DashStyle.Dash), _delta, Vm.SelectedWalls, null, onlySelected: true);
         if (_gesture == Gesture.Box)
