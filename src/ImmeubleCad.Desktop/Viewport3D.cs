@@ -19,6 +19,7 @@ public class Viewport3D : Control, IViewport3D
         Focusable = true; ClipToBounds = true;
         Controller.Invalidate = InvalidateVisual;
         Controller.Picked = (id, kind) => Vm?.Pick3D(id, kind);
+        Controller.PlaneToolActive = () => Vm?.IsPlaneTool == true; Controller.PlaneAltitudeM = () => (Vm?.CurrentLevel?.AltitudeMm ?? 0) / 1000.0; Controller.PlaneClicked = p => Vm?.Click3D(p);
     }
 
     public void Rebuild() { Controller.Rebuild(Vm); InvalidateVisual(); }

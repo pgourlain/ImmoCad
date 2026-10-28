@@ -5,6 +5,9 @@ internal static class TranslationData
 {
     public static readonly (string Key, string En, string Fr)[] All =
     [
+        ("network.runs", "runs through: {0}", "passe par : {0}"),
+        ("align.movewalls", "Move the walls with the plan", "Déplacer les murs avec le plan"),
+        ("tip.sidebyside", "Plan and 3D side by side", "Plan et 3D côte à côte"),
         ("cellar.name", "Cellar {0}", "Cave {0}"),
         ("attribution", "© IGN / DGFiP — Open Licence 2.0", "© IGN / DGFiP — Licence Ouverte 2.0"),
         ("export.attribution", "Cadastre: © IGN / DGFiP - Open Licence 2.0", "Cadastre : © IGN / DGFiP - Licence Ouverte 2.0"),

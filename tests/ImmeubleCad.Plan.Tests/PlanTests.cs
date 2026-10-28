@@ -204,3 +204,27 @@ public class WallShapesTests
         var far = WallShapes.SnapJunctions([wall, new List<PointPx> { new(500, 150), new(600, 150), new(600, 800), new(500, 800) }], 10); Assert.Equal(150, far[1][0].Y);
     }
 }
+
+public class PerformanceTests
+{
+    /// <summary>An A3 sheet at 300 dpi (4961 × 3508 px): outer walls, partitions, text-like specks, a dimension line.</summary>
+    private static GrayImage A3()
+    {
+        const int W = 4961, H = 3508; var px = Enumerable.Repeat((byte)255, W * H).ToArray();
+        void Fill(int x, int y, int w, int h) { for (var j = y; j < y + h; j++) Array.Fill(px, (byte)0, j * W + x, w); }
+        Fill(300, 300, 4300, 30); Fill(300, 3100, 4300, 30); Fill(300, 300, 30, 2830); Fill(4570, 300, 30, 2830);          // outer walls (30 px ≈ 2.5 mm at 300 dpi → 100 mm real at 1:40)
+        for (var k = 1; k < 5; k++) { Fill(300 + k * 860, 300, 18, 2830); }                                                    // partitions
+        Fill(300, 200, 4300, 3); var rnd = new Random(5); for (var i = 0; i < 400; i++) Fill(rnd.Next(400, 4500), rnd.Next(400, 3000), 3, 12);   // dimension line + text
+        return new GrayImage(px, W, H);
+    }
+
+    [Fact] public void A3_at_300_dpi_is_detected_in_a_few_seconds_with_the_right_walls()
+    {
+        var img = A3(); var sw = System.Diagnostics.Stopwatch.StartNew();
+        var thickness = PlanWallDetector.SuggestThickness(img);
+        var shapes = PlanWallDetector.Detect(img, new WallDetectionOptions(MinThickness: Math.Max(8, thickness)));
+        sw.Stop();
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(15), $"took {sw.Elapsed}");                       // generous bound: it should be a few seconds on a laptop
+        var shape = Assert.Single(shapes); Assert.Equal(4, shape.Outline.Count); Assert.Equal(5, shape.Holes.Count);        // outline + 5 rooms: text and the dimension line were dropped
+    }
+}

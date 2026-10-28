@@ -34,7 +34,7 @@ public sealed class Doc
 public sealed record TabItem(int Index, string Title, bool IsActive, bool IsDirty);
 public sealed record HistoryRow(int Index, string Name, bool IsCurrent, bool IsFuture);
 public sealed record SpaceItem(Guid LevelId, Guid Id, string Name, string Number, string Kind, string Lot, string Area, bool IsCommon, PointMm Center);
-public sealed record NetworkItem(Guid Id, string Name, string Type, bool Visible, bool Locked, string ColorHex);
+public sealed record NetworkItem(Guid Id, string Name, string Type, bool Visible, bool Locked, string ColorHex, string Where = "");
 public sealed record PaletteItem(string Id, string Category, string Name, string Glyph);
 public sealed record LevelItem(Guid Id, string Name, string Altitude, bool IsCurrent, int WallCount, string Tooltip = "")
 {
@@ -175,6 +175,22 @@ public partial class MainViewModel : ObservableObject
     {
         var ok = Actions.SetNodeAltitude(networkId, nodeId, ElevationPlane.SnapZ(Building, zMm, 150)); if (ok) { var s = SelectedSegment; Refresh(); if (s != null) SelectSegment(s.Value.NetworkId, s.Value.SegmentId); }
         return ok;
+    }
+
+    // ---- Tools in the 3D view: same view-model entry points as the plan ----
+    public bool IsPlaneTool => Tool is ToolKind.Riser or ToolKind.Place or ToolKind.Door or ToolKind.Window or ToolKind.Space or ToolKind.Measure or ToolKind.NumberCellars;
+    public void Click3D(PointMm at)
+    {
+        switch (Tool)
+        {
+            case ToolKind.Riser: PlaceRiser(at); break;
+            case ToolKind.Place: PlaceFromPalette(at); break;
+            case ToolKind.Door: PlaceOpening(at, OpeningKind.Door); break;
+            case ToolKind.Window: PlaceOpening(at, OpeningKind.Window); break;
+            case ToolKind.Space: PlaceSpace(at); break;
+            case ToolKind.Measure: MeasureClick(at); break;
+            case ToolKind.NumberCellars: NumberClick(at); break;
+        }
     }
 
     // ---- Pipe selection (handles) ----
@@ -458,6 +474,11 @@ public partial class MainViewModel : ObservableObject
     public bool Is3D => Mode is ViewMode.Solid or ViewMode.Wireframe;
     public bool IsElevation => Mode == ViewMode.Elevation;
     public bool IsPlan => Mode == ViewMode.Plan;
+    /// <summary>Plan on the left, 3D on the right, both driven by the same level and selection.</summary>
+    [ObservableProperty] private bool _sideBySide;
+    partial void OnSideBySideChanged(bool value) { OnPropertyChanged(nameof(ShowPlan)); OnPropertyChanged(nameof(Show3D)); Changed?.Invoke(); }
+    public bool ShowPlan => IsPlan || Is3D && SideBySide;
+    public bool Show3D => Is3D || IsPlan && SideBySide;
     public bool IsSite => Mode == ViewMode.Site;
     public static readonly Guid SiteLevelId = new("00000000-0000-0000-0000-00000000517e");
     public string Title => ActiveIndex < 0 ? "ImmeubleCad" : $"{(History.IsDirty ? "• " : "")}{Active.Title} — ImmeubleCad";
@@ -503,7 +524,7 @@ public partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(HasDocument)); OnPropertyChanged(nameof(ShowWelcome)); Refresh();
     }
 
-    partial void OnModeChanged(ViewMode value) { OnPropertyChanged(nameof(Is3D)); OnPropertyChanged(nameof(IsElevation)); OnPropertyChanged(nameof(IsPlan)); OnPropertyChanged(nameof(IsSite)); Changed?.Invoke(); }
+    partial void OnModeChanged(ViewMode value) { OnPropertyChanged(nameof(Is3D)); OnPropertyChanged(nameof(ShowPlan)); OnPropertyChanged(nameof(Show3D)); OnPropertyChanged(nameof(IsElevation)); OnPropertyChanged(nameof(IsPlan)); OnPropertyChanged(nameof(IsSite)); Changed?.Invoke(); }
     partial void OnToolChanged(ToolKind value)
     {
         OnPropertyChanged(nameof(IsSelectTool)); OnPropertyChanged(nameof(IsDrawTool)); OnPropertyChanged(nameof(IsAlignTool)); OnPropertyChanged(nameof(IsRiserTool)); OnPropertyChanged(nameof(IsPipeTool)); OnPropertyChanged(nameof(IsPlaceTool)); OnPropertyChanged(nameof(IsDoorTool)); OnPropertyChanged(nameof(IsWindowTool)); OnPropertyChanged(nameof(IsSpaceTool)); OnPropertyChanged(nameof(IsMeasureTool)); OnPropertyChanged(nameof(IsNumberTool)); OnPropertyChanged(nameof(IsStraightenTool)); OnPropertyChanged(nameof(IsStretchTool)); MeasurePoints.Clear(); NumberPending.Clear();
@@ -525,7 +546,7 @@ public partial class MainViewModel : ObservableObject
             Levels.Add(new LevelItem(l.Id, l.DisplayName, $"{l.AltitudeMm / 1000.0:0.0} m", l.Id == CurrentLevel?.Id, l.Walls.Count, T("level.tooltip", l.DisplayName, Enum_(l.Kind), (l.AltitudeMm / 1000.0).ToString("0.00"), (l.HeightMm / 1000.0).ToString("0.00"))));
         Networks.Clear();
         foreach (var n in Building.Networks)
-        { var c = NetworkQueries.ColorOf(n.Type); Networks.Add(new NetworkItem(n.Id, n.Name, Enum_(n.Type), n.Visible, n.Locked, $"#{c.R:X2}{c.G:X2}{c.B:X2}")); }
+        { var c = NetworkQueries.ColorOf(n.Type); var where = string.Join(", ", n.Segments.SelectMany(sg => Spaces.CrossedBy(Building, n, sg)).Select(sp => sp.DisplayName).Distinct()); Networks.Add(new NetworkItem(n.Id, n.Name, Enum_(n.Type), n.Visible, n.Locked, $"#{c.R:X2}{c.G:X2}{c.B:X2}", where.Length > 0 ? T("network.runs", where) : "")); }
         SpaceItems.Clear();
         foreach (var lv in Building.Levels.AsEnumerable().Reverse())
             foreach (var sp in lv.Spaces)

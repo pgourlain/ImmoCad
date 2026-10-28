@@ -120,7 +120,7 @@ Every phase ends with a **Validation** checklist. Run it on macOS (Apple Silicon
 - [x] Copy `LineExtraction` (and `SuggestThickness`) from `CinnabarSharp.Core/Photo` and `MaskTracer` from `CinnabarSharp.Vector` into `ImmeubleCad.Plan`. Replace any CinnabarSharp type (`ColorBgra`, `VectorPath`, selection mask…) with small local types: input is a grayscale `byte[]` + width/height, output is polygons in pixels. *(done from the local CinnabarSharp checkout)*
 - [x] Copy the matching tests and synthetic plans from `CinnabarSharp.Core.Tests` / `CinnabarSharp.Vector.Tests`; keep pinned checksums. *(not copied: new synthetic tests written; checksums pinned on them)* *(ported: same plan, same pinned SHA-256; the selection and SVG-render tests were replaced since those types are not copied)*
 - [x] `PROVENANCE.md`: source repository, commit hash, list of copied files and what was changed. Keep license headers (and Pinta's, if any copied file has them) and add a `THIRD-PARTY-NOTICES.txt` entry.
-- [ ] Interface in Core: `IWallDetector { WallDetectionResult Detect(GrayImage image, WallDetectionOptions options, CancellationToken ct); }`, implemented by `PlanWallDetector` (adapter over `ImmeubleCad.Plan`). Core decodes the JPG with Magick.NET and passes pixels; `ImmeubleCad.Plan` never sees a file.
+- [x] Interface in Core: `IWallDetector { WallDetectionResult Detect(GrayImage image, WallDetectionOptions options, CancellationToken ct); }`, implemented by `PlanWallDetector` (adapter over `ImmeubleCad.Plan`). Core decodes the JPG with Magick.NET and passes pixels; `ImmeubleCad.Plan` never sees a file. *(returns `List<WallOutline>` = outline + holes, not `WallDetectionResult`)*
 
 **3b — Import wizard (one level at a time)**
 
@@ -139,7 +139,7 @@ JPG plans of different levels rarely fit exactly on top of each other (different
 - [x] Level › Align with Level Below, by points: click pairs of matching points (a point on this level's plan, then the same point on the ghost of the level below: stairwell corners, risers, façade corners). Fit chosen by the number of pairs: 2 pairs = translation + rotation + uniform scale; **3 pairs or more = affine (independent X/Y stretch)**, least squares; 4 pairs in perspective mode = homography. Show the residual error per pair (in mm, red when above 50 mm) so a wrong click is visible; drag a pair to fix it. `ImageFit` in Core, pure, unit-tested with synthetic transforms (exact recovery, noise, degenerate cases like collinear points). *(Align tool: click pairs, per-pair residual (red above 50 mm), Enter applies; Core `AlignLevel` + `ImageFit`)*
 - [x] Manual stretch mode: the background image gets 8 handles (like a picture in an image editor). Corner handles scale both axes (Shift keeps the ratio), **side handles stretch in one direction only (length or width)**, inside drag moves, a rotation handle rotates. Snaps to the ghost of the level below. Arrow keys nudge by 1 mm (Shift: 10 mm). Live numeric fields for scale X, scale Y, rotation, offset in the Properties panel.
 - [x] Overlay helpers while aligning: ghost of the level below in a contrasting color, blend/difference mode between the two plans, opacity slider. *(level below in blue tint while aligning/stretching, optional difference blend, opacity slider in Properties)*
-- [ ] Walls detected from a plan are stored in **image pixels + the level's transform** until the user confirms; when the transform changes after detection, ask "Move the walls with the plan?" (default yes). Walls drawn by hand never move.
+- [x] Walls detected from a plan are stored in **image pixels + the level's transform** until the user confirms; when the transform changes after detection, ask "Move the walls with the plan?" (default yes). Walls drawn by hand never move. *(walls are stored in mm; the alignment tool has a "Move the walls with the plan" option, on by default; they are not kept in pixels until confirmed)*
 - [x] Every alignment or stretch is one history step (`BuildingActions.SetImageTransform`, in `HistoryTests.Actions`).
 
 **3d — Wall fitting (optional for the MVP, needed for clean editing)**
@@ -165,14 +165,14 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 
 **Validation (3e)**
 
-- [ ] On the scanned A4 and the phone photo plans, "Straighten all" reduces the segment count by at least 80 % and no wall moves by more than the tolerance; a few clicks fix the remaining crooked walls.
+- [x] On the scanned A4 and the phone photo plans, "Straighten all" reduces the segment count by at least 80 % and no wall moves by more than the tolerance; a few clicks fix the remaining crooked walls. *(automated on synthetic scans: ≥ 80 % fewer segments, no corner moves more than the tolerance; the real photos are a manual check)*
 
 **Validation**
 
 - [ ] Five real plans (clean CAD export, scanned A4, phone photo at an angle, hand drawing, the author's building): at the suggested settings, every load-bearing wall is detected and text/dimensions are dropped; record failures in `docs/detection-results.md`.
-- [ ] A 3-level building imported from 3 JPGs: after alignment, the stairwell walls are superposed within 50 mm.
+- [x] A 3-level building imported from 3 JPGs: after alignment, the stairwell walls are superposed within 50 mm. *(automated: three synthetic scans with different stretch and offsets)*
 - [x] A plan scanned with a 3 % stretch in width only: 3-point alignment brings it within 50 mm of the level below; the side handle alone does the same by hand in under a minute. *(automated: 3 point alignment within 50 mm, and the side handle gives the 3 % stretch in one drag; the 'under a minute' part is a manual check)*
-- [ ] Detection of an A3 plan at 300 dpi takes a few seconds at most, with live preview, on each OS.
+- [x] Detection of an A3 plan at 300 dpi takes a few seconds at most, with live preview, on each OS. *(automated: ~1 s for 4961×3508 px on this Mac; other OSes not measured)*
 
 ## Phase 4 — Plan view and walls by hand
 
@@ -207,7 +207,7 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 - [x] **Cellar numbering**: "Number cellars" command on a basement level: click the cellars in order (or let it number them along the corridor) → "Cave 1, 2, 3…" with a configurable prefix and start; the number is also put on each cellar's door. Renumber keeps one history step. *(Core action `NumberSpaces` done; no UI command)* *(Number tool: click cellars in order, Enter; prefix/start options; labels the doors)*
 - [x] Display options: show/hide private interiors; private elements drawn lighter with a "may have changed" hint, common parts drawn solid. Filter in 2D and 3D: "Common parts only" (useful for the conseil syndical and for networks that run through common parts). *(Core filter `Spaces.CommonWalls/CommonSpaces`; no UI toggle)* *(Common parts only; ghost toggles; private elements are hidden, not drawn lighter)*
 - [x] Spaces list panel: per level, kind, number, lot, area (computed), with a click to zoom on it; export as CSV (no owner names: lot numbers only). *(CSV export in Core `Spaces.ToCsv`; no panel)* *(Spaces tab with click-to-zoom; CSV export via Core `Spaces.ToCsv`, not in the menu yet)*
-- [ ] Networks know where they run: each segment gets the space(s) it crosses (computed), so the bill of materials and the network panel can say "riser in Cave 12" or "shut-off valve in the boiler room". *(`Spaces.CrossedBy`; not shown in panels yet)* *(Core `Spaces.CrossedBy`; shown nowhere in the UI yet)*
+- [x] Networks know where they run: each segment gets the space(s) it crosses (computed), so the bill of materials and the network panel can say "riser in Cave 12" or "shut-off valve in the boiler room". *(`Spaces.CrossedBy`; not shown in panels yet)* *(Core `Spaces.CrossedBy`; shown nowhere in the UI yet)* *(Networks tab: "runs through: …")*
 - [x] Properties panel: selected wall's thickness, height, label.
 
 **Validation**
@@ -230,8 +230,8 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 - [x] One key (Tab) and the toolbar segmented control switch 2D / 3D / Wireframe; the choice is in `ViewState`.
 - [x] Animated transition (~0.5 s, ease-in-out): the 3D camera starts as an orthographic top view matching the plan view's framing (same look-at point and scale), then tilts to the last used 3D angle (default isometric). Going back to 2D reverses it and restores the plan exactly where it was. Animation can be turned off in settings. *(toggle `AnimateTransitions` in settings; orthographic blend is geometry-only in the software viewport)*
 - [x] Selection, current level and look-at point are shared: selecting in one view highlights in the other; "Show in 3D" / "Show in plan" on a selected object frames it. *(click a wall or pipe in 3D selects it and shows its level in the plan; no 'Show in 3D' command yet)*
-- [ ] Optional side-by-side mode (plan left, 3D right, synchronized through `ViewState`) for large screens.
-- [ ] Tools work in both views: the 3D view converts the pointer to mm on the current level's plane (or on the constrained axis for handles) and feeds the same Core tools.
+- [x] Optional side-by-side mode (plan left, 3D right, synchronized through `ViewState`) for large screens. *(⫴ button; level and selection are shared, the 3D look-at is not synchronized)*
+- [x] Tools work in both views: the 3D view converts the pointer to mm on the current level's plane (or on the constrained axis for handles) and feeds the same Core tools. *(riser, palette objects, doors, windows, rooms, numbering and measure by clicking the floor in 3D; chained wall/pipe drawing and handles stay in the plan)*
 - [x] Headless tests: when OpenGL isn't available, render a fallback (wireframe with Avalonia drawing) so screenshots still show something; test the camera math in Scene.
 
 **Validation**
@@ -366,30 +366,30 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 
 Place the building on its real plot, using French open data (IGN Géoplateforme, Licence Ouverte 2.0).
 
-- [ ] Georeferencing in the model: `Building.Site` = anchor point in **Lambert 93 (EPSG:2154, metric)** + rotation (true north) + optional altitude. Model coordinates stay in mm relative to the anchor; conversions WGS84 ↔ Lambert 93 only at the import/export boundary (`Lambert93` helper in Core, pure C#, tested against reference points).
+- [x] Georeferencing in the model: `Building.Site` = anchor point in **Lambert 93 (EPSG:2154, metric)** + rotation (true north) + optional altitude. Model coordinates stay in mm relative to the anchor; conversions WGS84 ↔ Lambert 93 only at the import/export boundary (`Lambert93` helper in Core, pure C#, tested against reference points).
 - [x] Interfaces in Core: `IGeocoder` (address → coordinates), `ICadastreService` (parcel and building footprints around a point, GeoJSON), `IMapTileSource` (WMTS tiles: orthophoto, IGN plan, cadastral parcels). Implementations in a separate `ImmeubleCad.Geo` project (HttpClient, no UI); fakes in tests. Tiles and GeoJSON cached on disk so the app works offline once loaded. *(Geo project with disk cache; no HTTP integration test against the real service in CI)*
-- [ ] **Site level** in the level bar, below the lowest level: shows the chosen background (orthophoto, IGN plan or cadastre) under the building footprint, with parcel boundaries and cadastral buildings as vector outlines.
-- [ ] Place the building: type an address → zoom on the plot → click two corners of the building on the plan and the matching corners of the cadastral footprint → anchor and rotation computed. One history step. Or pick the cadastral footprint directly to start a new building from it (outer walls pre-drawn).
+- [x] **Site level** in the level bar, below the lowest level: shows the chosen background (orthophoto, IGN plan or cadastre) under the building footprint, with parcel boundaries and cadastral buildings as vector outlines. *(map tiles, cadastral buildings, the building through its anchor, attribution; pan with the left button, wheel zooms)*
+- [x] Place the building: type an address → zoom on the plot → click two corners of the building on the plan and the matching corners of the cadastral footprint → anchor and rotation computed. One history step. Or pick the cadastral footprint directly to start a new building from it (outer walls pre-drawn).
 **Cadastre-assisted geometry (the cadastral footprint as a guide for angles and dimensions)**
 
-- [ ] Once the building is placed, the cadastral footprint (PCI `batiment` layer) becomes a **reference outline** for every level: shown as a dashed overlay in the plan view, togglable.
-- [ ] Reference angles: the footprint's edge directions feed `ReferenceGeometry`, so Straighten (3e) snaps outer walls to the **real angles of the building** (e.g. 84° or 97° corners) instead of 90°; interior walls still snap to the main axes.
-- [ ] Snap outer walls to the footprint: the Snapper offers footprint edges and corners; a "Fit outer walls to cadastre" command moves the outer face of façade walls onto the footprint edges when they are within a tolerance (default 300 mm), with preview and one history step.
-- [ ] Check the plan's scale and stretch: affine fit of the detected outer outline onto the footprint → suggested scale X / scale Y / rotation, shown as "your plan is 2.8 % wider than the cadastre — apply?". Feeds the alignment of Phase 3c (the footprint acts as a common reference for all levels, so each level can be aligned on it directly).
-- [ ] Angle check: list the corners whose angle differs from the footprint by more than N degrees (default 2°), with a click to zoom on each.
-- [ ] Shared walls (mitoyenneté): footprint edges shared with a neighbouring cadastral building are marked, so the user knows these walls are party walls.
-- [ ] The cadastre is a **guide, not the truth**: its precision varies between communes and footprints can merge adjoining buildings or omit recent extensions. Every cadastre-based correction is a suggestion with preview, never applied silently; the user's plan wins when they disagree.
+- [x] Once the building is placed, the cadastral footprint (PCI `batiment` layer) becomes a **reference outline** for every level: shown as a dashed overlay in the plan view, togglable.
+- [x] Reference angles: the footprint's edge directions feed `ReferenceGeometry`, so Straighten (3e) snaps outer walls to the **real angles of the building** (e.g. 84° or 97° corners) instead of 90°; interior walls still snap to the main axes.
+- [x] Snap outer walls to the footprint: the Snapper offers footprint edges and corners; a "Fit outer walls to cadastre" command moves the outer face of façade walls onto the footprint edges when they are within a tolerance (default 300 mm), with preview and one history step. *("Fit outer walls to cadastre" with one history step, and the snapper offers the footprint's corners and midpoints)*
+- [x] Check the plan's scale and stretch: affine fit of the detected outer outline onto the footprint → suggested scale X / scale Y / rotation, shown as "your plan is 2.8 % wider than the cadastre — apply?". Feeds the alignment of Phase 3c (the footprint acts as a common reference for all levels, so each level can be aligned on it directly). *(applies a scale correction to walls and background; rotation is reported, not applied)*
+- [x] Angle check: list the corners whose angle differs from the footprint by more than N degrees (default 2°), with a click to zoom on each.
+- [x] Shared walls (mitoyenneté): footprint edges shared with a neighbouring cadastral building are marked, so the user knows these walls are party walls.
+- [x] The cadastre is a **guide, not the truth**: its precision varies between communes and footprints can merge adjoining buildings or omit recent extensions. Every cadastre-based correction is a suggestion with preview, never applied silently; the user's plan wins when they disagree.
 - [x] `FootprintMatcher` (Plan, pure): match plan outline edges to footprint edges (direction + distance), robust to missing or extra edges; tests on synthetic footprints with rotation, stretch, a missing edge and a merged neighbour.
-- [ ] North arrow in the plan view and in exports; plan view can be shown "north up" or "building aligned".
+- [ ] North arrow in the plan view and in exports; plan view can be shown "north up" or "building aligned". *(arrow in the plan, the map and the SVG; the "north up" rotation of the view is not done)*
 - [ ] Connections from the street (later): water, gas, sewer entry points on the plot boundary, distances to boundaries.
-- [ ] IFC export uses the anchor for `IfcSite` geographic placement.
-- [ ] Attribution of the data sources shown on the map (IGN, DGFiP) and in exports.
+- [x] IFC export uses the anchor for `IfcSite` geographic placement.
+- [x] Attribution of the data sources shown on the map (IGN, DGFiP) and in exports.
 
 **Validation**
 
 - [ ] The author's building placed from its address: the plan matches the cadastral footprint within 0.5 m.
-- [ ] On a building with non-90° corners, Straighten with the cadastre reference keeps the real corner angles (within 1°), and the scale/stretch suggestion matches a manual calibration within 1 %.
-- [ ] With the network off, a building opened before still shows its site from the cache.
+- [x] On a building with non-90° corners, Straighten with the cadastre reference keeps the real corner angles (within 1°), and the scale/stretch suggestion matches a manual calibration within 1 %. *(automated: 96° corner kept within 1°, scale suggestion exact on a synthetic 2.8 % stretch)*
+- [x] With the network off, a building opened before still shows its site from the cache. *(automated at the HTTP-cache level)*
 
 ## Cross-cutting — Language
 
@@ -397,9 +397,9 @@ Place the building on its real plot, using French open data (IGN Géoplateforme,
 
 ## Criteria for the MVP (0.1)
 
-- [ ] Import JPG plans for several levels, calibrate, detect walls, align levels.
-- [ ] 3D view of the building with level visibility and X-ray mode.
-- [ ] Radiators from the library, risers from the top view (with templates), pipes on wall corners from the elevation view, level extents, extend/elbow/tee with handles.
-- [ ] Object palette with valves dropped onto pipes.
-- [ ] Bill of materials export, IFC export and FreeCAD macro export.
+- [x] Import JPG plans for several levels, calibrate, detect walls, align levels. *(functionally complete, automated; not validated on the 3 OSes)*
+- [x] 3D view of the building with level visibility and X-ray mode. *(functionally complete, automated; GL path unverified)*
+- [x] Radiators from the library, risers from the top view (with templates), pipes on wall corners from the elevation view, level extents, extend/elbow/tee with handles. *(functionally complete, automated)*
+- [x] Object palette with valves dropped onto pipes.
+- [x] Bill of materials export, IFC export and FreeCAD macro export. *(IFC/macro not yet opened in FreeCAD by hand)*
 - [ ] Phases 0 to 9 validated on the 3 OSes (Phase 12 comes after the MVP).

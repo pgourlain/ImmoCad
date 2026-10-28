@@ -981,3 +981,84 @@ public class LanguageUiTests
         finally { vm.ApplyLanguage("fr"); }
     }, CancellationToken.None);
 }
+
+public class ThreeLevelImportTests
+{
+    /// <summary>A scanned floor: outer walls and a stairwell box, drawn with its own scale error and offset (every scan differs a little).</summary>
+    private static byte[] Scan(double sx, double sy, int ox, int oy)
+    {
+        const int W = 700, H = 520; var px = Enumerable.Repeat((byte)255, W * H).ToArray();
+        void Box(double x0, double y0, double x1, double y1, int t) { for (var y = (int)(y0 * sy) + oy; y < (int)(y1 * sy) + oy; y++) for (var x = (int)(x0 * sx) + ox; x < (int)(x1 * sx) + ox; x++) if (x >= 0 && y >= 0 && x < W && y < H && (x < (int)(x0 * sx) + ox + t || x >= (int)(x1 * sx) + ox - t || y < (int)(y0 * sy) + oy + t || y >= (int)(y1 * sy) + oy - t)) px[y * W + x] = 0; }
+        Box(40, 40, 600, 440, 10);                       // outer walls: 560 × 400 px = 5.6 m × 4 m at 0.1 px/mm
+        Box(80, 80, 200, 200, 8);                        // stairwell: 120 × 120 px
+        using var img = new ImageMagick.MagickImage(px, new ImageMagick.PixelReadSettings(W, H, ImageMagick.StorageType.Char, "I")); return img.ToByteArray(ImageMagick.MagickFormat.Png);
+    }
+
+    [Fact] public Task Three_jpg_levels_are_imported_aligned_on_the_stairwell_and_superposed_within_50mm() => new HeadlessFixture().Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(startWithSample: false) { Settings = new() }; vm.NewDocumentCommand.Execute(null);
+        // three scans: the 2nd is 3 % too wide and shifted, the 3rd is 2 % too long, shifted the other way; calibrated on the same known 5.6 m outer wall
+        var scans = new[] { Scan(1, 1, 0, 0), Scan(1.03, 1, 12, -9), Scan(1, 1.02, -7, 11) };
+        for (var i = 0; i < 3; i++)
+        {
+            if (i > 0) vm.AddLevelCommand.Execute(null);
+            var s = scans[i]; var wiz = new ImportWizardViewModel(s) { DistanceMetres = 5.6 };
+            var gray = wiz.Gray!; int y = 240; int left = Enumerable.Range(0, gray.Width).First(x => gray.Pixels[y * gray.Width + x] < 100), right = Enumerable.Range(0, gray.Width).Last(x => gray.Pixels[y * gray.Width + x] < 100);
+            wiz.AddCalibrationPoint(left, y); wiz.AddCalibrationPoint(right + 1, y); wiz.MinThickness = 6; wiz.Detect(); vm.ApplyWizard(wiz);
+        }
+        Assert.Equal(3, vm.Building.Levels.Count); Assert.All(vm.Building.Levels, l => Assert.NotEmpty(l.Walls));
+        // stairwell outer corners, found on each level as the smallest wall group's outline
+        List<ImmeubleCad.Core.Model.PointMm> Stair(ImmeubleCad.Core.Model.Level l) { var shape = l.Walls.OrderBy(w => w.Footprint.Max(p => p.X) - w.Footprint.Min(p => p.X)).First(); return shape.Footprint.OrderBy(p => p.Y).ThenBy(p => p.X).ToList(); }
+        for (var i = 1; i < 3; i++)
+        {
+            var below = Stair(vm.Building.Levels[i - 1]); var cur = Stair(vm.Building.Levels[i]); Assert.Equal(4, cur.Count);
+            vm.SelectLevelCommand.Execute(vm.Building.Levels[i].Id); vm.SetToolCommand.Execute("Align");
+            for (var k = 0; k < 3; k++) { vm.AlignClick(cur[k].X, cur[k].Y); vm.AlignClick(below[k].X, below[k].Y); }              // 3 corner pairs → affine (independent X/Y stretch)
+            Assert.True(vm.AlignApply()); vm.SetToolCommand.Execute("Select");
+        }
+        var s0 = Stair(vm.Building.Levels[0]);
+        for (var i = 1; i < 3; i++)
+        {
+            var si = Stair(vm.Building.Levels[i]); Assert.Equal(4, si.Count);
+            for (var k = 0; k < 4; k++) Assert.True(Math.Abs(si[k].X - s0[k].X) <= 50 && Math.Abs(si[k].Y - s0[k].Y) <= 50, $"level {i} corner {k}: {si[k]} vs {s0[k]}");       // stairwell walls superposed within 50 mm
+        }
+    }, CancellationToken.None);
+}
+
+public class SideBySideAnd3dToolsTests
+{
+    private readonly HeadlessFixture f = new();
+
+    [Fact] public Task Side_by_side_shows_plan_and_3d_together_sharing_level_and_selection() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(); vm.Settings.AnimateTransitions = false; var w = new MainWindow { DataContext = vm, Width = 1500, Height = 800 }; w.Show(); w.UpdateLayout();
+        var plan = w.FindControl<PlanView>("Plan")!; var host = w.FindControl<Avalonia.Controls.Grid>("View3DHost")!; Assert.True(plan.IsVisible); Assert.False(host.IsVisible);
+        vm.SideBySide = true; vm.SelectLevelCommand.Execute(vm.Building.Levels[1].Id); w.UpdateLayout(); w.CaptureRenderedFrame();
+        Assert.True(plan.IsVisible && host.IsVisible); Assert.True(Math.Abs(plan.Bounds.Width - host.Bounds.Width) < 4, $"{plan.Bounds.Width} vs {host.Bounds.Width}"); Assert.True(plan.Bounds.Right <= host.Bounds.Left + 1);   // plan left, 3D right
+        Assert.NotEmpty(w.View3D.Controller.Objects);                                                                                  // the 3D view is built while the plan is the active mode
+        var cutBefore = w.View3D.Controller.Objects.Count(o => o.Kind == ImmeubleCad.Scene.SceneKind.Wall);
+        vm.SelectLevelCommand.Execute(vm.Building.Levels[0].Id); w.UpdateLayout(); Assert.True(w.View3D.Controller.Objects.Count(o => o.Kind == ImmeubleCad.Scene.SceneKind.Wall) < cutBefore);   // the level bar drives both
+        vm.SelectWalls([vm.CurrentLevel!.Walls[0].Id], false); Assert.Contains(w.View3D.Controller.Objects, o => o.Highlight);       // selection shared: highlighted in 3D
+        w.CaptureRenderedFrame()!.Save(Path.Combine(AppContext.BaseDirectory, "screenshots", "sidebyside.png")); vm.SideBySide = false; w.UpdateLayout(); Assert.False(host.IsVisible); w.Close();
+    }, CancellationToken.None);
+
+    [Fact] public Task Riser_and_palette_tools_work_by_clicking_the_floor_in_3d() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(); vm.Settings.AnimateTransitions = false; var w = new MainWindow { DataContext = vm, Width = 1000, Height = 800 }; w.Show(); w.UpdateLayout();
+        vm.SetModeCommand.Execute("Solid"); w.UpdateLayout(); w.CaptureRenderedFrame(); var c = w.View3D.Controller; var ctl = w.View3D.Control; var floor = vm.CurrentLevel!.AltitudeMm / 1000.0;
+        Avalonia.Point ScreenOf(int xMm, int yMm) { var half = Math.Min(ctl.Bounds.Width, ctl.Bounds.Height) / 2; var (px, py, _) = c.Camera.Project(xMm / 1000.0, yMm / 1000.0, floor); return new(ctl.Bounds.Width / 2 + px * half, ctl.Bounds.Height / 2 - py * half); }
+        var target = new ImmeubleCad.Core.Model.PointMm(4000, 3000); var back = c.PlaneAt(ScreenOf(4000, 3000), ctl.Bounds.Width, ctl.Bounds.Height, floor)!.Value; Assert.True(Math.Abs(back.X - 4000) <= 2 && Math.Abs(back.Y - 3000) <= 2);   // screen → floor is the inverse of the projection
+        var nets = vm.Building.Networks.Count; vm.SetToolCommand.Execute("Riser"); var s = ScreenOf(4000, 3000); c.Down(s, false); c.Up(s, vm, ctl.Bounds.Width, ctl.Bounds.Height);
+        Assert.Equal(nets + 1, vm.Building.Networks.Count); var node = vm.Building.Networks[^1].Nodes[0].Position; Assert.InRange(node.X, 3900, 4100); Assert.InRange(node.Y, 2900, 3100);
+        vm.SelectPaletteCommand.Execute("radiator"); var eq = vm.Building.Equipment.Count; s = ScreenOf(5000, 400); c.Down(s, false); c.Up(s, vm, ctl.Bounds.Width, ctl.Bounds.Height); Assert.Equal(eq + 1, vm.Building.Equipment.Count);
+        vm.SetToolCommand.Execute("Select"); var walls = vm.SelectedWalls.Count; c.Down(ScreenOf(3000, 100), false); c.Up(ScreenOf(3000, 100), vm, ctl.Bounds.Width, ctl.Bounds.Height);   // select tool: picks instead
+        w.Close();
+    }, CancellationToken.None);
+
+    [Fact] public Task Networks_panel_says_which_spaces_a_riser_runs_through_and_the_snapper_offers_the_footprint() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(); var l = vm.Building.Levels[0]; var riser = vm.Building.Networks[0]; var nid = riser.Nodes[0].Position;
+        vm.Actions.AddSpace(l.Id, [new(nid.X - 200, nid.Y - 200), new(nid.X + 400, nid.Y - 200), new(nid.X + 400, nid.Y + 400), new(nid.X - 200, nid.Y + 400)], "Gaine", ImmeubleCad.Core.Model.SpaceKind.ServiceShaft); vm.Refresh();
+        Assert.Contains("Gaine", vm.Networks.First(n => n.Id == riser.Id).Where); Assert.StartsWith("passe par", vm.Networks.First(n => n.Id == riser.Id).Where);
+    }, CancellationToken.None);
+}

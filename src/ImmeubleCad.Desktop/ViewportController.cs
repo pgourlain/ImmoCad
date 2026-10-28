@@ -23,6 +23,10 @@ public sealed class ViewportController
     public double OrthoBlend { get; private set; }            // 1 = orthographic top view (plan framing), 0 = perspective
     public Action? Invalidate { get; set; }
     public Action<Guid, SceneKind>? Picked { get; set; }
+    /// <summary>When the active tool works on the plan (riser, palette object, door…), a click is converted to millimetres on the current level's plane and given to the same view-model methods the plan uses.</summary>
+    public Func<bool>? PlaneToolActive { get; set; }
+    public Func<double>? PlaneAltitudeM { get; set; }
+    public Action<ImmeubleCad.Core.Model.PointMm>? PlaneClicked { get; set; }
 
     private Point? _last; private bool _pan; private Point _down;
     private DispatcherTimer? _timer; private DateTime _t0; private CameraPose _from, _to; private Action? _done;
@@ -48,7 +52,7 @@ public sealed class ViewportController
     public void Up(Point p, MainViewModel? vm, double width, double height)
     {
         _last = null;
-        if (Math.Abs(p.X - _down.X) + Math.Abs(p.Y - _down.Y) < 4 && !_pan) Pick(p, width, height);
+        if (Math.Abs(p.X - _down.X) + Math.Abs(p.Y - _down.Y) < 4 && !_pan) { if (PlaneToolActive?.Invoke() == true && PlaneAt(p, width, height, PlaneAltitudeM?.Invoke() ?? 0) is { } mm) PlaneClicked?.Invoke(mm); else Pick(p, width, height); }
     }
     public void Move(Point p)
     {
@@ -62,6 +66,13 @@ public sealed class ViewportController
     {
         switch (name) { case "top": Camera.Top(); break; case "front": Camera.Yaw = 0; Camera.Pitch = 0.02; break; case "side": Camera.Yaw = Math.PI / 2; Camera.Pitch = 0.02; break; default: Camera.Iso(); break; }
         Invalidate?.Invoke();
+    }
+
+    /// <summary>The point of the horizontal plane z = <paramref name="zMeters"/> under a screen point, in millimetres (null when the ray is parallel to it).</summary>
+    public ImmeubleCad.Core.Model.PointMm? PlaneAt(Point p, double width, double height, double zMeters)
+    {
+        var half = Math.Min(width, height) / 2; double sx = (p.X - width / 2) / half, sy = -(p.Y - height / 2) / half; var (o, d) = Camera.Unproject(sx, sy, 1);
+        if (Math.Abs(d.Z) < 1e-9) return null; var t = (zMeters - o.Z) / d.Z; return new((int)Math.Round((o.X + d.X * t) * 1000), (int)Math.Round((o.Y + d.Y * t) * 1000));
     }
 
     /// <summary>Ray through a screen point → nearest scene object → id (wall, pipe, fitting, equipment).</summary>

@@ -101,6 +101,7 @@
             <NumericUpDown Value="{Binding RiserDiameter}" Minimum="8" Maximum="200" vm:L.Format="fmt.mm" />
             <NumericUpDown Value="{Binding RiserSpacing}" Minimum="50" Maximum="1000" vm:L.Format="fmt.spacing" />
             <CheckBox vm:L.Content="site.wholebuilding" IsChecked="{Binding RiserWholeBuilding}" />
+            <CheckBox vm:L.Content="align.movewalls" IsChecked="{Binding AlignMoveWalls}" />
             <Separator />
             <TextBlock vm:L.Text="opt.straighten" Classes="caption" />
             <NumericUpDown Value="{Binding StraightenTolerance}" Minimum="0" Maximum="300" vm:L.Format="fmt.tolerance" />
@@ -120,7 +121,7 @@
                 <DataTemplate x:DataType="vm:NetworkItem">
                   <Grid ColumnDefinitions="Auto,*,Auto,Auto" Margin="0,0,0,4">
                     <Border Width="12" Height="12" CornerRadius="6" Background="{Binding ColorHex}" Margin="0,0,8,0" VerticalAlignment="Center" />
-                    <StackPanel Grid.Column="1"><TextBlock Text="{Binding Name}" /><TextBlock Text="{Binding Type}" Classes="caption" /></StackPanel>
+                    <StackPanel Grid.Column="1"><TextBlock Text="{Binding Name}" /><TextBlock Text="{Binding Type}" Classes="caption" /><TextBlock Text="{Binding Where}" Classes="caption" TextWrapping="Wrap" /></StackPanel>
                     <Button Grid.Column="2" Content="{Binding Visible}" ContentTemplate="{x:Null}" Padding="6,2" vm:L.Tip="tip.togglenet"
                             Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ToggleNetworkCommand}" CommandParameter="{Binding Id}" />
                     <Button Grid.Column="3" Content="{Binding Locked}" Padding="6,2" Margin="4,0,0,0" vm:L.Tip="tip.lock"
@@ -284,6 +285,7 @@
         <TextBlock Grid.Column="1" Text="{Binding SelectionText}" HorizontalAlignment="Center" VerticalAlignment="Center" Classes="caption" />
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
           <Button vm:L.Content="view.2d" Command="{Binding SetModeCommand}" CommandParameter="Plan" />
+          <ToggleButton Content="⫴" vm:L.Tip="tip.sidebyside" IsChecked="{Binding SideBySide}" />
           <Button vm:L.Content="view.elevation" Command="{Binding ShowElevationCommand}" vm:L.Tip="tip.elevation" />
           <Button vm:L.Content="view.3d" Command="{Binding SetModeCommand}" CommandParameter="Solid" />
           <Button vm:L.Content="view.wire" Command="{Binding SetModeCommand}" CommandParameter="Wireframe" />
@@ -319,10 +321,12 @@
           <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right"><Button vm:L.Content="tour.skip" Command="{Binding TourSkipCommand}" /><Button vm:L.Content="wiz.next" Classes="accent" Command="{Binding TourNextCommand}" /></StackPanel>
         </StackPanel>
       </Border>
-      <vm:PlanView x:Name="Plan" IsVisible="{Binding IsPlan}" />
+      <UniformGrid Rows="1">
+        <vm:PlanView x:Name="Plan" IsVisible="{Binding ShowPlan}" />
+        <Grid x:Name="View3DHost" IsVisible="{Binding Show3D}" />
+      </UniformGrid>
       <vm:SiteView x:Name="SiteMap" IsVisible="{Binding IsSite}" />
       <vm:ElevationView x:Name="Elev" IsVisible="{Binding IsElevation}" Focusable="True" />
-      <Grid x:Name="View3DHost" IsVisible="{Binding Is3D}" />
     </Grid>
   </DockPanel>
 </Window>

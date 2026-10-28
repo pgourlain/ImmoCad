@@ -131,7 +131,11 @@ public class PlanView : Control
         Offset = (40 - minX * Scale, 40 - minY * Scale); _fitted = true;
     }
 
-    private IEnumerable<IReadOnlyList<PointMm>> Polys() => Vm?.CurrentLevel?.Walls.Select(w => (IReadOnlyList<PointMm>)w.Footprint) ?? [];
+    private IEnumerable<IReadOnlyList<PointMm>> Polys()
+    {
+        var walls = Vm?.CurrentLevel?.Walls.Select(w => (IReadOnlyList<PointMm>)w.Footprint) ?? [];
+        return Vm?.ShowFootprint == true && Vm.FootprintModel() is { } f ? walls.Append(f) : walls;      // the cadastral footprint offers its corners and edges' midpoints to the snapper
+    }
 
     private Wall? HitWall(PointMm p) => Vm?.CurrentLevel?.Walls.LastOrDefault(w =>
         ImmeubleCad.Core.Geometry.SpaceFinder.Contains(w.Footprint, p) && !w.Holes.Any(h => ImmeubleCad.Core.Geometry.SpaceFinder.Contains(h, p)));

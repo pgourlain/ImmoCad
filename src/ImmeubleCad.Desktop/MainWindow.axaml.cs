@@ -46,6 +46,7 @@ public partial class MainWindow : Window
     {
         var c = View3D.Controller; var look = Plan.LookAtMm; var alt = (Vm.CurrentLevel?.AltitudeMm ?? 0) / 1000.0;
         c.Animate = Vm.Settings.AnimateTransitions;
+        if (Vm.SideBySide) return false;                                   // both views are already on screen: no camera animation
         if (from == ViewMode.Plan && to is ViewMode.Solid or ViewMode.Wireframe)
         {
             done(); SyncView3D(); View3D.Rebuild();
@@ -58,7 +59,7 @@ public partial class MainWindow : Window
     private void SyncView3D()
     {
         var c = View3D.Controller; c.Wireframe = Vm.Mode == ViewMode.Wireframe; c.XRay = Vm.XRay; c.CutAboveCurrent = Vm.CutAbove; c.Filter = Vm.LevelFilter switch { 0 => ImmeubleCad.Scene.LevelFilter.WholeBuilding, 1 => ImmeubleCad.Scene.LevelFilter.CurrentAndBelow, _ => ImmeubleCad.Scene.LevelFilter.CurrentOnly };
-        if (Vm.Is3D) { View3D.Rebuild(); WatchGl(); }
+        if (Vm.Show3D) { View3D.Rebuild(); WatchGl(); }
     }
 
     private bool _watching;
