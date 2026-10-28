@@ -343,3 +343,38 @@ public class WallMoveTests
         h.Undo(b); Assert.Single(b.Levels[1].Walls); // undo restores a fresh object graph
     }
 }
+
+public class ExportTests
+{
+    private static Building Sample() => SampleBuilding.Create().Building;
+
+    [Fact] public void Glb_is_valid_container_with_node_per_level_and_network()
+    {
+        var glb = ImmeubleCad.Core.Export.GltfExporter.ExportGlb(Sample());
+        Assert.Equal(0x46546C67u, BitConverter.ToUInt32(glb, 0)); Assert.Equal((uint)glb.Length, BitConverter.ToUInt32(glb, 8));
+        var jsonLen = (int)BitConverter.ToUInt32(glb, 12);
+        using var doc = System.Text.Json.JsonDocument.Parse(glb.AsMemory(20, jsonLen));
+        var names = doc.RootElement.GetProperty("nodes").EnumerateArray().Select(n => n.GetProperty("name").GetString()).ToList();
+        Assert.Contains("level_RDC", names); Assert.Contains("level_R+2", names); Assert.Contains(names, n => n!.StartsWith("network_"));
+        Assert.Equal(0, glb.Length % 4);
+    }
+
+    [Fact] public void Bom_full_counts_fittings_equipment_and_rounds_bars()
+    {
+        var b = Sample(); var csv = ImmeubleCad.Core.Export.BomFull.ToCsv(b, roundToBars: true);
+        Assert.Contains("equipment,,Radiator,,1,pcs", csv);
+        Assert.Contains("bars of 3 m", csv);
+        var pdf = System.Text.Encoding.Latin1.GetString(ImmeubleCad.Core.Export.BomFull.ToPdf(b));
+        Assert.StartsWith("%PDF-1.4", pdf); Assert.Contains("%%EOF", pdf); Assert.Contains("Radiator", pdf);
+    }
+
+    [Fact] public void Hand_count_matches_for_simple_run()
+    {
+        var b = new Building(); var a = new BuildingActions(b, new BuildingHistory(), new BuildingEventsService());
+        var n = a.AddNetwork("N", NetworkType.ColdWater); a.AddPipeRun(n.Id, [new(0, 0, 0), new(0, 0, 2700), new(1500, 0, 2700), new(1500, 0, 0)], 22);
+        Assert.Equal(6.9, Bom.Pipes(b).Single().LengthM, 3);
+        var f = ImmeubleCad.Core.Export.BomFull.Fittings(b);
+        Assert.Equal(2, f.Single(x => x.Kind == FittingKind.Elbow90).Count);
+        Assert.Contains("pipe,ColdWater,pipe,22,3,bars of 3 m", ImmeubleCad.Core.Export.BomFull.ToCsv(b, true).Replace("\r", ""));
+    }
+}

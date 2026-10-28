@@ -319,9 +319,9 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 - [x] **IFC 4** (`.ifc`), the BIM standard, priority export: building → storeys (`IfcBuildingStorey` per level) → `IfcWall` (extruded footprints), `IfcSlab`, `IfcDoor`/`IfcWindow`, networks as `IfcDistributionSystem` with `IfcPipeSegment`, `IfcPipeFitting` (elbows, tees from `FittingResolver`), `IfcValve`, `IfcSpaceHeater`, `IfcBoiler`…, colors per network, geographic placement (`IfcSite` with the Lambert 93 anchor once Phase 12 exists). Opens in FreeCAD (BIM workbench), Revit, ArchiCAD, BlenderBIM/Bonsai, online IFC viewers. Library: evaluate xBIM Essentials and GeometryGym IFC (check licenses and AOT compatibility before choosing; write an ADR in `docs/adr/`). *(partial: hierarchy, walls, pipe segments only; no geometry/fittings/colors)*
 - [x] **FreeCAD macro** (`.FCMacro` / `.py`): a generated Python script that rebuilds the building as **native, editable FreeCAD objects** (BIM/Arch walls on levels, pipes as swept profiles or BIM pipes, equipment as parametric boxes, one group per network with its color). Best fidelity for FreeCAD users; no FreeCAD dependency at build time (text generation only).
 - [x] **DXF** (`.dxf`): 2D plans per level, one layer per category and per network (AutoCAD, LibreCAD, DraftSight, QCAD). Library: netDxf (check license) or a minimal hand-written DXF R12 writer. *(partial: LINE entities per layer; no R12 header/units)*
-- [ ] **glTF** (`.glb`) and **OBJ**: 3D meshes from `ImmeubleCad.Scene` for Blender, SketchUp, web viewers, 3D printing; one node per level and per network so they can be hidden in the target tool.
-- [ ] **SVG / PDF**: printable plans per level and per network (title block with level name, scale, north arrow, legend).
-- [ ] **CSV / PDF**: bill of materials (above).
+- [x] **glTF** (`.glb`) and **OBJ**: 3D meshes from `ImmeubleCad.Scene` for Blender, SketchUp, web viewers, 3D printing; one node per level and per network so they can be hidden in the target tool. *(OBJ + GLB in Core/MCP; no UI menu entry for GLB yet)*
+- [x] **SVG / PDF**: printable plans per level and per network (title block with level name, scale, north arrow, legend). *(SVG per level in Core; PDF only for the bill of materials; no title block / north arrow)*
+- [x] **CSV / PDF**: bill of materials (above).
 - [ ] Export dialog: format, levels to include, networks to include, units (mm/m), with a short line explaining which tool each format is for (beginner friendly).
 - [ ] MCP tools `export_ifc`, `export_freecad_macro`, `export_dxf`, `export_gltf` (Phase 10).
 
@@ -341,8 +341,8 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 
 - [x] `ImmeubleCad.Mcp` (official C# SDK), Core only, hosted by the app: `ImmeubleCad --mcp` (headless, stdio) and `--mcp --attach` (relay to the running app over a Unix domain socket, File › Allow AI Agents, off by default). Copy the design from `CinnabarSharp.Mcp` (dispatcher, `McpContext.Run`, allowed folders, `overwrite`/`discardChanges`). *(partial: stdio only; no `--attach`)*
 - [x] Tools: open/new/save/close building, list levels, add level, import plan with detection parameters, list walls, add riser (network, XY, level range), add pipe run (list of points), connect equipment, bill of materials, export glTF/SVG/CSV, undo/redo. *(partial: add level/wall/riser/pipe run, save, export, undo/redo, BOM; no open/import)*
-- [ ] Resources: `immeuble://buildings`, `immeuble://buildings/{id}/networks`, `immeuble://equipment-library`.
-- [ ] `docs/mcp.md` with `claude mcp add` setup and examples ("add a hot and cold water riser from RDC to R+5 in the corner of the bathroom").
+- [x] Resources: `immeuble://buildings`, `immeuble://buildings/{id}/networks`, `immeuble://equipment-library`.
+- [x] `docs/mcp.md` with `claude mcp add` setup and examples ("add a hot and cold water riser from RDC to R+5 in the corner of the bathroom").
 - [ ] `ImmeubleCad.Mcp.Tests`: start the real app with `--mcp` and drive it end to end.
 
 **Validation**
