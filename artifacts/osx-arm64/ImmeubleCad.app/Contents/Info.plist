@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleName</key><string>ImmeubleCad</string>
+  <key>CFBundleExecutable</key><string>ImmeubleCad</string>
+  <key>CFBundleIdentifier</key><string>io.github.pgourlain.immeublecad</string>
+  <key>CFBundleShortVersionString</key><string>0.1.0</string>
+  <key>CFBundleDocumentTypes</key><array><dict>
+    <key>CFBundleTypeExtensions</key><array><string>immeuble</string></array>
+    <key>CFBundleTypeRole</key><string>Editor</string></dict></array>
+  <key>CFBundleIconFile</key><string>icon</string>
+  <key>NSHighResolutionCapable</key><true/>
+</dict></plist>

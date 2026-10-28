@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Usage: packaging/package.sh <rid> <version>   (rid: win-x64 | linux-x64 | osx-arm64 | osx-x64)
+# Usage: [AOT=true] packaging/package.sh <rid> <version>   (rid: win-x64 | linux-x64 | osx-arm64 | osx-x64). Native AOT is opt-in: the MCP SDK and Avalonia use reflection, validate before enabling.
 set -euo pipefail
 RID="${1:?rid}"; VERSION="${2:?version}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; OUT="$ROOT/artifacts/$RID"; rm -rf "$OUT"; mkdir -p "$OUT"
 dotnet publish "$ROOT/src/ImmeubleCad.Desktop" -c Release -r "$RID" --self-contained true \
-  -p:PublishAot=true -p:Version="$VERSION" -o "$OUT/publish"
+  -p:PublishAot=${AOT:-false} -p:Version="$VERSION" -o "$OUT/publish"
 cp "$ROOT/LICENSE" "$ROOT/THIRD-PARTY-NOTICES.txt" "$OUT/publish/"
 cp "$ROOT/packaging/icon/icon-256.png" "$OUT/publish/immeublecad.png"
 case "$RID" in

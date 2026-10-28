@@ -1,0 +1,2 @@
+CinnabarSharp (https://github.com/pgourlain/CinnabarSharp) — LineExtraction and MaskTracer, adapted in src/ImmeubleCad.Plan. Same author; see src/ImmeubleCad.Plan/PROVENANCE.md.
+Data: IGN Géoplateforme and DGFiP, Licence Ouverte 2.0 (Phase 12).
