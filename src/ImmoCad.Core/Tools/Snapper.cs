@@ -31,12 +31,14 @@ public sealed class Snapper
         if (from is { } f)
         {
             var dx = Math.Abs(p.X - f.X); var dy = Math.Abs(p.Y - f.Y);
-            if (dy <= ToleranceMm && dx > dy) return new(new(p.X, f.Y), SnapKind.Orthogonal);
-            if (dx <= ToleranceMm && dy > dx) return new(new(f.X, p.Y), SnapKind.Orthogonal);
+            // along the straight line the free coordinate still lands on the grid
+            if (dy <= ToleranceMm && dx > dy) return new(new(AlongGrid(p.X), f.Y), SnapKind.Orthogonal);
+            if (dx <= ToleranceMm && dy > dx) return new(new(f.X, AlongGrid(p.Y)), SnapKind.Orthogonal);
         }
         if (SnapToGrid && GridMm > 0) return new(new PointMm(Round(p.X), Round(p.Y)), SnapKind.Grid);
         return new(p, SnapKind.None);
     }
+    private int AlongGrid(int v) => SnapToGrid && GridMm > 0 ? Round(v) : v;
     private int Round(int v) => (int)Math.Round((double)v / GridMm) * GridMm;
     private static long D2(PointMm a, PointMm b) { long dx = a.X - b.X, dy = a.Y - b.Y; return dx * dx + dy * dy; }
 }

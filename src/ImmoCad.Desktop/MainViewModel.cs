@@ -521,11 +521,12 @@ public partial class MainViewModel : ObservableObject
         return FindPipeFor(at, l, e) is null ? T("valve.onpipe") : null;
     }
 
-    /// <summary>Where the palette object would land at this point (same snapping as the real placement); null for an inline part or no palette pick.</summary>
-    public (CatalogEntry Entry, PointMm At)? PalettePreview(PointMm at)
+    /// <summary>Where the palette object would land at this point (same snapping as the real placement). Inline parts (valves…) land on the nearest pipe; <c>Valid</c> is false when there is none.</summary>
+    public (CatalogEntry Entry, PointMm At, bool Valid)? PalettePreview(PointMm at)
     {
-        var e = PaletteId == null ? null : EquipmentCatalog.Find(PaletteId); if (e == null || e.Inline || CurrentLevel is not { } l) return null;
-        return (e, RiserSnap.Snap(at, l.Walls.Select(w => (IReadOnlyList<PointMm>)w.Footprint), offsetMm: e.DepthMm / 2, reachMm: 400));
+        var e = PaletteId == null ? null : EquipmentCatalog.Find(PaletteId); if (e == null || CurrentLevel is not { } l) return null;
+        if (e.Inline) return FindPipeFor(at, l, e) is { } hit ? (e, new PointMm(hit.P.X, hit.P.Y), true) : (e, at, false);
+        return (e, RiserSnap.Snap(at, l.Walls.Select(w => (IReadOnlyList<PointMm>)w.Footprint), offsetMm: e.DepthMm / 2, reachMm: 400), true);
     }
 
     /// <summary>Outline of the room a click would create with the space tool (null when the walls are not closed there).</summary>

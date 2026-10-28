@@ -82,6 +82,17 @@ public class FeatureTests
         Assert.Equal(SnapKind.Orthogonal, s.Snap(new(5000, 70), [], new PointMm(0, 0)).Kind);
     }
 
+    [Fact] public void Snapper_keeps_the_grid_along_a_straight_line_and_the_tolerance_follows_the_zoom()
+    {
+        var s = new Snapper { GridMm = 250 };
+        Assert.Equal(new SnapResult(new(5000, 0), SnapKind.Orthogonal), s.Snap(new(5030, 70), [], new PointMm(0, 0)));     // aligned and on a grid step
+        Assert.Equal(new SnapResult(new(0, 1250), SnapKind.Orthogonal), s.Snap(new(-60, 1190), [], new PointMm(0, 0)));
+        s.SnapToGrid = false; Assert.Equal(new PointMm(5030, 0), s.Snap(new(5030, 70), [], new PointMm(0, 0)).Point);        // grid off: free along the line
+        s.SnapToGrid = true; s.ToleranceMm = 40;                                                                              // zoomed in: a small reach only
+        Assert.Equal(SnapKind.Grid, s.Snap(new(5030, 70), [], new PointMm(0, 0)).Kind);
+        Assert.Equal(new PointMm(750, 1250), s.Snap(new(760, 1240), []).Point);                                                // diagonal: every point on a grid crossing
+    }
+
     [Fact] public void Tool_click_mode_chain_is_one_commit()
     {
         var runs = new List<IReadOnlyList<PointMm>>();

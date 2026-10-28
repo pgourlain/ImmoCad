@@ -559,6 +559,16 @@ public class RoomToolsTests
         Assert.Empty(vm.CurrentLevel!.Spaces); Assert.Equal(steps + 1, vm.History.Items.Count);
     }, CancellationToken.None);
 
+    [Fact] public Task Every_tool_has_a_name_for_the_canvas_marker_in_both_languages() => f.Session.Dispatch(() =>
+    {
+        foreach (var lang in new[] { "en", "fr" })
+        {
+            ImmoCad.Core.Translations.Language = lang;
+            foreach (var tool in Enum.GetValues<ToolKind>().Where(t => t != ToolKind.Select)) Assert.NotEqual("toolname." + tool, ImmoCad.Core.Translations.T("toolname." + tool));
+        }
+        ImmoCad.Core.Translations.Language = "fr";
+    }, CancellationToken.None);
+
     [Fact] public Task Placement_previews_for_risers_palette_objects_and_rooms_change_nothing() => f.Session.Dispatch(() =>
     {
         var vm = Basement(); var steps = vm.History.Items.Count;
@@ -567,6 +577,7 @@ public class RoomToolsTests
         vm.RiserTemplate = "tpl.loop"; Assert.Equal([NetworkType.ColdWater, NetworkType.DomesticHotWater, NetworkType.DhwReturn], vm.RiserPreview(new(1000, 1000)).Select(r => r.Type));
         vm.RiserTemplate = "tpl.drain"; var eu = vm.RiserPreview(new(1000, 1000)); Assert.Equal(NetworkType.Drainage, eu.Single().Type); Assert.True(eu.Single().DiameterMm >= 100);
         Assert.Null(vm.PalettePreview(new(1000, 1000)));                        // no palette pick
+        foreach (var e in ImmoCad.Core.Catalog.EquipmentCatalog.All) { vm.PaletteId = e.Id; var pv = vm.PalettePreview(new(1000, 1000)); Assert.NotNull(pv); Assert.Equal(e.Id, pv!.Value.Entry.Id); if (e.Inline) Assert.False(pv.Value.Valid); }   // every palette object has a ghost; a valve with no pipe is flagged
         Assert.NotNull(vm.SpacePreview(new(1000, 1000)));                       // closed basement walls: the room outline
         Assert.Equal(steps, vm.History.Items.Count);
     }, CancellationToken.None);

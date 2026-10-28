@@ -59,6 +59,7 @@ public class PlanView : Control
         InvalidateVisual();
     }
     private readonly List<(Rect Rect, Guid LevelId, PointMm Center)> _arrows = new();
+    private bool _over;
     private PointMm _hover, _spaceFor; private List<PointMm>? _spaceOutline;
     private string _chainTyped = "", _chainAngle = ""; private int _chainField;     // typed length / angle while placing; Tab switches field
     private (Guid Id, PointMm To, PointMm From)? _eqDrag; private (Guid EqId, Port Port, PointMm3 At, PointMm To)? _connect;
@@ -189,7 +190,7 @@ public class PlanView : Control
         ImmoCad.Core.Geometry.SpaceFinder.Contains(w.Footprint, p) && !w.Holes.Any(h => ImmoCad.Core.Geometry.SpaceFinder.Contains(h, p)));
 
     /// <summary>The snapper follows the visible grid and the Snap-to-grid toggle.</summary>
-    private void SyncSnap() { if (Vm is not { } v) return; Snapper.SnapToGrid = v.SnapToGrid; Snapper.GridMm = v.SnapToGrid ? Math.Max(1, (int)Math.Round(NiceStepMm(10))) : 0; }
+    private void SyncSnap() { if (Vm is not { } v) return; Snapper.ToleranceMm = Math.Max(1, (int)Math.Round(10 / Scale)); Snapper.SnapToGrid = v.SnapToGrid; Snapper.GridMm = v.SnapToGrid ? Math.Max(1, (int)Math.Round(NiceStepMm(10))) : 0; }
 
     private ToolPointer TP(PointerEventArgs e)
     {
@@ -279,7 +280,8 @@ public class PlanView : Control
         }
         CursorMoved?.Invoke(ToMm(p));
         if (Vm is not { } vm) return;
-        _hover = ToMm(p);
+        _hover = ToMm(p); _over = true;
+        if (vm.Tool != ToolKind.Select) { if (!_space) Cursor = new Cursor(StandardCursorType.Cross); InvalidateVisual(); } else if (!_space && Cursor != null) Cursor = null;
         if (_handleTool != null) { _handleTool.ForceElbow = e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Alt); _handleTool.Move(HandlePointer(e)); InvalidateVisual(); return; }
         if (IsChain) { DrawTool?.Move(TP(e)); InvalidateVisual(); return; }
         if (vm.IsPlaceTool || vm.IsRiserTool || vm.IsDoorTool || vm.IsWindowTool || vm.IsSpaceTool) { InvalidateVisual(); return; }
@@ -336,6 +338,27 @@ public class PlanView : Control
             PanBy(e.Delta.X * 40, e.Delta.Y * 40); InvalidateVisual(); e.Handled = true; return;
         }
         ZoomAt(e.GetPosition(this), Math.Pow(1.15, Math.Clamp(e.Delta.Y, -3, 3)));
+    }
+
+    protected override void OnPointerExited(PointerEventArgs e) { _over = false; InvalidateVisual(); base.OnPointerExited(e); }
+
+    /// <summary>Marker under the pointer while a tool is active: green ring + cross at the point the next click will use (snapped), with the tool name.</summary>
+    private void DrawToolCursor(DrawingContext ctx, bool dark)
+    {
+        var vm = Vm!; if (!_over || vm.Tool == ToolKind.Select || _space || !Bounds.Contains(ToScreen(_hover))) return;
+        var snapped = vm.Tool is ToolKind.DrawWall or ToolKind.DrawPipe or ToolKind.Measure or ToolKind.Align or ToolKind.Straighten or ToolKind.Stretch
+            ? Snapper.Snap(_hover, Polys(), IsChain && DrawTool?.Points.Count > 0 ? DrawTool.Points[^1] : null) : new SnapResult(_hover, SnapKind.None);
+        var p = ToScreen(snapped.Point); var green = new SolidColorBrush(Color.FromRgb(40, 190, 70));
+        var halo = new Pen(new SolidColorBrush(Color.FromArgb(160, 255, 255, 255)), 4); var pen = new Pen(green, 1.8);
+        foreach (var pn in new[] { halo, pen })
+        {
+            ctx.DrawLine(pn, p + new Point(-14, 0), p + new Point(14, 0)); ctx.DrawLine(pn, p + new Point(0, -14), p + new Point(0, 14));
+        }
+        ctx.DrawEllipse(new SolidColorBrush(Color.FromArgb(60, 40, 190, 70)), pen, p, 6, 6);
+        if (snapped.Kind is SnapKind.Corner or SnapKind.Midpoint) ctx.DrawRectangle(null, new Pen(Brushes.OrangeRed, 2), new Rect(p.X - 9, p.Y - 9, 18, 18));
+        var ft = Txt(T("toolname." + vm.Tool), 11, dark ? Brushes.White : Brushes.Black);
+        var at = p + new Point(16, 14); ctx.DrawRectangle(new SolidColorBrush(Color.FromArgb(200, dark ? (byte)40 : (byte)255, dark ? (byte)42 : (byte)255, dark ? (byte)46 : (byte)255)), null, new Rect(at.X - 3, at.Y - 1, ft.Width + 6, ft.Height + 2), 3, 3);
+        ctx.DrawText(ft, at);
     }
 
     protected override void OnLostFocus(FocusChangedEventArgs e) { _space = false; Cursor = null; base.OnLostFocus(e); }
@@ -634,7 +657,7 @@ public class PlanView : Control
         }
         if (_connect is { } cn) { var c = NetworkQueries.ColorOf(cn.Port.Network); ctx.DrawLine(new Pen(new SolidColorBrush(Color.FromRgb(c.R, c.G, c.B)), 2.5, DashStyle.Dash), ToScreen(new PointMm(cn.At.X, cn.At.Y)), ToScreen(cn.To)); }
         if ((Vm.IsDoorTool || Vm.IsWindowTool) && Bounds.Contains(ToScreen(_hover))) DrawOpeningPreview(ctx, Vm.IsDoorTool ? OpeningKind.Door : OpeningKind.Window);
-        // placement ghost: green when valid, red with a hint when not
+        // dashed ghosts of what the next click places
         if (Vm.IsRiserTool && Bounds.Contains(ToScreen(_hover)))
             foreach (var (at, type, dia) in Vm.RiserPreview(_hover))
             {   // dashed ghost of each tube, in its network colour, at its snapped position
@@ -651,21 +674,16 @@ public class PlanView : Control
             }
         }
         if (Vm.IsPlaceTool && Vm.PalettePreview(_hover) is { } pp && Bounds.Contains(ToScreen(_hover)))
-        {   // dashed symbol of the object at its snapped position
-            var dash = new Pen(Brushes.OrangeRed, 1.6, DashStyle.Dash);
+        {   // dashed symbol of the object at its snapped position: orange when it can be placed, red with a hint when not
+            var ok = pp.Valid; var col = ok ? Colors.OrangeRed : Colors.Red; var dash = new Pen(new SolidColorBrush(col), 1.6, DashStyle.Dash);
             foreach (var fig in Symbol.Figures(pp.Entry, pp.At))
             {
                 if (fig.Centre is { } c) { ctx.DrawEllipse(null, dash, ToScreen(c), fig.Radius * Scale, fig.Radius * Scale); continue; }
                 var g = new StreamGeometry(); using (var cx = g.Open()) { cx.BeginFigure(ToScreen(fig.Points[0]), fig.Closed); foreach (var q in fig.Points.Skip(1)) cx.LineTo(ToScreen(q)); cx.EndFigure(fig.Closed); }
                 ctx.DrawGeometry(null, dash, g);
             }
-        }
-        else if (Vm.IsPlaceTool && Bounds.Contains(ToScreen(_hover)))
-        {
-            var hint = Vm.IsPlaceTool ? Vm.PlacementHint(_hover) : null; var ok = hint == null;
-            var col = ok ? Colors.LimeGreen : Colors.Red; var p = ToScreen(_hover);
-            ctx.DrawEllipse(new SolidColorBrush(Color.FromArgb(70, col.R, col.G, col.B)), new Pen(new SolidColorBrush(col), 2), p, 10, 10);
-            if (!ok) ctx.DrawText(new FormattedText(hint!, System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 12, Brushes.Red), p + new Point(14, -8));
+            if (!ok && Vm.PlacementHint(_hover) is { } hint)
+                ctx.DrawText(new FormattedText(hint, System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 12, Brushes.Red), ToScreen(pp.At) + new Point(14, -8));
         }
     }
 
@@ -759,6 +777,7 @@ public class PlanView : Control
         var label = new FormattedText($"{l.DisplayName}  ·  {l.AltitudeMm / 1000.0:0.0} m", System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 14, dark ? Brushes.Gainsboro : Brushes.DimGray);
         ctx.DrawText(label, new Point(12, 8));
         DrawScaleBar(ctx, dark);
+        DrawToolCursor(ctx, dark);
     }
 
     /// <summary>Smallest "nice" step (1, 2, 5 × 10ⁿ mm) that is at least <paramref name="minPx"/> pixels wide at the current zoom.</summary>
