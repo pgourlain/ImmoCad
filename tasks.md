@@ -72,7 +72,7 @@ Every phase ends with a **Validation** checklist. Run it on macOS (Apple Silicon
 
 - [ ] `ImmeubleCad.Desktop` (Avalonia 12, CommunityToolkit.Mvvm), composition root `AppServices.Build()` shared by `App` and the UI tests.
 - [ ] Main window: menu bar, toolbar with a **2D / 3D / Wireframe** segmented control, left tool strip, **level bar** (vertical, elevator-style buttons, top level first) next to the view, center view area showing the plan view by default (3D and elevation views are placeholders for now), right panels (Networks, Properties), status bar (tool, cursor position in metres, current level, zoom, **contextual hint** of what to do next).
-- [x] `ViewState` in Core with `ViewStateChanged` events; `MainViewModel` exposes it to both views.
+- [x] `ViewState` in Core with `ViewStateChanged` events; `MainViewModel` exposes it to both views. *(not yet wired to the views)*
 - [ ] Menus defined once as `MenuSpec` records, turned into a `NativeMenu` on macOS and an in-window `Menu` elsewhere (copy CinnabarSharp). Later features bound to a disabled `NotYetImplemented` command.
 - [ ] Shortcuts through `PlatformHotkeyConfiguration.CommandModifiers` (⌘ on macOS, Ctrl elsewhere).
 - [ ] `IDialogService` (file pickers, save-changes prompt, errors), `FakeDialogService` for tests, `TestHarness` building the real window.
@@ -80,7 +80,7 @@ Every phase ends with a **Validation** checklist. Run it on macOS (Apple Silicon
 
 **Log file (from the first phase, so every later bug leaves a trace)**
 
-- [x] `AppLog` (Desktop): `ILoggerProvider` writing to `log.txt` in the per-OS app-data folder (`%LOCALAPPDATA%\ImmeubleCad`, `~/Library/Application Support/ImmeubleCad`, `~/.local/share/ImmeubleCad`). Line format: ISO timestamp, level, category, message, exception with stack trace. Writes are buffered on a background queue and flushed on error and on exit.
+- [x] `AppLog` (Desktop): `ILoggerProvider` writing to `log.txt` in the per-OS app-data folder (`%LOCALAPPDATA%\ImmeubleCad`, `~/Library/Application Support/ImmeubleCad`, `~/.local/share/ImmeubleCad`). Line format: ISO timestamp, level, category, message, exception with stack trace. Writes are buffered on a background queue and flushed on error and on exit. *(partial: file provider + global handlers; no env-var levels/stderr mirror)*
 - [x] Rolling: new file when `log.txt` exceeds 5 MB, keep the last 5 (`log.1.txt`…); old files deleted at startup.
 - [ ] Levels: Information by default, Debug with `IMMEUBLECAD_LOG=debug` or a setting; also mirror to stderr with `IMMEUBLECAD_LOG=1`.
 - [ ] Global handlers log everything that escapes: `AppDomain.CurrentDomain.UnhandledException`, `TaskScheduler.UnobservedTaskException`, `Dispatcher.UIThread.UnhandledException`, Avalonia's own warnings/errors (log sink). Errors shown in dialogs are logged too.
@@ -313,12 +313,12 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 
 ## Phase 9 — Bill of materials and exports
 
-- [x] Bill of materials: per network, length per diameter and material (rounded up to standard bar lengths, option), count of each fitting type, list of equipment. View in a panel, export to CSV and to a printable PDF.
+- [x] Bill of materials: per network, length per diameter and material (rounded up to standard bar lengths, option), count of each fitting type, list of equipment. View in a panel, export to CSV and to a printable PDF. *(partial: pipe length per network/diameter + CSV; no fittings/PDF/bar lengths)*
 **Exports to other tools** (File › Export, one exporter per format behind `IBuildingExporter` in Core, registered in DI like CinnabarSharp's formats; each has a round-trip or golden-file test)
 
-- [x] **IFC 4** (`.ifc`), the BIM standard, priority export: building → storeys (`IfcBuildingStorey` per level) → `IfcWall` (extruded footprints), `IfcSlab`, `IfcDoor`/`IfcWindow`, networks as `IfcDistributionSystem` with `IfcPipeSegment`, `IfcPipeFitting` (elbows, tees from `FittingResolver`), `IfcValve`, `IfcSpaceHeater`, `IfcBoiler`…, colors per network, geographic placement (`IfcSite` with the Lambert 93 anchor once Phase 12 exists). Opens in FreeCAD (BIM workbench), Revit, ArchiCAD, BlenderBIM/Bonsai, online IFC viewers. Library: evaluate xBIM Essentials and GeometryGym IFC (check licenses and AOT compatibility before choosing; write an ADR in `docs/adr/`).
+- [x] **IFC 4** (`.ifc`), the BIM standard, priority export: building → storeys (`IfcBuildingStorey` per level) → `IfcWall` (extruded footprints), `IfcSlab`, `IfcDoor`/`IfcWindow`, networks as `IfcDistributionSystem` with `IfcPipeSegment`, `IfcPipeFitting` (elbows, tees from `FittingResolver`), `IfcValve`, `IfcSpaceHeater`, `IfcBoiler`…, colors per network, geographic placement (`IfcSite` with the Lambert 93 anchor once Phase 12 exists). Opens in FreeCAD (BIM workbench), Revit, ArchiCAD, BlenderBIM/Bonsai, online IFC viewers. Library: evaluate xBIM Essentials and GeometryGym IFC (check licenses and AOT compatibility before choosing; write an ADR in `docs/adr/`). *(partial: hierarchy, walls, pipe segments only; no geometry/fittings/colors)*
 - [x] **FreeCAD macro** (`.FCMacro` / `.py`): a generated Python script that rebuilds the building as **native, editable FreeCAD objects** (BIM/Arch walls on levels, pipes as swept profiles or BIM pipes, equipment as parametric boxes, one group per network with its color). Best fidelity for FreeCAD users; no FreeCAD dependency at build time (text generation only).
-- [x] **DXF** (`.dxf`): 2D plans per level, one layer per category and per network (AutoCAD, LibreCAD, DraftSight, QCAD). Library: netDxf (check license) or a minimal hand-written DXF R12 writer.
+- [x] **DXF** (`.dxf`): 2D plans per level, one layer per category and per network (AutoCAD, LibreCAD, DraftSight, QCAD). Library: netDxf (check license) or a minimal hand-written DXF R12 writer. *(partial: LINE entities per layer; no R12 header/units)*
 - [ ] **glTF** (`.glb`) and **OBJ**: 3D meshes from `ImmeubleCad.Scene` for Blender, SketchUp, web viewers, 3D printing; one node per level and per network so they can be hidden in the target tool.
 - [ ] **SVG / PDF**: printable plans per level and per network (title block with level name, scale, north arrow, legend).
 - [ ] **CSV / PDF**: bill of materials (above).
@@ -339,8 +339,8 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 
 ## Phase 10 — MCP server
 
-- [x] `ImmeubleCad.Mcp` (official C# SDK), Core only, hosted by the app: `ImmeubleCad --mcp` (headless, stdio) and `--mcp --attach` (relay to the running app over a Unix domain socket, File › Allow AI Agents, off by default). Copy the design from `CinnabarSharp.Mcp` (dispatcher, `McpContext.Run`, allowed folders, `overwrite`/`discardChanges`).
-- [x] Tools: open/new/save/close building, list levels, add level, import plan with detection parameters, list walls, add riser (network, XY, level range), add pipe run (list of points), connect equipment, bill of materials, export glTF/SVG/CSV, undo/redo.
+- [x] `ImmeubleCad.Mcp` (official C# SDK), Core only, hosted by the app: `ImmeubleCad --mcp` (headless, stdio) and `--mcp --attach` (relay to the running app over a Unix domain socket, File › Allow AI Agents, off by default). Copy the design from `CinnabarSharp.Mcp` (dispatcher, `McpContext.Run`, allowed folders, `overwrite`/`discardChanges`). *(partial: stdio only; no `--attach`)*
+- [x] Tools: open/new/save/close building, list levels, add level, import plan with detection parameters, list walls, add riser (network, XY, level range), add pipe run (list of points), connect equipment, bill of materials, export glTF/SVG/CSV, undo/redo. *(partial: add level/wall/riser/pipe run, save, export, undo/redo, BOM; no open/import)*
 - [ ] Resources: `immeuble://buildings`, `immeuble://buildings/{id}/networks`, `immeuble://equipment-library`.
 - [ ] `docs/mcp.md` with `claude mcp add` setup and examples ("add a hot and cold water riser from RDC to R+5 in the corner of the bathroom").
 - [ ] `ImmeubleCad.Mcp.Tests`: start the real app with `--mcp` and drive it end to end.
