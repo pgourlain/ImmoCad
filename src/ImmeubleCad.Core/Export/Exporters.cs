@@ -87,7 +87,7 @@ public sealed class DxfExporter : IBuildingExporter
     public string Id => "dxf"; public string Extension => ".dxf"; public string Purpose => "2D drawing for AutoCAD, LibreCAD, QCAD: one layer per level and per network.";
     public string Export(Building b)
     {
-        var sb = new StringBuilder($"0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n9\n$INSUNITS\n70\n{(_k == 1 ? 4 : 6)}\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n");
+        var sb = new StringBuilder((b.Site != null ? "999\nCadastre: IGN / DGFiP - Licence Ouverte 2.0\n" : "") + $"0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n9\n$INSUNITS\n70\n{(_k == 1 ? 4 : 6)}\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n");
         void Line(string layer, double x1, double y1, double z1, double x2, double y2, double z2) =>
             sb.Append($"0\nLINE\n8\n{layer}\n10\n{F.N(x1 * _k)}\n20\n{F.N(y1 * _k)}\n30\n{F.N(z1 * _k)}\n11\n{F.N(x2 * _k)}\n21\n{F.N(y2 * _k)}\n31\n{F.N(z2 * _k)}\n");
         foreach (var l in b.Levels)
@@ -165,13 +165,22 @@ public sealed class IfcExporter : IBuildingExporter
         string Axis(string loc, string? axis = null, string? refDir = null) => E($"IFCAXIS2PLACEMENT3D({loc},{axis ?? "$"},{refDir ?? "$"})");
         string Place(string? rel, string axis) => E($"IFCLOCALPLACEMENT({rel ?? "$"},{axis})");
 
-        sb.AppendLine("ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('ViewDefinition [CoordinationView]'),'2;1');\nFILE_NAME('building.ifc','',(''),(''),'ImmeubleCad','ImmeubleCad','');\nFILE_SCHEMA(('IFC4'));\nENDSEC;\nDATA;");
+        sb.AppendLine($"ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('ViewDefinition [CoordinationView]'{(b.Site != null ? ",'Cadastre: © IGN / DGFiP - Licence Ouverte 2.0'" : "")}),'2;1');\nFILE_NAME('building.ifc','',(''),(''),'ImmeubleCad','ImmeubleCad','');\nFILE_SCHEMA(('IFC4'));\nENDSEC;\nDATA;");
         var origin = Pt(0, 0, 0); var wcs = Axis(origin); var zDir = Dir(0, 0, 1); var xDir = Dir(1, 0, 0);
         var ctx = E($"IFCGEOMETRICREPRESENTATIONCONTEXT($,'Model',3,1.E-05,{wcs},$)");
         var length = E("IFCSIUNIT(*,.LENGTHUNIT.,.MILLI.,.METRE.)"); var area = E("IFCSIUNIT(*,.AREAUNIT.,$,.SQUARE_METRE.)"); var angle = E("IFCSIUNIT(*,.PLANEANGLEUNIT.,$,.RADIAN.)");
         var units = E($"IFCUNITASSIGNMENT(({length},{area},{angle}))");
         var proj = E($"IFCPROJECT('{G()}',$,'{Esc(b.Name)}',$,$,$,$,({ctx}),{units})");
-        var sitePl = Place(null, wcs); var site = E($"IFCSITE('{G()}',$,'Site',$,$,{sitePl},$,$,.ELEMENT.,$,$,$,$,$)");
+        var sitePl = Place(null, wcs);
+        string Dms(double deg) { var sign = deg < 0 ? -1 : 1; deg = Math.Abs(deg); var d = (int)deg; var m = (int)((deg - d) * 60); var sec = (int)((deg - d - m / 60.0) * 3600); var micro = (int)Math.Round(((deg - d - m / 60.0) * 3600 - sec) * 1e6); return $"({sign * d},{sign * m},{sign * sec},{sign * micro})"; }
+        var geo = "$,$,$";                                                                                        // RefLatitude, RefLongitude, RefElevation
+        if (b.Site is { } siteInfo) { var (lat, lon) = Site.Lambert93.ToWgs84(siteInfo.EastM, siteInfo.NorthM); geo = $"{Dms(lat)},{Dms(lon)},{N(siteInfo.AltitudeM)}"; }
+        var site = E($"IFCSITE('{G()}',$,'Site',$,$,{sitePl},$,$,.ELEMENT.,{geo},$,$)");
+        if (b.Site is { } st2)
+        {   // IfcMapConversion: the model frame (mm) → EPSG:2154 (metres), rotated to true north
+            var metre = E("IFCSIUNIT(*,.LENGTHUNIT.,$,.METRE.)"); var crs = E($"IFCPROJECTEDCRS('EPSG:2154','RGF93 / Lambert-93',$,$,'Lambert-93','',{metre})");
+            var r = st2.RotationDeg * Math.PI / 180; E($"IFCMAPCONVERSION({ctx},{crs},{N(st2.EastM)},{N(st2.NorthM)},{N(st2.AltitudeM)},{N(Math.Cos(r))},{N(Math.Sin(r))},0.001)");
+        }
         var bldPl = Place(sitePl, wcs); var bld = E($"IFCBUILDING('{G()}',$,'{Esc(b.Name)}',$,$,{bldPl},$,$,.ELEMENT.,$,$,$)");
         E($"IFCRELAGGREGATES('{G()}',$,$,$,{proj},({site}))"); E($"IFCRELAGGREGATES('{G()}',$,$,$,{site},({bld}))");
 
@@ -259,7 +268,7 @@ public sealed class IfcExporter : IBuildingExporter
 /// <summary>Printable SVG plan of one level.</summary>
 public static class SvgExporter
 {
-    public static string Export(Level l)
+    public static string Export(Level l, SiteInfo? site = null)
     {
         var pts = l.Walls.SelectMany(w => w.Footprint).ToList();
         if (pts.Count == 0) return "<svg xmlns=\"http://www.w3.org/2000/svg\"/>";
@@ -268,6 +277,12 @@ public static class SvgExporter
         foreach (var w in l.Walls)
             sb.Append("<path fill-rule=\"evenodd\" fill=\"#444\" stroke=\"#000\" d=\"")
               .Append(string.Join(" ", new[] { w.Footprint }.Concat(w.Holes).Select(r => "M" + string.Join(" L", r.Select(p => $"{p.X},{-p.Y}")) + " Z"))).Append("\"/>");
+        if (site != null)
+        {   // north arrow (rotated by the site rotation) and the data attribution
+            var r = -site.RotationDeg; var w = x1 - x0; var h = y1 - y0; var size = Math.Max(w, h) * 0.08; var cx = x1 - size; var cy = -y1 + size * 1.5;
+            sb.Append($"<g transform=\"translate({F.N(cx)} {F.N(cy)}) rotate({F.N(r)})\"><polygon points=\"0,{F.N(-size)} {F.N(size * 0.3)},{F.N(size * 0.4)} 0,{F.N(size * 0.2)} {F.N(-size * 0.3)},{F.N(size * 0.4)}\" fill=\"#222\"/><text x=\"0\" y=\"{F.N(-size * 1.15)}\" font-size=\"{F.N(size * 0.6)}\" text-anchor=\"middle\">N</text></g>");
+            sb.Append($"<desc>Cadastre: © IGN / DGFiP - Licence Ouverte 2.0</desc>");
+        }
         return sb.Append("</svg>").ToString();
     }
 }

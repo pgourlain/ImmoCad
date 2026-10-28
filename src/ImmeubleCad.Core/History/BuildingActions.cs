@@ -489,6 +489,20 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
         return AddLevel(name, above ? l.AltitudeMm + l.HeightMm : l.AltitudeMm - 2700, above ? l.HeightMm : 2700, above ? LevelKind.Standard : LevelKind.Basement);
     }
 
+    public void SetSite(SiteInfo? site) =>
+        Edit("Set site", BuildingEventKind.LevelChanged, () => { building.Site = site; return Guid.Empty; }, _ => null);
+
+    /// <summary>Moves the facade walls onto the footprint edges (the suggestion computed by <see cref="Geometry.FootprintFit"/>). One history step.</summary>
+    public int FitOuterWalls(Guid levelId, IReadOnlyList<Geometry.WallShift> shifts) =>
+        Edit("Fit outer walls to cadastre", BuildingEventKind.WallChanged, () =>
+        {
+            var l = Find(levelId); var n = 0;
+            foreach (var sh in shifts)
+                if (l.Walls.FirstOrDefault(w => w.Id == sh.WallId) is { } w)
+                { w.Footprint = w.Footprint.Select(p => sh.Moves.TryGetValue(p, out var q) ? q : p).ToList(); n++; }
+            return n;
+        }, _ => levelId);
+
     public ReferenceMesh AddReference(Guid levelId, ReferenceMesh mesh) =>
         Edit("Add reference model", BuildingEventKind.LevelChanged, () => { Find(levelId).References.Add(mesh); return mesh; }, _ => levelId);
 
@@ -524,19 +538,19 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
     }
 
     /// <summary>Pure preview of Straighten: the new outline of each wall and nothing changed in the model.</summary>
-    public static IReadOnlyList<(Guid WallId, List<PointMm> Outline)> PreviewStraighten(Level l, IEnumerable<Guid> wallIds, double toleranceMm, double angleDeg)
+    public static IReadOnlyList<(Guid WallId, List<PointMm> Outline)> PreviewStraighten(Level l, IEnumerable<Guid> wallIds, double toleranceMm, double angleDeg, IReadOnlyList<double>? referenceAngles = null)
     {
         var ids = wallIds.ToHashSet(); var res = new List<(Guid, List<PointMm>)>();
         foreach (var w in l.Walls.Where(w => ids.Contains(w.Id)))
-            res.Add((w.Id, Plan.WallStraightener.Straighten(w.Footprint.Select(p => new Plan.PointPx(p.X, p.Y)).ToList(), toleranceMm, angleDeg).Select(p => new PointMm((int)Math.Round(p.X), (int)Math.Round(p.Y))).ToList()));
+            res.Add((w.Id, Plan.WallStraightener  .Straighten(w.Footprint.Select(p => new Plan.PointPx(p.X, p.Y)).ToList(), toleranceMm, angleDeg, referenceAngles).Select(p => new PointMm((int)Math.Round(p.X), (int)Math.Round(p.Y))).ToList()));
         return res;
     }
 
     /// <summary>Straighten the given walls (one history step), then snap their corners onto the faces of neighbouring walls within the tolerance so junctions stay closed.</summary>
-    public void StraightenWalls(Guid levelId, IEnumerable<Guid> wallIds, double toleranceMm = 30, double angleDeg = 5) =>
+    public void StraightenWalls(Guid levelId, IEnumerable<Guid> wallIds, double toleranceMm = 30, double angleDeg = 5, IReadOnlyList<double>? referenceAngles = null) =>
         Edit("Straighten walls", BuildingEventKind.WallChanged, () =>
         {
-            var l = Find(levelId); var ids = wallIds.ToHashSet(); var preview = PreviewStraighten(l, ids, toleranceMm, angleDeg).ToDictionary(x => x.WallId, x => x.Outline);
+            var l = Find(levelId); var ids = wallIds.ToHashSet(); var preview = PreviewStraighten(l, ids, toleranceMm, angleDeg, referenceAngles).ToDictionary(x => x.WallId, x => x.Outline);
             foreach (var w in l.Walls.Where(w => ids.Contains(w.Id))) w.Footprint = preview[w.Id];
             SnapToNeighbours(l, ids, toleranceMm);
             return levelId;

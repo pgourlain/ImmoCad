@@ -108,6 +108,22 @@ public sealed class Equipment
     public Dictionary<string, double> Parameters { get; set; } = new();
 }
 
+/// <summary>Georeferencing: the model's origin (0,0) sits at this Lambert 93 point (metres), rotated to true north.</summary>
+public sealed class SiteInfo
+{
+    public double EastM { get; set; }
+    public double NorthM { get; set; }
+    /// <summary>Rotation of the model's Y axis from true north, degrees counter-clockwise.</summary>
+    public double RotationDeg { get; set; }
+    public double AltitudeM { get; set; }
+    public string? Address { get; set; }
+    /// <summary>Cadastral footprint used as reference outline, in Lambert 93 metres (closed ring without repeated point).</summary>
+    public List<double[]> Footprint { get; set; } = new();
+    /// <summary>Neighbouring cadastral buildings (rings in Lambert 93), for party-wall detection.</summary>
+    public List<List<double[]>> Neighbours { get; set; } = new();
+    public bool ShowFootprint { get; set; } = true;
+}
+
 public sealed class Building
 {
     public int SchemaVersion { get; set; } = 1;
@@ -115,4 +131,5 @@ public sealed class Building
     public List<Level> Levels { get; set; } = new();
     public List<Network> Networks { get; set; } = new();
     public List<Equipment> Equipment { get; set; } = new();
+    public SiteInfo? Site { get; set; }
 }

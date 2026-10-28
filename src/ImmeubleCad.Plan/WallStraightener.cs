@@ -11,7 +11,7 @@ public static class WallStraightener
     /// 5. corners are rebuilt as line intersections and collinear neighbours are merged.
     /// Tolerance 0 leaves the outline unchanged.
     /// </summary>
-    public static List<PointPx> Straighten(IReadOnlyList<PointPx> poly, double tolerance = 30, double angleDeg = 5)
+    public static List<PointPx> Straighten(IReadOnlyList<PointPx> poly, double tolerance = 30, double angleDeg = 5, IReadOnlyList<double>? referenceAnglesDeg = null)
     {
         if (poly.Count < 4 || tolerance <= 0) return poly.ToList();
         var axis = DominantAxis(poly);
@@ -25,7 +25,7 @@ public static class WallStraightener
             for (var k = from; ; k = (k + 1) % poly.Count) { pts.Add(poly[k]); if (k == to) break; }
             sets.Add(pts);
         }
-        var fits = sets.Select(p => Fit(p, axis, angleDeg)).ToList();
+        var fits = sets.Select(p => Fit(p, axis, angleDeg, referenceAnglesDeg)).ToList();
         for (var merged = true; merged && sets.Count > 3;)
         {
             merged = false;
@@ -35,7 +35,7 @@ public static class WallStraightener
                 var parallel = Math.Abs(l1.Dx * l2.Dy - l1.Dy * l2.Dx) < 0.02;
                 var offset = Math.Max(Math.Abs((l2.Cx - l1.Cx) * -l1.Dy + (l2.Cy - l1.Cy) * l1.Dx), Math.Abs((l1.Cx - l2.Cx) * -l2.Dy + (l1.Cy - l2.Cy) * l2.Dx));
                 if (!parallel || offset > tolerance) continue;
-                sets[i] = sets[i].Concat(sets[j]).ToList(); fits[i] = Fit(sets[i], axis, angleDeg); sets.RemoveAt(j); fits.RemoveAt(j); merged = true; break;
+                sets[i] = sets[i].Concat(sets[j]).ToList(); fits[i] = Fit(sets[i], axis, angleDeg, referenceAnglesDeg); sets.RemoveAt(j); fits.RemoveAt(j); merged = true; break;
             }
         }
         var n = sets.Count; var corners = new List<PointPx>(n);
@@ -46,14 +46,17 @@ public static class WallStraightener
     private readonly record struct Line(double Cx, double Cy, double Dx, double Dy);
 
     /// <summary>Least-squares line (total least squares); snapped to a main axis when within the angle tolerance.</summary>
-    private static Line Fit(List<PointPx> pts, double axisDeg, double tolDeg)
+    private static Line Fit(List<PointPx> pts, double axisDeg, double tolDeg, IReadOnlyList<double>? reference = null)
     {
         double cx = pts.Average(p => p.X), cy = pts.Average(p => p.Y);
         double sxx = 0, sxy = 0, syy = 0; foreach (var p in pts) { sxx += (p.X - cx) * (p.X - cx); sxy += (p.X - cx) * (p.Y - cy); syy += (p.Y - cy) * (p.Y - cy); }
         var ang = 0.5 * Math.Atan2(2 * sxy, sxx - syy);                       // principal direction
         if (pts.Count == 2 || sxx + syy < 1e-9) { var d = pts[^1]; ang = Math.Atan2(d.Y - pts[0].Y, d.X - pts[0].X); }
         var deg = ang * 180 / Math.PI; var rel = ((deg - axisDeg) % 90 + 90) % 90; var off = rel < 45 ? rel : rel - 90;
-        if (Math.Abs(off) <= tolDeg) ang = (deg - off) * Math.PI / 180;
+        // reference directions (e.g. the cadastral footprint's real angles) win over the 90° axes when one is close enough
+        var bestRef = reference?.Select(r => (Ref: r, D: ((deg - r) % 180 + 270) % 180 - 90)).Where(x => Math.Abs(x.D) <= tolDeg).OrderBy(x => Math.Abs(x.D)).Cast<(double Ref, double D)?>().FirstOrDefault();
+        if (bestRef is { } br) ang = (deg - br.D) * Math.PI / 180;
+        else if (Math.Abs(off) <= tolDeg) ang = (deg - off) * Math.PI / 180;
         return new Line(cx, cy, Math.Cos(ang), Math.Sin(ang));
     }
 

@@ -56,7 +56,7 @@ public static class BuildingJson
     {
         var s = Deserialize(json);
         target.SchemaVersion = s.SchemaVersion; target.Name = s.Name;
-        target.Levels = s.Levels; target.Networks = s.Networks; target.Equipment = s.Equipment;
+        target.Levels = s.Levels; target.Networks = s.Networks; target.Equipment = s.Equipment; target.Site = s.Site;
     }
 }
 

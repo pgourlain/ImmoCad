@@ -1027,3 +1027,77 @@ public class ReferenceModelTests
         Assert.Throws<InvalidDataException>(() => ImmeubleCad.Core.IO.ReferenceImport.FromGlb("x", new byte[40])); Assert.Throws<NotSupportedException>(() => ImmeubleCad.Core.IO.ReferenceImport.FromFile("a.stl"));
     }
 }
+
+public class SiteFitTests
+{
+    private static List<PointMm> Rect(int x0, int y0, int x1, int y1) => [new(x0, y0), new(x1, y0), new(x1, y1), new(x0, y1)];
+
+    [Fact] public void Two_corner_pairs_give_anchor_and_rotation_one_step_and_the_footprint_maps_back_onto_the_plan()
+    {
+        var b = new Building(); var h = new BuildingHistory(); var a = new BuildingActions(b, h, new BuildingEventsService());
+        // real building: 10 m x 6 m rotated 30° at (650000, 6860000); the user clicks two plan corners and the matching footprint corners
+        double rot = 30 * Math.PI / 180; (double E, double N) L(double x, double y) => (650000 + x * Math.Cos(rot) - y * Math.Sin(rot), 6860000 + x * Math.Sin(rot) + y * Math.Cos(rot));
+        var footprint = new[] { L(0, 0), L(10, 0), L(10, 6), L(0, 6) }.Select(p => new[] { p.E, p.N }).ToList();
+        var site = FootprintFit.Anchor(new(0, 0), new(10000, 0), L(0, 0), L(10, 0), footprint)!;
+        Assert.Equal(30, site.RotationDeg, 6); Assert.Equal(650000, site.EastM, 6); Assert.Equal(6860000, site.NorthM, 6);
+        var steps = h.Items.Count; a.SetSite(site); Assert.Equal(steps + 1, h.Items.Count); Assert.Equal(30, b.Site!.RotationDeg, 6);
+        var ring = FootprintFit.ToModel(b.Site, b.Site.Footprint); Assert.Equal(new PointMm(10000, 6000), ring[2]); Assert.Equal(new PointMm(0, 6000), ring[3]);
+        h.Undo(b); Assert.Null(b.Site); Assert.Null(FootprintFit.Anchor(new(0, 0), new(10, 0), (0, 0), (5, 5)));            // degenerate click
+    }
+
+    [Fact] public void Outer_face_moves_onto_the_footprint_edge_inner_face_and_far_walls_do_not_move_and_it_is_one_undoable_step()
+    {
+        var b = new Building(); var h = new BuildingHistory(); var a = new BuildingActions(b, h, new BuildingEventsService()); var l = a.AddLevel("RDC", 0);
+        var footprint = Rect(0, 0, 8000, 6000);
+        var south = a.AddWall(l.Id, [new(0, 120), new(8000, 120), new(8000, 320), new(0, 320)]);             // outer (south) face is 120 mm inside the cadastral edge y=0
+        var partition = a.AddWall(l.Id, [new(0, 2900), new(8000, 2900), new(8000, 3100), new(0, 3100)]);      // interior: nowhere near an edge
+        var shifts = FootprintFit.Suggest(b.Levels[0], footprint, 300); var s = Assert.Single(shifts); Assert.Equal(south.Id, s.WallId); Assert.InRange(s.MaxMoveMm, 119, 121);
+        var before = BuildingJson.Serialize(b); var steps = h.Items.Count; Assert.Equal(before, BuildingJson.Serialize(b));         // suggestion alone changes nothing
+        a.FitOuterWalls(l.Id, shifts); Assert.Equal(steps + 1, h.Items.Count);
+        var fp = b.Levels[0].Walls[0].Footprint; Assert.Equal(0, fp.Min(p => p.Y)); Assert.Equal(320, fp.Max(p => p.Y));                  // outer face on the edge, inner face unchanged
+        Assert.Equal(2900, b.Levels[0].Walls[1].Footprint.Min(p => p.Y)); h.Undo(b); Assert.Equal(before, BuildingJson.Serialize(b));
+        Assert.Empty(FootprintFit.Suggest(b.Levels[0], footprint, 50));                                                                    // tolerance too small
+    }
+
+    [Fact] public void Scale_check_reports_a_wider_plan_and_angle_check_lists_the_skewed_corner()
+    {
+        var plan = Rect(0, 0, 10280, 6000); var foot = Rect(0, 0, 10000, 6000); var sug = FootprintFit.CheckScale(plan, foot)!;
+        Assert.Equal(2.8, sug.WidthPercent, 6); Assert.Equal(0, sug.HeightPercent, 6); Assert.Contains("2.8 % wider", sug.Message); Assert.Contains("matches", FootprintFit.CheckScale(foot, foot)!.Message);
+        var skew = new List<PointMm> { new(0, 0), new(10000, 0), new(10000, 6000), new(600, 6000) };                                           // top-left corner no longer 90°
+        var bad = FootprintFit.AngleCheck(skew, foot, 2); Assert.Contains(bad, m => m.At == new PointMm(600, 6000) && Math.Abs(m.DiffDeg) > 2); Assert.Empty(FootprintFit.AngleCheck(foot, foot));
+    }
+
+    [Fact] public void Party_walls_are_the_footprint_edges_shared_with_a_neighbour()
+    {
+        var foot = Rect(0, 0, 8000, 6000); var neighbour = Rect(8100, -200, 15000, 6200);                                                       // east neighbour, 100 mm gap
+        Assert.Equal([1], FootprintFit.SharedEdges(foot, [neighbour])); Assert.Empty(FootprintFit.SharedEdges(foot, [Rect(9000, 0, 12000, 3000)]));
+    }
+
+    [Fact] public void Straighten_keeps_the_real_corner_angles_of_the_cadastre_within_1_degree()
+    {
+        // a building with an 84° corner: straightening with the 90° axes would force 90°, with the footprint's angles it keeps 84°
+        double a84 = 84 * Math.PI / 180; var wall = new List<ImmeubleCad.Plan.PointPx> { new(0, 0), new(5000, 0), new(5000 + 3000 * Math.Cos(a84), 3000 * Math.Sin(a84)), new(3000 * Math.Cos(a84), 3000 * Math.Sin(a84)) };
+        var noisy = new List<ImmeubleCad.Plan.PointPx>(); var rnd = new Random(3);
+        for (var i = 0; i < wall.Count; i++) { var (p, q) = (wall[i], wall[(i + 1) % wall.Count]); for (var k = 0; k < 8; k++) noisy.Add(new(p.X + (q.X - p.X) * k / 8 + (rnd.NextDouble() - 0.5) * 6, p.Y + (q.Y - p.Y) * k / 8 + (rnd.NextDouble() - 0.5) * 6)); }
+        double Corner(List<ImmeubleCad.Plan.PointPx> r) { var (a, b, c) = (r[0], r[1], r[2]); double ux = a.X - b.X, uy = a.Y - b.Y, vx = c.X - b.X, vy = c.Y - b.Y; return Math.Acos((ux * vx + uy * vy) / (Math.Sqrt(ux * ux + uy * uy) * Math.Sqrt(vx * vx + vy * vy))) * 180 / Math.PI; }
+        var plain = ImmeubleCad.Plan.WallStraightener.Straighten(noisy, 20, 8); var guided = ImmeubleCad.Plan.WallStraightener.Straighten(noisy, 20, 8, ImmeubleCad.Plan.FootprintMatcher.ReferenceAngles(wall));
+        Assert.Equal(4, guided.Count); Assert.InRange(Corner(guided), 95, 97);                                                                  // the real 96° (= 180 − 84°) is kept within 1°
+        Assert.Equal(4, plain.Count); Assert.InRange(Corner(plain), 89.5, 90.5);                                                                // without the cadastre it is forced to 90°
+    }
+}
+
+public class GeoreferencedExportTests
+{
+    [Fact] public void Ifc_site_carries_latitude_longitude_and_the_map_conversion_and_exports_credit_the_data_source()
+    {
+        var (b, h) = SampleBuilding.Create(); var a = new BuildingActions(b, h, new BuildingEventsService());
+        var (e, n) = ImmeubleCad.Core.Site.Lambert93.FromWgs84(45.7640, 4.8357);                                  // Lyon
+        a.SetSite(new SiteInfo { EastM = e, NorthM = n, RotationDeg = 12, AltitudeM = 170 });
+        var ifc = new ImmeubleCad.Core.Export.IfcExporter().Export(b);
+        Assert.Contains("IFCMAPCONVERSION", ifc); Assert.Contains("IFCPROJECTEDCRS('EPSG:2154'", ifc); Assert.Contains("(45,45,50,", ifc); Assert.Contains("(4,50,8,", ifc); Assert.Contains("Licence Ouverte", ifc);
+        Assert.Contains("0.001)", ifc);                                                                            // model millimetres → CRS metres
+        Assert.Contains("Licence Ouverte", new ImmeubleCad.Core.Export.DxfExporter().Export(b)); Assert.Contains("<desc>Cadastre", ImmeubleCad.Core.Export.SvgExporter.Export(b.Levels[0], b.Site)); Assert.Contains("rotate(-12", ImmeubleCad.Core.Export.SvgExporter.Export(b.Levels[0], b.Site));
+        var plain = SampleBuilding.Create().Building; Assert.DoesNotContain("IFCMAPCONVERSION", new ImmeubleCad.Core.Export.IfcExporter().Export(plain)); Assert.DoesNotContain("<desc>", ImmeubleCad.Core.Export.SvgExporter.Export(plain.Levels[0]));
+        Assert.Equal(12, BuildingJson.Deserialize(BuildingJson.Serialize(b)).Site!.RotationDeg);                   // survives save/load
+    }
+}
