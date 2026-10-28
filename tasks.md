@@ -176,7 +176,7 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 
 ## Phase 4 — Plan view and walls by hand
 
-- [ ] `PlanView` control: background image, walls (filled polygons), grid, zoom around the mouse (⌘/Ctrl + wheel, pinch), pan (Space + drag, middle mouse).
+- [x] `PlanView` control: background image, walls (filled polygons), grid, zoom around the mouse (⌘/Ctrl + wheel, pinch), pan (Space + drag, middle mouse). *(grid, walls, ghost of level below, zoom/pan; no background image yet)*
 **Moving between levels**
 
 - [ ] Level bar: one button per level (name + altitude in the tooltip), current level highlighted; click to change level; Page Up / Page Down go one level up/down; the change keeps the zoom and the look-at point (`ViewState`).
@@ -188,7 +188,7 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 
 - [x] `ToolStateMachine` base in Core: `Idle → Pressed → Dragging | Placing → Committed`, drag threshold in screen pixels passed by the view (default 4 px), so click mode and drag mode come for free in every tool. Tests for both paths and for the threshold.
 - [ ] Chained tools (Draw Wall, later Draw Pipe): each click adds a point and starts the next segment; double-click or Enter finishes; Backspace removes the last point; Escape cancels the segment in progress (a second Escape cancels the whole run); clicking the first point closes the outline.
-- [ ] Rubber band preview with live length and angle shown next to the cursor.
+- [x] Rubber band preview with live length and angle shown next to the cursor. *(length only, no angle)*
 - [ ] Typed values while placing: typing a number shows an input box near the cursor; Enter applies it as the segment length along the current direction (`2.4` = 2.4 m, `2400mm` accepted). Tab switches to the angle field.
 - [ ] Right-click while placing: context menu Finish / Undo last point / Close outline / Cancel.
 - [ ] Status bar hint per tool state (e.g. "Click the next point — Enter to finish — Esc to cancel"), translated.
@@ -202,12 +202,12 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 **Doors, rooms and cellars**
 
 - [ ] Level kind: Basement/cellars, Ground floor, Standard floor, Attic, Roof, Site. A basement level defaults to `Common` stability and its spaces to "Cellar".
-- [ ] Door tool: click on a wall → door inserted at that position (default 800 mm for apartments, 700 mm for cellars, editable); the wall gets the opening (cut in 2D, hole in the 3D mesh); swing arc drawn in plan; click the door then the arc to flip the swing side; drag along the wall to move it, side handles to change the width. Windows and simple openings work the same way.
-- [ ] Space tool: click inside an area closed by walls → space created from its outline (flood fill on the walls polygon set, `SpaceFinder` in Core, tested), or drawn by hand. Name and number shown at the center of the space in plan.
-- [ ] **Cellar numbering**: "Number cellars" command on a basement level: click the cellars in order (or let it number them along the corridor) → "Cave 1, 2, 3…" with a configurable prefix and start; the number is also put on each cellar's door. Renumber keeps one history step.
-- [ ] Display options: show/hide private interiors; private elements drawn lighter with a "may have changed" hint, common parts drawn solid. Filter in 2D and 3D: "Common parts only" (useful for the conseil syndical and for networks that run through common parts).
-- [ ] Spaces list panel: per level, kind, number, lot, area (computed), with a click to zoom on it; export as CSV (no owner names: lot numbers only).
-- [ ] Networks know where they run: each segment gets the space(s) it crosses (computed), so the bill of materials and the network panel can say "riser in Cave 12" or "shut-off valve in the boiler room".
+- [ ] Door tool: click on a wall → door inserted at that position (default 800 mm for apartments, 700 mm for cellars, editable); the wall gets the opening (cut in 2D, hole in the 3D mesh); swing arc drawn in plan; click the door then the arc to flip the swing side; drag along the wall to move it, side handles to change the width. Windows and simple openings work the same way. *(Core `AddOpening`/`FlipOpening` done; no tool, no cut in 2D/3D)*
+- [ ] Space tool: click inside an area closed by walls → space created from its outline (flood fill on the walls polygon set, `SpaceFinder` in Core, tested), or drawn by hand. Name and number shown at the center of the space in plan. *(Core `SpaceFinder` flood fill done; no tool)*
+- [ ] **Cellar numbering**: "Number cellars" command on a basement level: click the cellars in order (or let it number them along the corridor) → "Cave 1, 2, 3…" with a configurable prefix and start; the number is also put on each cellar's door. Renumber keeps one history step. *(Core action `NumberSpaces` done; no UI command)*
+- [ ] Display options: show/hide private interiors; private elements drawn lighter with a "may have changed" hint, common parts drawn solid. Filter in 2D and 3D: "Common parts only" (useful for the conseil syndical and for networks that run through common parts). *(Core filter `Spaces.CommonWalls/CommonSpaces`; no UI toggle)*
+- [ ] Spaces list panel: per level, kind, number, lot, area (computed), with a click to zoom on it; export as CSV (no owner names: lot numbers only). *(CSV export in Core `Spaces.ToCsv`; no panel)*
+- [ ] Networks know where they run: each segment gets the space(s) it crosses (computed), so the bill of materials and the network panel can say "riser in Cave 12" or "shut-off valve in the boiler room". *(`Spaces.CrossedBy`; not shown in panels yet)*
 - [ ] Properties panel: selected wall's thickness, height, label.
 
 **Validation**
@@ -269,7 +269,7 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 
 - [ ] Equipment model: instance of a catalog entry with its parameter values, position, level, orientation, host (wall face, pipe) and ports.
 - [ ] **Riser (colonne)** is not a separate type: it is a set of vertical segments of one network. The Riser tool creates it (see Phase 8a).
-- [ ] Connect: drag from a radiator port to a riser or a pipe → creates the connection segments with orthogonal routing (down to a chosen height, along the wall, to the riser). One history step.
+- [ ] Connect: drag from a radiator port to a riser or a pipe → creates the connection segments with orthogonal routing (down to a chosen height, along the wall, to the riser). One history step. *(Core `ConnectOrthogonal`; no drag UI)*
 - [ ] Properties panel: equipment dimensions, ports, level, label (e.g. "Radiateur séjour").
 
 **Validation**
@@ -281,7 +281,7 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 **8a — Risers from the top view (circles)**
 
 - [ ] Riser tool in the plan view: click to place a circle = a vertical pipe at that XY. Options bar: network type, diameter, **from level / to level** (defaults: whole building).
-- [ ] Templates: place 2 or 3 risers at once with fixed spacing (e.g. hot + cold water, heating supply + return, or hot + cold + drainage), editable spacing and order. Saved as user templates.
+- [ ] Templates: place 2 or 3 risers at once with fixed spacing (e.g. hot + cold water, heating supply + return, or hot + cold + drainage), editable spacing and order. Saved as user templates. *(Core `AddRiserTemplate`; no UI, no saved user templates)*
 - [ ] Riser snaps to wall corners and faces with an offset (default: 50 mm from each face).
 
 **8b — Pipe on a wall corner from the elevation view**

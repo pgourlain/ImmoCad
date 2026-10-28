@@ -182,3 +182,74 @@ public class ImportTests
         Assert.Equal(500, fp.Min(p => p.Y)); Assert.Equal(600, fp.Max(p => p.Y)); // flipped Y: (100-50..100-40)/0.1
     }
 }
+
+public class ActionTests
+{
+    private static (Building, BuildingActions, BuildingHistory) New()
+    { var b = new Building(); var h = new BuildingHistory(); return (b, new BuildingActions(b, h, new BuildingEventsService()), h); }
+
+    private static void AssertUndoExact(Building b, BuildingHistory h, Action act)
+    {
+        var before = BuildingJson.Serialize(b); var n = h.Items.Count;
+        act();
+        Assert.Equal(n + 1, h.Items.Count);               // exactly one history step
+        var after = BuildingJson.Serialize(b);
+        h.Undo(b); Assert.Equal(before, BuildingJson.Serialize(b));
+        h.Redo(b); Assert.Equal(after, BuildingJson.Serialize(b));
+    }
+
+    [Fact] public void Cellars_numbered_in_one_step_with_common_default()
+    {
+        var (b, a, h) = New(); var l = a.AddLevel("Cave", -2700, 2500, LevelKind.Basement);
+        var ids = Enumerable.Range(0, 3).Select(i => a.AddSpace(l.Id, [new(i * 2000, 0), new(i * 2000 + 1800, 0), new(i * 2000 + 1800, 2000), new(i * 2000, 2000)], "", SpaceKind.Cellar).Id).ToList();
+        Assert.All(b.Levels[0].Spaces, s => Assert.Equal(Stability.Common, s.Stability));
+        AssertUndoExact(b, h, () => a.NumberSpaces(l.Id, ids, "Cave ", 12));
+        Assert.Equal(["Cave 12", "Cave 13", "Cave 14"], b.Levels[0].Spaces.Select(s => s.Name));
+    }
+
+    [Fact] public void Door_defaults_by_level_kind_and_flip()
+    {
+        var (b, a, h) = New(); var l = a.AddLevel("Cave", 0, 2500, LevelKind.Basement); var w = a.AddWall(l.Id, [new(0, 0), new(2000, 0), new(2000, 200), new(0, 200)]);
+        var d = a.AddOpening(l.Id, w.Id, OpeningKind.Door, 500);
+        Assert.Equal(700, d.WidthMm);
+        AssertUndoExact(b, h, () => a.FlipOpening(l.Id, w.Id, d.Id));
+        Assert.True(w.Openings[0].SwingLeft);
+    }
+
+    [Fact] public void Straighten_walls_one_step_and_reduces_points()
+    {
+        var (b, a, h) = New(); var l = a.AddLevel("RDC", 0);
+        var w = a.AddWall(l.Id, [new(0, 0), new(2000, 10), new(4000, 0), new(4010, 1000), new(4000, 2000), new(2000, 1990), new(0, 2000), new(0, 1000)]);
+        AssertUndoExact(b, h, () => a.StraightenWalls(l.Id, [w.Id], 30, 5));
+        Assert.Equal(4, b.Levels[0].Walls[0].Footprint.Count);
+    }
+
+    [Fact] public void Riser_template_creates_n_networks_one_step()
+    {
+        var (b, a, h) = New();
+        AssertUndoExact(b, h, () => a.AddRiserTemplate(new(100, 100), 150, [NetworkType.ColdWater, NetworkType.DomesticHotWater, NetworkType.Drainage], 0, 8100));
+        Assert.Equal(3, b.Networks.Count); Assert.Equal(250, b.Networks[1].Nodes[0].Position.X);
+    }
+
+    [Fact] public void Connect_routes_orthogonally()
+    {
+        var (b, a, h) = New(); var n = a.AddNetwork("H", NetworkType.HeatingSupply);
+        var riser = a.AddRiserTemplate(new(0, 0), 100, [NetworkType.HeatingSupply], 0, 2700)[0];
+        var target = riser.Nodes[0];
+        AssertUndoExact(b, h, () => a.ConnectOrthogonal(riser.Id, new(1000, 500, 500), target.Id));
+        Assert.Empty(FittingResolver.Validate(riser).Where(w => w.Contains("axis-aligned")));
+    }
+
+    [Fact] public void Spaces_csv_and_common_filter_and_crossing()
+    {
+        var (b, a, _) = New(); var l = a.AddLevel("Cave", 0, 2500, LevelKind.Basement);
+        a.AddSpace(l.Id, [new(0, 0), new(2000, 0), new(2000, 2000), new(0, 2000)], "Cave 1", SpaceKind.Cellar, "1");
+        var up = a.AddLevel("R+1", 2700);
+        a.AddSpace(up.Id, [new(3000, 0), new(5000, 0), new(5000, 2000), new(3000, 2000)], "Salon", SpaceKind.Apartment);
+        Assert.Contains("Cave,Cellar,1,Cave 1,,4,Common", Spaces.ToCsv(b).Replace("\r", ""));
+        Assert.Contains("R+1,Apartment,,Salon,,4,Private", Spaces.ToCsv(b).Replace("\r", ""));
+        Assert.Single(Spaces.CommonSpaces(b.Levels[0])); Assert.Empty(Spaces.CommonSpaces(b.Levels[1]));
+        var r = a.AddRiserTemplate(new(1000, 1000), 0, [NetworkType.ColdWater], 0, 2500)[0];
+        Assert.Equal("Cave 1", Assert.Single(Spaces.CrossedBy(b, r, r.Segments[0])).Name);
+    }
+}

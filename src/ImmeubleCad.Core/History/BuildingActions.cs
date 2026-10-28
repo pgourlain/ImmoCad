@@ -88,7 +88,7 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
     public Space AddSpace(Guid levelId, IEnumerable<PointMm> outline, string name, SpaceKind kind, string? number = null) =>
         Edit("Add space", BuildingEventKind.LevelChanged, () =>
         {
-            var s = new Space { Outline = outline.ToList(), Name = name, Kind = kind, Number = number };
+            var s = new Space { Outline = outline.ToList(), Name = name, Kind = kind, Number = number, Stability = Spaces.DefaultFor(Find(levelId).Kind, kind) };
             Find(levelId).Spaces.Add(s); return s;
         }, s => s.Id);
 
@@ -140,6 +140,96 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
             var e = new Equipment { CatalogId = catalogId, LevelId = levelId, Position = pos, ElevationMm = elevationMm };
             building.Equipment.Add(e); return e;
         }, e => e.Id);
+
+    public Opening AddOpening(Guid levelId, Guid wallId, OpeningKind kind, int positionMm, int? widthMm = null, string? label = null) =>
+        Edit("Add opening", BuildingEventKind.WallChanged, () =>
+        {
+            var l = Find(levelId); var w = l.Walls.First(w => w.Id == wallId);
+            var o = new Opening
+            {
+                Kind = kind, PositionMm = positionMm, Label = label,
+                WidthMm = widthMm ?? (kind == OpeningKind.Door ? (l.Kind == LevelKind.Basement ? 700 : 800) : 1200),
+                HeightMm = kind == OpeningKind.Window ? 1200 : 2100, SillMm = kind == OpeningKind.Window ? 900 : 0,
+                Stability = w.Stability,
+            };
+            w.Openings.Add(o); return o;
+        }, o => o.Id);
+
+    public void FlipOpening(Guid levelId, Guid wallId, Guid openingId) =>
+        Edit("Flip opening", BuildingEventKind.WallChanged, () => { var o = Find(levelId).Walls.First(w => w.Id == wallId).Openings.First(o => o.Id == openingId); o.SwingLeft = !o.SwingLeft; return openingId; }, i => i);
+
+    public void SetStability(Guid levelId, Guid spaceId, Stability stability) =>
+        Edit("Set stability", BuildingEventKind.LevelChanged, () => { Find(levelId).Spaces.First(s => s.Id == spaceId).Stability = stability; return spaceId; }, i => i);
+
+    /// <summary>Numbers the given spaces in order ("Cave 1", "Cave 2"…) as one history step; also labels their doors.</summary>
+    public void NumberSpaces(Guid levelId, IReadOnlyList<Guid> spaceIds, string prefix = "Cave ", int start = 1) =>
+        Edit("Number spaces", BuildingEventKind.LevelChanged, () =>
+        {
+            var l = Find(levelId); var n = start;
+            foreach (var id in spaceIds)
+            {
+                var sp = l.Spaces.First(x => x.Id == id); sp.Number = n.ToString(); sp.Name = prefix + n;
+                foreach (var w in l.Walls)
+                    foreach (var o in w.Openings.Where(o => o.Kind == OpeningKind.Door && IsOnOutline(w, o, sp)))
+                        o.Label = sp.Name;
+                n++;
+            }
+            return levelId;
+        }, i => i);
+
+    private static bool IsOnOutline(Wall w, Opening o, Space sp)
+    {
+        // door centre (on the wall's long axis) lies within 300 mm of the space outline
+        var pts = w.Footprint; if (pts.Count < 2) return false;
+        var a = pts[0]; var b = pts[1]; double dx = b.X - a.X, dy = b.Y - a.Y; var len = Math.Sqrt(dx * dx + dy * dy); if (len < 1) return false;
+        var c = new PointMm((int)(a.X + dx / len * o.PositionMm), (int)(a.Y + dy / len * o.PositionMm));
+        return Geometry.SpaceFinder.Contains(sp.Outline, c) || sp.Outline.Any(p => Math.Abs(p.X - c.X) < 300 && Math.Abs(p.Y - c.Y) < 300);
+    }
+
+    /// <summary>Straighten the given walls with the Plan straightener (mm), one history step.</summary>
+    public void StraightenWalls(Guid levelId, IEnumerable<Guid> wallIds, double toleranceMm = 30, double angleDeg = 5) =>
+        Edit("Straighten walls", BuildingEventKind.WallChanged, () =>
+        {
+            var l = Find(levelId); var ids = wallIds.ToHashSet();
+            foreach (var w in l.Walls.Where(w => ids.Contains(w.Id)))
+                w.Footprint = Plan.WallStraightener.Straighten(w.Footprint.Select(p => new Plan.PointPx(p.X, p.Y)).ToList(), toleranceMm, angleDeg)
+                    .Select(p => new PointMm((int)Math.Round(p.X), (int)Math.Round(p.Y))).ToList();
+            return levelId;
+        }, i => i);
+
+    /// <summary>Several risers at once (hot+cold…) at fixed spacing along X, from zFrom to zTo. One history step.</summary>
+    public IReadOnlyList<Network> AddRiserTemplate(PointMm origin, int spacingMm, IReadOnlyList<NetworkType> types, int zFromMm, int zToMm, int diameterMm = 20) =>
+        Edit("Add riser template", BuildingEventKind.NetworkChanged, () =>
+        {
+            var res = new List<Network>();
+            for (var i = 0; i < types.Count; i++)
+            {
+                var n = new Network { Name = "Riser " + types[i], Type = types[i] };
+                var a = new Node { Position = new(origin.X + i * spacingMm, origin.Y, zFromMm) };
+                var b = new Node { Position = new(origin.X + i * spacingMm, origin.Y, zToMm) };
+                n.Nodes.Add(a); n.Nodes.Add(b); n.Segments.Add(new Segment { A = a.Id, B = b.Id, DiameterMm = diameterMm });
+                building.Networks.Add(n); res.Add(n);
+            }
+            return (IReadOnlyList<Network>)res;
+        }, r => r.FirstOrDefault()?.Id);
+
+    /// <summary>Connect a point (equipment port) to a pipe node with orthogonal routing: along Z first, then X, then Y.</summary>
+    public IReadOnlyList<Segment> ConnectOrthogonal(Guid networkId, PointMm3 from, Guid toNodeId, int diameterMm = 14) =>
+        Edit("Connect", BuildingEventKind.NetworkChanged, () =>
+        {
+            var net = Net(networkId); var target = net.Nodes.First(n => n.Id == toNodeId);
+            var route = new List<PointMm3> { from };
+            var t = target.Position;
+            if (from.Z != t.Z) route.Add(new(from.X, from.Y, t.Z));
+            if (from.X != t.X) route.Add(new(t.X, from.Y, t.Z));
+            if (from.Y != t.Y || route.Count == 1) route.Add(t);
+            var nodes = route.Select(p => net.Nodes.FirstOrDefault(n => n.Position == p) ?? new Node { Position = p }).ToList();
+            nodes[^1] = target;
+            foreach (var n in nodes.Where(n => !net.Nodes.Contains(n))) net.Nodes.Add(n);
+            var segs = new List<Segment>();
+            for (var i = 1; i < nodes.Count; i++) if (nodes[i - 1].Id != nodes[i].Id) { var s = new Segment { A = nodes[i - 1].Id, B = nodes[i].Id, DiameterMm = diameterMm }; net.Segments.Add(s); segs.Add(s); }
+            return (IReadOnlyList<Segment>)segs;
+        }, _ => networkId);
 
     private Level Find(Guid id) => building.Levels.First(l => l.Id == id);
     private Network Net(Guid id) => building.Networks.First(n => n.Id == id);
