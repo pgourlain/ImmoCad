@@ -16,7 +16,7 @@ using ImmeubleCad.Core.Tools;
 namespace ImmeubleCad.Desktop;
 
 public enum ViewMode { Plan, Solid, Wireframe, Elevation }
-public enum ToolKind { Select, DrawWall, Align, Riser, DrawPipe, Place, Door, Window, Space, Measure, NumberCellars, Straighten }
+public enum ToolKind { Select, DrawWall, Align, Riser, DrawPipe, Place, Door, Window, Space, Measure, NumberCellars, Straighten, Stretch }
 
 /// <summary>One button of the level bar.</summary>
 /// <summary>One open building with its own history, pictures and file.</summary>
@@ -177,6 +177,7 @@ public partial class MainViewModel : ObservableObject
     public List<PointMm> MeasurePoints { get; } = new();
     public List<Guid> NumberPending { get; } = new();
     public event Action<PointMm>? FocusRequested;
+    public event Action? ViewFitRequested;
 
     public (Wall Wall, Opening Opening)? HitOpening(PointMm p)
     {
@@ -398,6 +399,7 @@ public partial class MainViewModel : ObservableObject
     public bool IsMeasureTool => Tool == ToolKind.Measure;
     public bool IsNumberTool => Tool == ToolKind.NumberCellars;
     public bool IsStraightenTool => Tool == ToolKind.Straighten;
+    public bool IsStretchTool => Tool == ToolKind.Stretch;
     public string SelectionText => SelectedSegment != null ? T("pipe.selected") : SelectedWalls.Count == 0 ? T("no.selection") : T("walls.selected", SelectedWalls.Count);
 
     public MainViewModel() : this(startWithSample: true) { }
@@ -429,8 +431,8 @@ public partial class MainViewModel : ObservableObject
     partial void OnModeChanged(ViewMode value) { OnPropertyChanged(nameof(Is3D)); OnPropertyChanged(nameof(IsElevation)); OnPropertyChanged(nameof(IsPlan)); Changed?.Invoke(); }
     partial void OnToolChanged(ToolKind value)
     {
-        OnPropertyChanged(nameof(IsSelectTool)); OnPropertyChanged(nameof(IsDrawTool)); OnPropertyChanged(nameof(IsAlignTool)); OnPropertyChanged(nameof(IsRiserTool)); OnPropertyChanged(nameof(IsPipeTool)); OnPropertyChanged(nameof(IsPlaceTool)); OnPropertyChanged(nameof(IsDoorTool)); OnPropertyChanged(nameof(IsWindowTool)); OnPropertyChanged(nameof(IsSpaceTool)); OnPropertyChanged(nameof(IsMeasureTool)); OnPropertyChanged(nameof(IsNumberTool)); OnPropertyChanged(nameof(IsStraightenTool)); MeasurePoints.Clear(); NumberPending.Clear();
-        Hint = value switch { ToolKind.DrawWall => T("hint.draw.wall"), ToolKind.Riser => T("hint.riser"), ToolKind.DrawPipe => T("hint.draw.pipe"), ToolKind.Place => T("hint.place"), ToolKind.Align => T("hint.align"), ToolKind.Door => T("hint.door"), ToolKind.Window => T("hint.window"), ToolKind.Space => T("hint.space"), ToolKind.Measure => T("hint.measure"), ToolKind.NumberCellars => T("hint.number"), ToolKind.Straighten => T("hint.straighten"), _ => T("hint.select") }; if (value != ToolKind.Align) AlignCancel();
+        OnPropertyChanged(nameof(IsSelectTool)); OnPropertyChanged(nameof(IsDrawTool)); OnPropertyChanged(nameof(IsAlignTool)); OnPropertyChanged(nameof(IsRiserTool)); OnPropertyChanged(nameof(IsPipeTool)); OnPropertyChanged(nameof(IsPlaceTool)); OnPropertyChanged(nameof(IsDoorTool)); OnPropertyChanged(nameof(IsWindowTool)); OnPropertyChanged(nameof(IsSpaceTool)); OnPropertyChanged(nameof(IsMeasureTool)); OnPropertyChanged(nameof(IsNumberTool)); OnPropertyChanged(nameof(IsStraightenTool)); OnPropertyChanged(nameof(IsStretchTool)); MeasurePoints.Clear(); NumberPending.Clear();
+        Hint = value switch { ToolKind.DrawWall => T("hint.draw.wall"), ToolKind.Riser => T("hint.riser"), ToolKind.DrawPipe => T("hint.draw.pipe"), ToolKind.Place => T("hint.place"), ToolKind.Align => T("hint.align"), ToolKind.Door => T("hint.door"), ToolKind.Window => T("hint.window"), ToolKind.Space => T("hint.space"), ToolKind.Measure => T("hint.measure"), ToolKind.NumberCellars => T("hint.number"), ToolKind.Straighten => T("hint.straighten"), ToolKind.Stretch => T("hint.stretch"), _ => T("hint.select") }; if (value != ToolKind.Align) AlignCancel();
         Changed?.Invoke();
     }
 
@@ -456,6 +458,11 @@ public partial class MainViewModel : ObservableObject
                 var c = new PointMm((int)sp.Outline.Average(p => p.X), (int)sp.Outline.Average(p => p.Y));
                 SpaceItems.Add(new SpaceItem(lv.Id, sp.Id, sp.Name, sp.Number ?? "", sp.Kind.ToString(), sp.Lot ?? "", $"{SpaceFinder.AreaMm2(sp.Outline) / 1e6:0.0} m²", sp.Stability == Stability.Common, c));
             }
+        if (CurrentLevel is { } cl)
+        {
+            _bgOpacity = cl.BackgroundOpacity; _bgVisible = cl.BackgroundVisible; OnPropertyChanged(nameof(BgOpacity)); OnPropertyChanged(nameof(BgVisible));
+            if (cl.ImageTransform is { Length: 6 } m) { var d = ImageStretch.Decompose(ImageStretch.FromArray(m)); ImgScaleX = Math.Round(d.ScaleX, 4); ImgScaleY = Math.Round(d.ScaleY, 4); ImgRotation = Math.Round(d.RotationDeg, 3); ImgOffsetX = Math.Round(d.OffsetX, 1); ImgOffsetY = Math.Round(d.OffsetY, 1); }
+        }
         var sel = CurrentLevel?.Walls.FirstOrDefault(w => SelectedWalls.Contains(w.Id));
         if (sel != null) { PropLabel = sel.Label ?? ""; PropHeight = sel.HeightMm ?? 0; PropThickness = WallGeometry.Axis(sel)?.ThicknessMm ?? 0; }
         OnPropertyChanged(nameof(CurrentLevel)); OnPropertyChanged(nameof(SelectionText));
@@ -525,6 +532,27 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand] private void SetMode(string m) => RequestMode(Enum.Parse<ViewMode>(m));
     [RelayCommand] private void Undo() { History.Undo(Building); Refresh(); }
     [RelayCommand] private void Redo() { History.Redo(Building); Refresh(); }
+
+    // ---- Background picture: stretch, opacity, difference ----
+    private readonly Dictionary<string, (int W, int H)> _imageSizes = new();
+    public (int W, int H)? BackgroundSize()
+    {
+        if (CurrentLevel?.BackgroundImage is not { } n || !Images.TryGetValue(n, out var data)) return null;
+        if (!_imageSizes.TryGetValue(n, out var sz)) _imageSizes[n] = sz = PlanImport.Size(data);
+        return sz;
+    }
+    [ObservableProperty] private double _bgOpacity = 0.5;
+    [ObservableProperty] private bool _bgDifference;
+    [ObservableProperty] private bool _bgVisible = true;
+    partial void OnBgOpacityChanged(double value) { if (CurrentLevel is { } l && Math.Abs(l.BackgroundOpacity - value) > 1e-6) { Actions.SetBackgroundDisplay(l.Id, value, BgVisible); Refresh(); } }
+    partial void OnBgDifferenceChanged(bool value) => Changed?.Invoke();
+    partial void OnBgVisibleChanged(bool value) { if (CurrentLevel is { } l && l.BackgroundVisible != value) { Actions.SetBackgroundDisplay(l.Id, BgOpacity, value); Refresh(); } }
+    [ObservableProperty] private double _imgScaleX; [ObservableProperty] private double _imgScaleY; [ObservableProperty] private double _imgRotation; [ObservableProperty] private double _imgOffsetX; [ObservableProperty] private double _imgOffsetY;
+
+    /// <summary>Commits a stretch gesture or nudge (one history step).</summary>
+    public void SetImageTransform(Affine t) { if (CurrentLevel is { } l) { Actions.SetImageTransform(l.Id, t.ToArray()); Refresh(); } }
+    public void NudgeImage(int dx, int dy) { if (CurrentLevel?.ImageTransform is { } m) SetImageTransform(ImageStretch.Nudge(ImageStretch.FromArray(m), dx, dy)); }
+    [RelayCommand] private void ApplyImageFields() { if (CurrentLevel?.ImageTransform != null) SetImageTransform(ImageStretch.Compose(ImgScaleX, ImgScaleY, ImgRotation, ImgOffsetX, ImgOffsetY)); }
 
     // ---- Display options ----
     [ObservableProperty] private bool _ghostBelow = true;
@@ -690,7 +718,7 @@ public partial class MainViewModel : ObservableObject
     public int ApplyWizard(ImportWizardViewModel w)
     {
         if (CurrentLevel is not { } l) return 0;
-        var n = w.Apply(Actions, l, Images); Status = $"{n} groupe(s) de murs importé(s)"; Refresh(); return n;
+        var n = w.Apply(Actions, l, Images); Status = $"{n} groupe(s) de murs importé(s)"; Refresh(); ViewFitRequested?.Invoke(); return n;
     }
 
     public int ImportPlan(string imagePath, double pxPerMm)

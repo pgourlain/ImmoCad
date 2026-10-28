@@ -60,6 +60,7 @@
         <ToggleButton Classes="tool" Content="№" ToolTip.Tip="Numéroter les caves" IsChecked="{Binding IsNumberTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="NumberCellars" />
         <ToggleButton Classes="tool" Content="⟷" ToolTip.Tip="Mesurer" IsChecked="{Binding IsMeasureTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Measure" />
         <ToggleButton Classes="tool" Content="⟋" ToolTip.Tip="Redresser les murs sélectionnés (aperçu en vert, Entrée applique)" IsChecked="{Binding IsStraightenTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Straighten" />
+        <ToggleButton Classes="tool" Content="⇔" ToolTip.Tip="Étirer / déplacer / tourner le plan de fond (8 poignées, flèches = 1 mm)" IsChecked="{Binding IsStretchTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Stretch" />
         <ToggleButton Classes="tool" Content="⌖" ToolTip.Tip="Aligner sur le niveau du dessous (par points)" IsChecked="{Binding IsAlignTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Align" />
         <Separator Margin="0,6" />
         <Button Classes="tool" Content="⤒" ToolTip.Tip="Déplacer la sélection à l'étage au-dessus (Ctrl+PgUp)" Command="{Binding MoveSelectionUpCommand}" />
@@ -174,6 +175,18 @@
             <NumericUpDown Value="{Binding PropHeight}" Minimum="0" Maximum="10000" Increment="50" FormatString="Hauteur 0 &quot;mm&quot; (0 = niveau)" />
             <NumericUpDown Value="{Binding PropThickness}" Minimum="0" Maximum="1000" Increment="10" FormatString="Épaisseur 0 &quot;mm&quot;" />
             <Button Content="Appliquer l'épaisseur" Command="{Binding ApplyThicknessCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+            <Separator />
+            <TextBlock Text="PLAN DE FOND" Classes="caption" />
+            <CheckBox Content="Afficher" IsChecked="{Binding BgVisible}" />
+            <Slider Minimum="0" Maximum="1" Value="{Binding BgOpacity}" ToolTip.Tip="Opacité" />
+            <CheckBox Content="Mode différence avec le niveau du dessous" IsChecked="{Binding BgDifference}" />
+            <NumericUpDown Value="{Binding ImgScaleX}" Increment="0.01" FormatString="Échelle X 0.0000 &quot;mm/px&quot;" />
+            <NumericUpDown Value="{Binding ImgScaleY}" Increment="0.01" FormatString="Échelle Y 0.0000 &quot;mm/px&quot;" />
+            <NumericUpDown Value="{Binding ImgRotation}" Increment="0.1" FormatString="Rotation 0.000&quot;°&quot;" />
+            <NumericUpDown Value="{Binding ImgOffsetX}" Increment="1" FormatString="Décalage X 0.0 &quot;mm&quot;" />
+            <NumericUpDown Value="{Binding ImgOffsetY}" Increment="1" FormatString="Décalage Y 0.0 &quot;mm&quot;" />
+            <Button Content="Appliquer au plan" Command="{Binding ApplyImageFieldsCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+            <Separator />
             <Button Content="Appliquer" Command="{Binding ApplyPropertiesCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
           </StackPanel>
         </TabItem>

@@ -38,10 +38,11 @@ public class PlanView : Control
         return bmp;
     }
 
-    public PlanView() { Focusable = true; ClipToBounds = true; DataContextChanged += (_, _) => { if (Vm != null) Vm.FocusRequested += CenterOn; }; }
+    public PlanView() { Focusable = true; ClipToBounds = true; DataContextChanged += (_, _) => { if (Vm != null) { Vm.FocusRequested += CenterOn; Vm.ViewFitRequested += RefitNextRender; } }; }
 
     private ToolKind? _chainKind;
     private bool IsChain => Vm is { IsDrawTool: true } or { IsPipeTool: true };
+    public void RefitNextRender() => _fitted = false;
     public void Invalidate()
     {
         if (Vm is { IsDrawTool: true }) { if (_chainKind != ToolKind.DrawWall) { DrawTool = new DrawChainTool(Vm.CommitWalls); _chainKind = ToolKind.DrawWall; } }
@@ -52,6 +53,8 @@ public class PlanView : Control
     private readonly List<(Rect Rect, Guid LevelId, PointMm Center)> _arrows = new();
     private PointMm _hover;
     private (Wall Wall, Opening Opening)? _openingDrag;
+    internal StretchHandle? StretchActiveForTest => _stretch;
+    private StretchHandle? _stretch; private Affine _stretchStart; private (double X, double Y) _stretchFrom; private Affine? _stretchLive;
     private PipeHandleTool? _handleTool;
     private string _typed = "";
 
@@ -88,6 +91,11 @@ public class PlanView : Control
     public void FitAll()
     {
         var pts = Vm?.Building.Levels.SelectMany(l => l.Walls.SelectMany(w => w.Footprint)).ToList();
+        // the background pictures count too, so a freshly imported plan is entirely visible
+        if (Vm?.CurrentLevel is { ImageTransform: { Length: 6 } m } && Vm.BackgroundSize() is { } sz)
+        {
+            pts ??= new(); pts.AddRange(ImageStretch.Corners(ImageStretch.FromArray(m), sz.W, sz.H).Select(c => new PointMm((int)c.X, (int)c.Y)));
+        }
         if (pts is not { Count: > 0 } || Bounds.Width < 10) return;
         int minX = pts.Min(p => p.X), maxX = pts.Max(p => p.X), minY = pts.Min(p => p.Y), maxY = pts.Max(p => p.Y);
         Scale = Math.Min((Bounds.Width - 80) / Math.Max(1, maxX - minX), (Bounds.Height - 80) / Math.Max(1, maxY - minY));
@@ -115,6 +123,18 @@ public class PlanView : Control
         if (props.IsRightButtonPressed) { DrawTool?.Cancel(); _gesture = Gesture.None; InvalidateVisual(); return; }
         if (vm.IsAlignTool) { var m = ToMm(p); vm.AlignClick(m.X, m.Y); InvalidateVisual(); return; }
         if (IsChain) { Invalidate(); DrawTool!.Down(TP(e)); e.Pointer.Capture(this); InvalidateVisual(); return; }
+        if (vm.IsStretchTool)
+        {
+            if (vm.CurrentLevel?.ImageTransform is { Length: 6 } m0 && vm.BackgroundSize() is { } sz0)
+            {
+                var t0 = ImageStretch.FromArray(m0);
+                foreach (var hd in Enum.GetValues<StretchHandle>().Where(x => x != StretchHandle.Move))
+                { var hp = ImageStretch.HandlePoint(t0, sz0.W, sz0.H, hd); var sp0 = ToScreen(new PointMm((int)hp.X, (int)hp.Y)); if (Math.Sqrt((sp0.X - p.X) * (sp0.X - p.X) + (sp0.Y - p.Y) * (sp0.Y - p.Y)) <= 10) { _stretch = hd; break; } }
+                if (_stretch == null) { var cs = ImageStretch.Corners(t0, sz0.W, sz0.H); var poly = cs.Select(c => new PointMm((int)c.X, (int)c.Y)).ToList(); if (SpaceFinder.Contains(poly, ToMm(p))) _stretch = StretchHandle.Move; }
+                if (_stretch != null) { _stretchStart = t0; var mm = ToMm(p); _stretchFrom = (mm.X, mm.Y); _stretchLive = t0; e.Pointer.Capture(this); }
+            }
+            return;
+        }
         if (vm.IsDoorTool) { vm.PlaceOpening(ToMm(p), OpeningKind.Door); return; }
         if (vm.IsWindowTool) { vm.PlaceOpening(ToMm(p), OpeningKind.Window); return; }
         if (vm.IsSpaceTool) { vm.PlaceSpace(ToMm(p)); return; }
@@ -153,6 +173,7 @@ public class PlanView : Control
         if (_handleTool != null) { _handleTool.ForceElbow = e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Alt); _handleTool.Move(HandlePointer(e)); InvalidateVisual(); return; }
         if (IsChain) { DrawTool?.Move(TP(e)); InvalidateVisual(); return; }
         if (vm.IsPlaceTool || vm.IsRiserTool) { InvalidateVisual(); return; }
+        if (_stretch is { } sh && Vm.BackgroundSize() is { } szm) { var mm = ToMm(p); _stretchLive = ImageStretch.Drag(_stretchStart, szm.W, szm.H, sh, _stretchFrom, (mm.X, mm.Y), keepRatio: e.KeyModifiers.HasFlag(KeyModifiers.Shift)); InvalidateVisual(); return; }
         if (_openingDrag != null) { _now = p; InvalidateVisual(); return; }
         if (vm.IsMeasureTool || vm.IsNumberTool) { InvalidateVisual(); }
         if (_gesture == Gesture.None) return;
@@ -179,6 +200,7 @@ public class PlanView : Control
         if (Vm is not { } vm) return;
         if (IsChain) { DrawTool?.Up(TP(e)); InvalidateVisual(); return; }
         if (_handleTool != null) { _handleTool.Up(HandlePointer(e)); if (_handleTool.State == ToolState.Committed) FinishHandle(vm); else if (_handleTool.State == ToolState.Placing && _handleTool.Handle == PipeHandle.Body) { _handleTool.Cancel(); _handleTool = null; vm.AfterEdit(); } /* a plain click on the body only selects */ InvalidateVisual(); return; }
+        if (_stretch != null) { var live = _stretchLive; _stretch = null; _stretchLive = null; if (live is { } lt && lt != _stretchStart) vm.SetImageTransform(lt); InvalidateVisual(); return; }
         if (vm.IsRiserTool || vm.IsPlaceTool || vm.IsAlignTool || vm.IsDoorTool || vm.IsWindowTool || vm.IsSpaceTool || vm.IsNumberTool || vm.IsMeasureTool) return;
         if (_openingDrag is { } od) { var to = ToMm(e.GetPosition(this)); _openingDrag = null; if (Math.Abs(_now.X - _start.X) + Math.Abs(_now.Y - _start.Y) > 3) vm.MoveOpeningTo(od.Wall, od.Opening, to); InvalidateVisual(); return; }
         if (_gesture == Gesture.Move && Math.Abs(_now.X - _start.X) + Math.Abs(_now.Y - _start.Y) > 3) vm.MoveSelection(_delta.X, _delta.Y);
@@ -222,6 +244,13 @@ public class PlanView : Control
             if (e.Key == Key.Back && _typed.Length > 0) { _typed = _typed[..^1]; _handleTool.TypedLengthMm = DrawChainTool.TryParseLength(_typed, out var m2) ? m2 : null; InvalidateVisual(); e.Handled = true; return; }
             if (e.Key == Key.Enter) { if (_handleTool.State == ToolState.Placing) _handleTool.Finish(); FinishHandle(vm); e.Handled = true; return; }
         }
+        if (vm.IsStretchTool && vm.CurrentLevel?.ImageTransform != null)
+        {
+            var st = e.KeyModifiers.HasFlag(KeyModifiers.Shift) ? 10 : 1;       // arrow keys nudge the picture by 1 mm (Shift: 10 mm)
+            switch (e.Key) { case Key.Left: vm.NudgeImage(-st, 0); break; case Key.Right: vm.NudgeImage(st, 0); break; case Key.Up: vm.NudgeImage(0, st); break; case Key.Down: vm.NudgeImage(0, -st); break; default: goto normal; }
+            e.Handled = true; return;
+        }
+        normal:
         var step = e.KeyModifiers.HasFlag(KeyModifiers.Shift) ? 100 : 10;
         switch (e.Key)
         {
@@ -243,6 +272,7 @@ public class PlanView : Control
     public PointMm LookAtMm => ToMm(new Point(Bounds.Width / 2, Bounds.Height / 2));
     public void CenterOn(PointMm c) => Offset = (Bounds.Width / 2 - c.X * Scale, Bounds.Height / 2 - c.Y * Scale);
 
+    private static StreamGeometry Poly(Point[] pts) { var g = new StreamGeometry(); using var c = g.Open(); c.BeginFigure(pts[0], false); foreach (var p in pts.Skip(1)) c.LineTo(p); c.EndFigure(true); return g; }
     private static FormattedText Txt(string t, double size, IBrush b) => new(t, System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, size, b);
 
     private void DrawSpaces(DrawingContext ctx, Level l, bool dark)
@@ -389,14 +419,29 @@ public class PlanView : Control
         if (!_fitted) FitAll();
         DrawGrid(ctx, dark);
         if (Vm?.CurrentLevel is not { } l) return;
-        if (l.BackgroundVisible && l.ImageTransform is { Length: 6 } tr && Background(l) is { } bg)
+        if (l.BackgroundVisible && l.ImageTransform is { Length: 6 } tr0 && Background(l) is { } bg)
         {
+            var tr = _stretchLive is { } live ? live.ToArray() : tr0;
             // pixels → mm (affine) → screen; axis-aligned or rotated drawing through a matrix
             var m = new Matrix(tr[0] * Scale, -tr[3] * Scale, tr[1] * Scale, -tr[4] * Scale, Offset.X + tr[2] * Scale, Bounds.Height - Offset.Y - tr[5] * Scale);
             using (ctx.PushTransform(m)) using (ctx.PushOpacity(l.BackgroundOpacity))
                 ctx.DrawImage(bg, new Rect(bg.PixelSize.ToSize(1)));
+            if (Vm.IsStretchTool && Vm.BackgroundSize() is { } bs)
+            {
+                var a = ImageStretch.FromArray(tr);
+                var cs = ImageStretch.Corners(a, bs.W, bs.H).Select(c => ToScreen(new PointMm((int)c.X, (int)c.Y))).ToArray();
+                ctx.DrawGeometry(null, new Pen(Brushes.DodgerBlue, 1.5, DashStyle.Dash), Poly(cs));
+                foreach (var h in Enum.GetValues<StretchHandle>().Where(h => h != StretchHandle.Move)) { var hp = ImageStretch.HandlePoint(a, bs.W, bs.H, h); var sp = ToScreen(new PointMm((int)hp.X, (int)hp.Y)); ctx.DrawRectangle(h == StretchHandle.Rotate ? Brushes.Orange : Brushes.White, new Pen(Brushes.DodgerBlue, 2), new Rect(sp.X - 5, sp.Y - 5, 10, 10)); }
+            }
         }
         var below = Vm.Building.Levels.LastOrDefault(x => x.AltitudeMm < l.AltitudeMm);
+        if (below?.ImageTransform is { Length: 6 } bt && below.BackgroundVisible && Background(below) is { } bbg && (Vm.BgDifference || Vm.IsAlignTool || Vm.IsStretchTool))
+        {   // the level below's picture in a contrasting colour (blue tint), or as a difference blend, to see how well the two plans overlap
+            var bm = new Matrix(bt[0] * Scale, -bt[3] * Scale, bt[1] * Scale, -bt[4] * Scale, Offset.X + bt[2] * Scale, Bounds.Height - Offset.Y - bt[5] * Scale);
+            using (ctx.PushTransform(bm)) using (ctx.PushOpacity(Vm.BgDifference ? 1.0 : 0.35))
+            using (ctx.PushRenderOptions(new RenderOptions { BitmapBlendingMode = Vm.BgDifference ? BitmapBlendingMode.Difference : BitmapBlendingMode.SourceOver }))
+                ctx.DrawImage(bbg, new Rect(bbg.PixelSize.ToSize(1)));
+        }
         if (below != null && Vm.GhostBelow) DrawWalls(ctx, below, new SolidColorBrush(Color.FromArgb(55, 60, 140, 255)), null, null);
         var above = Vm.Building.Levels.FirstOrDefault(x => x.AltitudeMm > l.AltitudeMm);
         if (above != null && Vm.GhostAbove) DrawWalls(ctx, above, new SolidColorBrush(Color.FromArgb(45, 255, 150, 40)), null, null);

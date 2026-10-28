@@ -582,3 +582,43 @@ public class StraightenUiTests
         vm.MakeRectangularCommand.Execute(null); Assert.Equal(4, vm.CurrentLevel!.Walls[0].Footprint.Count);
     }, CancellationToken.None);
 }
+
+public class StretchUiTests
+{
+    private readonly HeadlessFixture f = new();
+
+    private static MainViewModel WithPlan()
+    {
+        var vm = new MainViewModel(startWithSample: false) { Settings = new() }; vm.NewDocumentCommand.Execute(null);
+        var w = new ImportWizardViewModel(WizardTests.PlanPng()) { DistanceMetres = 5 }; w.AddCalibrationPoint(50, 240); w.AddCalibrationPoint(550, 240); w.MinThickness = 5; w.Detect(); vm.ApplyWizard(w);
+        return vm;
+    }
+
+    [Fact] public Task Side_handle_stretches_width_by_3_percent_with_the_mouse_numeric_fields_and_nudge_keys() => f.Session.Dispatch(() =>
+    {
+        var vm = WithPlan(); var w = new MainWindow { DataContext = vm, Width = 1280, Height = 820 }; w.Show(); w.UpdateLayout(); w.CaptureRenderedFrame();
+        var plan = w.FindControl<PlanView>("Plan")!; Avalonia.Point At(double x, double y) => plan.TranslatePoint(plan.ToScreenForTest(new((int)x, (int)y)), w)!.Value;
+        vm.SetToolCommand.Execute("Stretch"); var t0 = ImmeubleCad.Core.Geometry.ImageStretch.FromArray(vm.CurrentLevel!.ImageTransform); var (W, H) = vm.BackgroundSize()!.Value;
+        var right = ImmeubleCad.Core.Geometry.ImageStretch.HandlePoint(t0, W, H, ImmeubleCad.Core.Geometry.StretchHandle.Right); var steps = vm.History.Items.Count; var width0 = W * t0.A;
+        w.MouseDown(At(right.X, right.Y), Avalonia.Input.MouseButton.Left); Assert.True(plan.StretchActiveForTest == ImmeubleCad.Core.Geometry.StretchHandle.Right, $"active={plan.StretchActiveForTest} tool={vm.Tool} handleAt={At(right.X, right.Y)} size={W}x{H} t0={t0}"); w.MouseMove(At(right.X + 80, right.Y)); w.MouseMove(At(right.X + width0 * 0.03, right.Y)); w.MouseUp(At(right.X + width0 * 0.03, right.Y), Avalonia.Input.MouseButton.Left);
+        var t1 = ImmeubleCad.Core.Geometry.ImageStretch.FromArray(vm.CurrentLevel!.ImageTransform);
+        Assert.Equal(t0.A * 1.03, t1.A, 3); Assert.Equal(t0.D, t1.D, 6); Assert.Equal(steps + 1, vm.History.Items.Count);                 // width only, one history step
+        Assert.Equal(t0.Tx, t1.Tx, 3);                                                                                                // the opposite side stayed put
+        w.KeyPress(Avalonia.Input.Key.Right, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.ArrowRight, null);          // (key routing goes through the view)
+        Assert.Equal(t1.Tx + 1, ImmeubleCad.Core.Geometry.ImageStretch.FromArray(vm.CurrentLevel!.ImageTransform).Tx, 6);          // the arrow key nudged by 1 mm
+        vm.ImgRotation = 2; vm.ImgScaleX = 10; vm.ImgScaleY = 10; vm.ApplyImageFieldsCommand.Execute(null); Assert.Equal(2, ImmeubleCad.Core.Geometry.ImageStretch.Decompose(ImmeubleCad.Core.Geometry.ImageStretch.FromArray(vm.CurrentLevel!.ImageTransform)).RotationDeg, 3);
+        w.CaptureRenderedFrame()!.Save(Path.Combine(AppContext.BaseDirectory, "screenshots", "stretch.png"));
+        vm.UndoCommand.Execute(null); vm.UndoCommand.Execute(null); vm.UndoCommand.Execute(null); Assert.Equal(t0.A, ImmeubleCad.Core.Geometry.ImageStretch.FromArray(vm.CurrentLevel!.ImageTransform).A, 6);
+    }, CancellationToken.None);
+
+    [Fact] public Task Opacity_visibility_and_difference_overlay_with_the_level_below() => f.Session.Dispatch(() =>
+    {
+        var vm = WithPlan(); var rdc = vm.CurrentLevel!.Id; vm.AddLevelCommand.Execute(null);
+        var w2 = new ImportWizardViewModel(WizardTests.PlanPng()) { DistanceMetres = 5 }; w2.AddCalibrationPoint(50, 240); w2.AddCalibrationPoint(550, 240); w2.MinThickness = 5; w2.Detect(); vm.ApplyWizard(w2);
+        vm.BgOpacity = 0.8; Assert.Equal(0.8, vm.CurrentLevel!.BackgroundOpacity, 6); vm.BgVisible = false; Assert.False(vm.CurrentLevel.BackgroundVisible); vm.BgVisible = true;
+        var win = new MainWindow { DataContext = vm, Width = 900, Height = 700 }; win.Show(); win.UpdateLayout();
+        byte[] Px() { using var ms = new MemoryStream(); win.CaptureRenderedFrame()!.Save(ms); return ms.ToArray(); }
+        var normal = Px(); vm.BgDifference = true; Assert.NotEqual(normal, Px());                       // the blend changes what is drawn
+        vm.UndoCommand.Execute(null); vm.UndoCommand.Execute(null); Assert.True(vm.History.CanUndo);
+    }, CancellationToken.None);
+}

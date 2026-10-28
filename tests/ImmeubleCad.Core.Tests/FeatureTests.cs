@@ -4,6 +4,7 @@ using ImmeubleCad.Core.History;
 using ImmeubleCad.Core.Model;
 using ImmeubleCad.Core.Networks;
 using ImmeubleCad.Core.Tools;
+using ImmeubleCad.Core.Geometry;
 using Xunit;
 
 namespace ImmeubleCad.Core.Tests;
@@ -733,5 +734,43 @@ public class StraightenActionTests
         var b = new Building(); var h = new BuildingHistory(); var a = new BuildingActions(b, h, new BuildingEventsService()); var l = a.AddLevel("RDC", 0);
         var w = a.AddWall(l.Id, [new(0, 0), new(500, 5), new(1000, 0), new(1003, 150), new(500, 148), new(0, 150)]); var before = BuildingJson.Serialize(b);
         a.MakeWallsRectangular(l.Id, [w.Id]); Assert.Equal(4, b.Levels[0].Walls[0].Footprint.Count); h.Undo(b); Assert.Equal(before, BuildingJson.Serialize(b));
+    }
+}
+
+public class ImageStretchTests
+{
+    private static readonly ImmeubleCad.Core.Geometry.Affine T = ImmeubleCad.Core.Geometry.ImageStretch.FromArray(ImmeubleCad.Core.Import.PlanImport.TransformFor(new(0.1, 0.1), 400));   // 400 px high picture, 10 mm/px
+    private const int W = 600, H = 400;
+    private static (double X, double Y) P(StretchHandle h, ImmeubleCad.Core.Geometry.Affine t) => ImmeubleCad.Core.Geometry.ImageStretch.HandlePoint(t, W, H, h);
+    private static ImmeubleCad.Core.Geometry.Affine Drag(StretchHandle h, double dx, double dy, bool keep = false, ImmeubleCad.Core.Geometry.Affine? t = null) { var tt = t ?? T; var g = P(h, tt); return ImmeubleCad.Core.Geometry.ImageStretch.Drag(tt, W, H, h, g, (g.X + dx, g.Y + dy), keep); }
+    private static double Wd(ImmeubleCad.Core.Geometry.Affine t) { var a = P(StretchHandle.Left, t); var b = P(StretchHandle.Right, t); return Math.Sqrt(Math.Pow(b.X - a.X, 2) + Math.Pow(b.Y - a.Y, 2)); }
+    private static double Ht(ImmeubleCad.Core.Geometry.Affine t) { var a = P(StretchHandle.Top, t); var b = P(StretchHandle.Bottom, t); return Math.Sqrt(Math.Pow(b.X - a.X, 2) + Math.Pow(b.Y - a.Y, 2)); }
+
+    [Fact] public void Side_handles_stretch_one_direction_only_about_the_opposite_side()
+    {
+        Assert.Equal(6000, Wd(T), 6); Assert.Equal(4000, Ht(T), 6);
+        var left = P(StretchHandle.Left, T);
+        var r = Drag(StretchHandle.Right, 180, 0);                                    // +3 % width only
+        Assert.Equal(6180, Wd(r), 6); Assert.Equal(4000, Ht(r), 6); Assert.Equal(left.X, P(StretchHandle.Left, r).X, 6);   // the opposite side did not move
+        var b = Drag(StretchHandle.Bottom, 0, -200);                                   // drag the bottom edge down (plan y negative)
+        Assert.Equal(6000, Wd(b), 6); Assert.Equal(4200, Ht(b), 6); Assert.Equal(P(StretchHandle.Top, T).Y, P(StretchHandle.Top, b).Y, 6);
+    }
+
+    [Fact] public void Corner_handles_scale_both_axes_and_shift_keeps_the_ratio_and_move_rotate_work()
+    {
+        var c = Drag(StretchHandle.TopRight, 600, 400); Assert.Equal(6600, Wd(c), 6); Assert.Equal(4400, Ht(c), 6);
+        var k = Drag(StretchHandle.TopRight, 600, 10, keep: true); Assert.Equal(Wd(k) / Ht(k), 1.5, 6);
+        var m = ImmeubleCad.Core.Geometry.ImageStretch.Drag(T, W, H, StretchHandle.Move, (0, 0), (50, -30)); Assert.Equal(T.Tx + 50, m.Tx, 9); Assert.Equal(T.Ty - 30, m.Ty, 9);
+        var centre = P(StretchHandle.Move, T); var rot = ImmeubleCad.Core.Geometry.ImageStretch.Drag(T, W, H, StretchHandle.Rotate, (centre.X + 1000, centre.Y), (centre.X, centre.Y + 1000));
+        Assert.Equal(90, ImmeubleCad.Core.Geometry.ImageStretch.Decompose(rot).RotationDeg, 6); var after = P(StretchHandle.Move, rot); Assert.Equal(centre.X, after.X, 6); Assert.Equal(centre.Y, after.Y, 6);
+    }
+
+    [Fact] public void Nudge_and_numeric_fields_round_trip()
+    {
+        Assert.Equal(T.Tx + 1, ImmeubleCad.Core.Geometry.ImageStretch.Nudge(T, 1, 0).Tx); Assert.Equal(T.Ty + 10, ImmeubleCad.Core.Geometry.ImageStretch.Nudge(T, 0, 10).Ty);
+        var (sx, sy, rot, ox, oy) = ImmeubleCad.Core.Geometry.ImageStretch.Decompose(T); Assert.Equal((10, 10, 0), (Math.Round(sx, 6), Math.Round(sy, 6), Math.Round(rot, 6)));
+        var back = ImmeubleCad.Core.Geometry.ImageStretch.Compose(sx, sy, rot, ox, oy); Assert.Equal(T.A, back.A, 9); Assert.Equal(T.D, back.D, 9); Assert.Equal(T.Ty, back.Ty, 9);
+        var t2 = ImmeubleCad.Core.Geometry.ImageStretch.Compose(10.3, 9.8, 12, 100, 200); var d = ImmeubleCad.Core.Geometry.ImageStretch.Decompose(t2);
+        Assert.Equal((10.3, 9.8, 12), (Math.Round(d.ScaleX, 6), Math.Round(d.ScaleY, 6), Math.Round(d.RotationDeg, 6)));
     }
 }
