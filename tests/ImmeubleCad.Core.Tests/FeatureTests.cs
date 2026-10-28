@@ -253,3 +253,25 @@ public class ActionTests
         Assert.Equal("Cave 1", Assert.Single(Spaces.CrossedBy(b, r, r.Segments[0])).Name);
     }
 }
+
+public class SiteTests
+{
+    [Fact] public void Lambert93_known_point_and_round_trip()
+    {
+        // Tour Eiffel ≈ (648 240 E, 6 862 270 N)
+        var (e, n) = ImmeubleCad.Core.Site.Lambert93.FromWgs84(48.8584, 2.2945);
+        Assert.InRange(e, 648100, 648400); Assert.InRange(n, 6862100, 6862400);
+        var (lat, lon) = ImmeubleCad.Core.Site.Lambert93.ToWgs84(e, n);
+        Assert.Equal(48.8584, lat, 8); Assert.Equal(2.2945, lon, 8);
+        // IGN reference: lon 3°, lat 46.5° maps to (700000, 6600000)
+        var (e0, n0) = ImmeubleCad.Core.Site.Lambert93.FromWgs84(46.5, 3.0);
+        Assert.Equal(700000, e0, 3); Assert.Equal(6600000, n0, 3);
+    }
+
+    [Fact] public void Anchor_round_trip_with_rotation()
+    {
+        var a = new ImmeubleCad.Core.Site.SiteAnchor(650000, 6860000, 30);
+        var (e, n) = a.ToLambert(10000, 5000);
+        Assert.Equal((10000, 5000), a.FromLambert(e, n));
+    }
+}

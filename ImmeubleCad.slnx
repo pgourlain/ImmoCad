@@ -10,6 +10,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/ImmeubleCad.Core.Tests/ImmeubleCad.Core.Tests.csproj" />
     <Project Path="tests/ImmeubleCad.Desktop.Tests/ImmeubleCad.Desktop.Tests.csproj" />
+    <Project Path="tests/ImmeubleCad.Geo.Tests/ImmeubleCad.Geo.Tests.csproj" />
     <Project Path="tests/ImmeubleCad.Mcp.Tests/ImmeubleCad.Mcp.Tests.csproj" />
     <Project Path="tests/ImmeubleCad.Plan.Tests/ImmeubleCad.Plan.Tests.csproj" />
     <Project Path="tests/ImmeubleCad.Scene.Tests/ImmeubleCad.Scene.Tests.csproj" />

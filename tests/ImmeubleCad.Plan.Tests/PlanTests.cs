@@ -37,3 +37,20 @@ public class PlanTests
         Assert.Equal(p, WallStraightener.Straighten(p, 0));
     }
 }
+
+public class FootprintTests
+{
+    [Fact] public void Matches_rotated_stretched_footprint_with_missing_edge_and_reports_angles()
+    {
+        var plan = new List<PointPx> { new(0, 0), new(10000, 0), new(10000, 6000), new(0, 6000) };
+        var foot = new List<PointPx> { new(100, 200), new(10200, 100), new(10300, 6100), new(150, 6150) }; // slightly rotated, 100 mm off
+        var m = FootprintMatcher.Match(plan, foot);
+        Assert.Equal(4, m.Count);
+        Assert.All(m, x => Assert.True(Math.Abs(x.AngleDiffDeg) < 2));
+        var missing = foot.Take(3).ToList(); // 3 points → 3 edges (one is a diagonal)
+        Assert.True(FootprintMatcher.Match(plan, missing).Count >= 2);
+        Assert.Equal(4, FootprintMatcher.ReferenceAngles(foot).Count);
+        var skew = new List<PointPx> { new(0, 0), new(10000, 0), new(10000, 6000), new(1000, 6000) }; // top edge not matching: 0° still, side edge 5°
+        Assert.NotEmpty(FootprintMatcher.AngleMismatches(plan, skew, 2));
+    }
+}
