@@ -699,3 +699,15 @@ public class WallToolsTests
         Assert.Equal(("Cave 3", "3", "Lot 12", Stability.Common), (s.Name, s.Number, s.Lot, s.Stability));
     }
 }
+
+public class SceneMapperTests
+{
+    [Fact] public void Sample_building_maps_to_walls_pipes_fittings_and_equipment_and_builds()
+    {
+        var (b, _) = SampleBuilding.Create(); var input = SceneMapper.Map(b);
+        Assert.Equal(3, input.Levels.Count); Assert.Equal(12, input.Walls.Count); Assert.Equal(2, input.Pipes.Count); Assert.Single(input.Boxes);
+        var objs = ImmeubleCad.Scene.SceneBuilder.Build(input, new(b.Levels[1].Id));
+        Assert.Contains(objs, o => o.Kind == ImmeubleCad.Scene.SceneKind.Pipe); Assert.Contains(objs, o => o.Kind == ImmeubleCad.Scene.SceneKind.Slab);
+        Assert.Equal(8, objs.Count(o => o.Kind == ImmeubleCad.Scene.SceneKind.Wall));           // RDC + R+1 only: the cut hides R+2
+    }
+}

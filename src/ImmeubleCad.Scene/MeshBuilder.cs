@@ -4,7 +4,30 @@ public sealed class Mesh
 {
     public List<float> Positions { get; } = new(); // xyz metres
     public List<int> Indices { get; } = new();
+    public List<float> Normals { get; } = new();   // filled by ComputeNormals()
     public int VertexCount => Positions.Count / 3;
+
+    /// <summary>Flat-ish normals: each vertex gets the average of the faces that share it.</summary>
+    public void ComputeNormals()
+    {
+        Normals.Clear(); for (var i = 0; i < Positions.Count; i++) Normals.Add(0);
+        for (var t = 0; t + 2 < Indices.Count; t += 3)
+        {
+            int a = Indices[t], b = Indices[t + 1], c = Indices[t + 2];
+            float ux = Positions[b * 3] - Positions[a * 3], uy = Positions[b * 3 + 1] - Positions[a * 3 + 1], uz = Positions[b * 3 + 2] - Positions[a * 3 + 2];
+            float vx = Positions[c * 3] - Positions[a * 3], vy = Positions[c * 3 + 1] - Positions[a * 3 + 1], vz = Positions[c * 3 + 2] - Positions[a * 3 + 2];
+            float nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+            foreach (var i in new[] { a, b, c }) { Normals[i * 3] += nx; Normals[i * 3 + 1] += ny; Normals[i * 3 + 2] += nz; }
+        }
+        for (var i = 0; i < VertexCount; i++)
+        {
+            var l = MathF.Sqrt(Normals[i * 3] * Normals[i * 3] + Normals[i * 3 + 1] * Normals[i * 3 + 1] + Normals[i * 3 + 2] * Normals[i * 3 + 2]);
+            if (l > 1e-12f) { Normals[i * 3] /= l; Normals[i * 3 + 1] /= l; Normals[i * 3 + 2] /= l; }
+        }
+    }
+
+    public (float X, float Y, float Z) Min() => (Enumerable.Range(0, VertexCount).Min(i => Positions[i * 3]), Enumerable.Range(0, VertexCount).Min(i => Positions[i * 3 + 1]), Enumerable.Range(0, VertexCount).Min(i => Positions[i * 3 + 2]));
+    public (float X, float Y, float Z) Max() => (Enumerable.Range(0, VertexCount).Max(i => Positions[i * 3]), Enumerable.Range(0, VertexCount).Max(i => Positions[i * 3 + 1]), Enumerable.Range(0, VertexCount).Max(i => Positions[i * 3 + 2]));
     public int Add(float x, float y, float z) { Positions.Add(x); Positions.Add(y); Positions.Add(z); return VertexCount - 1; }
     public void Quad(int a, int b, int c, int d) { Indices.AddRange([a, b, c, a, c, d]); }
 
@@ -43,6 +66,48 @@ public static class MeshBuilder
         for (var i = 0; i < n; i++) { var j = (i + 1) % n; m.Quad(b[i], b[j], t[j], t[i]); }
         return m;
     }
+
+    /// <summary>Round pipe between two points (mm): <paramref name="segments"/>-sided prism with end caps.</summary>
+    public static Mesh Cylinder((int X, int Y, int Z) a, (int X, int Y, int Z) b, int diameterMm, int segments = 12, Mesh? into = null)
+    {
+        var m = into ?? new Mesh(); const float k = 0.001f;
+        double dx = b.X - a.X, dy = b.Y - a.Y, dz = b.Z - a.Z; var len = Math.Sqrt(dx * dx + dy * dy + dz * dz); if (len < 1e-9) return m;
+        double ux = dx / len, uy = dy / len, uz = dz / len;
+        // any vector not parallel to the axis → orthonormal basis (p, q)
+        var (rx, ry, rz) = Math.Abs(uz) < 0.9 ? (0.0, 0.0, 1.0) : (1.0, 0.0, 0.0);
+        double px = uy * rz - uz * ry, py = uz * rx - ux * rz, pz = ux * ry - uy * rx; var pl = Math.Sqrt(px * px + py * py + pz * pz); px /= pl; py /= pl; pz /= pl;
+        double qx = uy * pz - uz * py, qy = uz * px - ux * pz, qz = ux * py - uy * px;
+        var r = diameterMm / 2.0; var ring0 = new int[segments]; var ring1 = new int[segments];
+        for (var i = 0; i < segments; i++)
+        {
+            var t = 2 * Math.PI * i / segments; double cx = Math.Cos(t) * r, cy = Math.Sin(t) * r;
+            double ox = px * cx + qx * cy, oy = py * cx + qy * cy, oz = pz * cx + qz * cy;
+            ring0[i] = m.Add((float)((a.X + ox) * k), (float)((a.Y + oy) * k), (float)((a.Z + oz) * k));
+            ring1[i] = m.Add((float)((b.X + ox) * k), (float)((b.Y + oy) * k), (float)((b.Z + oz) * k));
+        }
+        for (var i = 0; i < segments; i++) { var j = (i + 1) % segments; m.Quad(ring0[i], ring0[j], ring1[j], ring1[i]); }
+        var c0 = m.Add(a.X * k, a.Y * k, a.Z * k); var c1 = m.Add(b.X * k, b.Y * k, b.Z * k);
+        for (var i = 0; i < segments; i++) { var j = (i + 1) % segments; m.Indices.AddRange([c0, ring0[j], ring0[i]]); m.Indices.AddRange([c1, ring1[i], ring1[j]]); }
+        return m;
+    }
+
+    /// <summary>Elbow: a quarter-torus-like bend approximated by short cylinders around the corner (corner = node, arms along the two pipe axes).</summary>
+    public static Mesh Elbow((int X, int Y, int Z) corner, (int X, int Y, int Z) armA, (int X, int Y, int Z) armB, int diameterMm, Mesh? into = null)
+    {
+        var m = into ?? new Mesh(); var r = Math.Max(diameterMm, 20);
+        (int, int, int) Toward((int X, int Y, int Z) to) { double dx = to.X - corner.X, dy = to.Y - corner.Y, dz = to.Z - corner.Z; var l = Math.Sqrt(dx * dx + dy * dy + dz * dz); return l < 1 ? (0, 0, 0) : ((int)(dx / l * r), (int)(dy / l * r), (int)(dz / l * r)); }
+        var (ax, ay, az) = Toward(armA); var (bx, by, bz) = Toward(armB);
+        var pa = (corner.X + ax, corner.Y + ay, corner.Z + az); var pb = (corner.X + bx, corner.Y + by, corner.Z + bz);
+        var bulge = (pa.Item1 / 2 + pb.Item1 / 2 + corner.X / 2, pa.Item2 / 2 + pb.Item2 / 2 + corner.Y / 2, pa.Item3 / 2 + pb.Item3 / 2 + corner.Z / 2);
+        Cylinder(pa, ((pa.Item1 + bulge.Item1) / 2, (pa.Item2 + bulge.Item2) / 2, (pa.Item3 + bulge.Item3) / 2), diameterMm, 10, m);
+        Cylinder(((pa.Item1 + bulge.Item1) / 2, (pa.Item2 + bulge.Item2) / 2, (pa.Item3 + bulge.Item3) / 2), ((pb.Item1 + bulge.Item1) / 2, (pb.Item2 + bulge.Item2) / 2, (pb.Item3 + bulge.Item3) / 2), diameterMm, 10, m);
+        Cylinder(((pb.Item1 + bulge.Item1) / 2, (pb.Item2 + bulge.Item2) / 2, (pb.Item3 + bulge.Item3) / 2), pb, diameterMm, 10, m);
+        return m;
+    }
+
+    /// <summary>Floor slab: a thin box under the level over the bounding rectangle of a polygon (mm).</summary>
+    public static Mesh Slab(IReadOnlyList<(int X, int Y)> outline, int topZMm, int thicknessMm = 200, Mesh? into = null) =>
+        Box(outline.Min(p => p.X), outline.Min(p => p.Y), topZMm - thicknessMm, outline.Max(p => p.X), outline.Max(p => p.Y), topZMm, into);
 
     /// <summary>Box between two points along an axis (pipe approximated by a square section), mm.</summary>
     public static Mesh Pipe((int X, int Y, int Z) a, (int X, int Y, int Z) b, int diameterMm, Mesh? into = null)
