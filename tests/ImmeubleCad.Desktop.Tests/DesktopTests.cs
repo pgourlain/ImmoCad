@@ -1,0 +1,66 @@
+using Avalonia;
+using Avalonia.Headless;
+using Avalonia.Headless;
+using Avalonia.Controls;
+using ImmeubleCad.Desktop;
+using Microsoft.Extensions.Logging;
+using Xunit;
+
+[assembly: AvaloniaTestApplication(typeof(ImmeubleCad.Desktop.Tests.TestAppBuilder))]
+
+namespace ImmeubleCad.Desktop.Tests;
+
+public sealed class HeadlessFixture
+{
+    public HeadlessUnitTestSession Session { get; } = HeadlessUnitTestSession.GetOrStartForAssembly(typeof(HeadlessFixture).Assembly);
+}
+
+public static class TestAppBuilder
+{
+    public static AppBuilder BuildAvaloniaApp() => AppBuilder.Configure<App>().UseSkia().UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false });
+}
+
+public class DesktopTests
+{
+    private readonly HeadlessFixture f = new();
+    [Fact] public Task Main_window_shows_plan_and_levels() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel();
+        var w = new MainWindow { DataContext = vm };
+        w.Show();
+        Assert.Equal(2, vm.Levels.Count);
+        Assert.Equal("R+1", vm.Levels[0].Name); // top level first
+        var frame = w.CaptureRenderedFrame();
+        Assert.NotNull(frame);
+        var dir = Path.Combine(AppContext.BaseDirectory, "screenshots"); Directory.CreateDirectory(dir);
+        frame!.Save(Path.Combine(dir, "main.png"));
+        w.Close();
+    }, CancellationToken.None);
+
+    [Fact] public Task Undo_redo_levels() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel();
+        vm.AddLevelCommand.Execute(null); Assert.Equal(3, vm.Levels.Count);
+        vm.UndoCommand.Execute(null); Assert.Equal(2, vm.Levels.Count);
+        vm.RedoCommand.Execute(null); Assert.Equal(3, vm.Levels.Count);
+    }, CancellationToken.None);
+}
+
+public class AppLogTests
+{
+    [Fact] public void Writes_and_rolls()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "ilog" + Guid.NewGuid().ToString("N"));
+        using (var p = new AppLogProvider(dir, maxBytes: 500))
+        {
+            var l = p.CreateLogger("T");
+            Parallel.For(0, 50, i => l.LogInformation("line {I} {Pad}", i, new string('x', 40)));
+            l.LogError(new InvalidOperationException("boom"), "failed");
+            p.Flush();
+        }
+        Assert.True(File.Exists(Path.Combine(dir, "log.1.txt")));
+        var all = string.Join("\n", Directory.GetFiles(dir).Select(File.ReadAllText));
+        Assert.Contains("boom", all);
+        Directory.Delete(dir, true);
+    }
+}
