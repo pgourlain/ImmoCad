@@ -16,7 +16,7 @@ using ImmeubleCad.Core.Tools;
 namespace ImmeubleCad.Desktop;
 
 public enum ViewMode { Plan, Solid, Wireframe, Elevation }
-public enum ToolKind { Select, DrawWall, Align, Riser, DrawPipe, Place }
+public enum ToolKind { Select, DrawWall, Align, Riser, DrawPipe, Place, Door, Window, Space, Measure, NumberCellars }
 
 /// <summary>One button of the level bar.</summary>
 /// <summary>One open building with its own history, pictures and file.</summary>
@@ -32,9 +32,13 @@ public sealed class Doc
 }
 public sealed record TabItem(int Index, string Title, bool IsActive, bool IsDirty);
 public sealed record HistoryRow(int Index, string Name, bool IsCurrent, bool IsFuture);
+public sealed record SpaceItem(Guid LevelId, Guid Id, string Name, string Number, string Kind, string Lot, string Area, bool IsCommon, PointMm Center);
 public sealed record NetworkItem(Guid Id, string Name, string Type, bool Visible, bool Locked, string ColorHex);
 public sealed record PaletteItem(string Id, string Category, string Name, string Glyph);
-public sealed record LevelItem(Guid Id, string Name, string Altitude, bool IsCurrent, int WallCount);
+public sealed record LevelItem(Guid Id, string Name, string Altitude, bool IsCurrent, int WallCount, string Tooltip = "")
+{
+    public string BasementSpec => $"{Id}:Basement"; public string GroundSpec => $"{Id}:Ground"; public string StandardSpec => $"{Id}:Standard";
+}
 
 public partial class MainViewModel : ObservableObject
 {
@@ -56,6 +60,9 @@ public partial class MainViewModel : ObservableObject
     public string? SettingsPath { get; set; }
     public ObservableCollection<LevelItem> Levels { get; } = new();
     public ObservableCollection<NetworkItem> Networks { get; } = new();
+    public ObservableCollection<SpaceItem> SpaceItems { get; } = new();
+    public SpaceKind[] SpaceKinds { get; } = Enum.GetValues<SpaceKind>();
+    public LevelKind[] LevelKinds { get; } = Enum.GetValues<LevelKind>();
     public ObservableCollection<PaletteItem> Palette { get; } = new();
     public ObservableCollection<string> Recent { get; } = new();
     public NetworkType[] NetworkTypes { get; } = Enum.GetValues<NetworkType>();
@@ -133,6 +140,108 @@ public partial class MainViewModel : ObservableObject
         if (Plane == null || Math.Abs(u1 - u0) < 20) return;
         Actions.AddHorizontalAlong(Plane, Math.Clamp(u0, 0, Plane.Length), Math.Clamp(u1, 0, Plane.Length), PipeType, (int)z, PipeDiameter);
         Status = "Tuyau horizontal posé le long du mur"; Refresh();
+    }
+
+    // ---- Doors, windows, rooms, cellars, measure ----
+    [ObservableProperty] private int _openingWidth;                 // 0 = default (800 apartments, 700 cellars, 1200 windows)
+    [ObservableProperty] private string _cellarPrefix = "Cave ";
+    [ObservableProperty] private int _cellarStart = 1;
+    [ObservableProperty] private SpaceKind _newSpaceKind = SpaceKind.Room;
+    [ObservableProperty] private int _propThickness;
+    public List<PointMm> MeasurePoints { get; } = new();
+    public List<Guid> NumberPending { get; } = new();
+    public event Action<PointMm>? FocusRequested;
+
+    public (Wall Wall, Opening Opening)? HitOpening(PointMm p)
+    {
+        if (CurrentLevel is not { } l) return null;
+        foreach (var w in l.Walls)
+        {
+            if (Geometry_Axis(w) is not { } ax) continue;
+            foreach (var o in w.Openings)
+            {
+                var c = ax.PointAt(o.PositionMm); var half = Math.Max(o.WidthMm / 2, 150);
+                if (Math.Abs(p.X - c.X) <= (Math.Abs(ax.B.X - ax.A.X) > Math.Abs(ax.B.Y - ax.A.Y) ? half : ax.ThicknessMm) && Math.Abs(p.Y - c.Y) <= (Math.Abs(ax.B.X - ax.A.X) > Math.Abs(ax.B.Y - ax.A.Y) ? ax.ThicknessMm : half)) return (w, o);
+            }
+        }
+        return null;
+    }
+    private static WallAxis? Geometry_Axis(Wall w) => WallGeometry.Axis(w);
+
+    /// <summary>Door/window tool: a click on a wall inserts the opening; a click on an existing door flips its swing.</summary>
+    public void PlaceOpening(PointMm click, OpeningKind kind)
+    {
+        if (CurrentLevel is not { } l) return;
+        if (kind == OpeningKind.Door && HitOpening(click) is { } hit && hit.Opening.Kind == OpeningKind.Door) { Actions.FlipOpening(l.Id, hit.Wall.Id, hit.Opening.Id); Status = "Sens de la porte inversé"; Refresh(); return; }
+        var wall = l.Walls.LastOrDefault(w => WallGeometry.PositionAlong(w, click) != null);
+        if (wall == null) { Status = "Cliquez sur un mur"; return; }
+        var pos = (int)Math.Round(WallGeometry.PositionAlong(wall, click)!.Value);
+        var o = Actions.AddOpening(l.Id, wall.Id, kind, pos, OpeningWidth > 0 ? OpeningWidth : null);
+        Status = kind == OpeningKind.Door ? T("door.added", o.WidthMm) : T("window.added"); Refresh();
+    }
+
+    public void MoveOpeningTo(Wall wall, Opening o, PointMm to)
+    {
+        if (CurrentLevel is not { } l || WallGeometry.PositionAlong(wall, to, 2000) is not { } pos) return;
+        Actions.MoveOpening(l.Id, wall.Id, o.Id, (int)Math.Round(pos)); Status = "Ouverture déplacée"; Refresh();
+    }
+
+    /// <summary>Space tool: flood-fill from the click inside the walls; refused with a hint when the room is not closed.</summary>
+    public void PlaceSpace(PointMm click)
+    {
+        if (CurrentLevel is not { } l) return;
+        var outline = SpaceFinder.Find(l, click);
+        if (outline == null) { Status = T("space.open"); return; }
+        var n = l.Spaces.Count + 1; var sp = Actions.AddSpace(l.Id, outline, $"Pièce {n}", NewSpaceKind);
+        Status = T("space.added", SpaceFinder.AreaMm2(sp.Outline) / 1e6); Refresh();
+    }
+
+    public void NumberClick(PointMm click)
+    {
+        if (CurrentLevel is not { } l) return;
+        var sp = l.Spaces.LastOrDefault(s => SpaceFinder.Contains(s.Outline, click));
+        if (sp == null) { Status = "Cliquez dans un espace"; return; }
+        if (!NumberPending.Remove(sp.Id)) NumberPending.Add(sp.Id);
+        Status = $"{NumberPending.Count} sélectionné(s) — Entrée pour numéroter"; Changed?.Invoke();
+    }
+    public void NumberCommit()
+    {
+        if (CurrentLevel is not { } l || NumberPending.Count == 0) return;
+        var ids = NumberPending.ToList(); Actions.NumberSpaces(l.Id, ids, CellarPrefix, CellarStart); NumberPending.Clear();
+        CellarStart += ids.Count; Status = T("spaces.numbered", ids.Count); Refresh();
+    }
+
+    public void MeasureClick(PointMm p)
+    {
+        if (MeasurePoints.Count >= 2) MeasurePoints.Clear();
+        MeasurePoints.Add(p);
+        if (MeasurePoints.Count == 2) Status = T("measure.result", Math.Sqrt(Math.Pow(MeasurePoints[0].X - p.X, 2) + Math.Pow(MeasurePoints[0].Y - p.Y, 2)) / 1000);   // nothing is added to the model
+        Changed?.Invoke();
+    }
+
+    [RelayCommand] private void FocusSpace(Guid id) { var s = SpaceItems.FirstOrDefault(x => x.Id == id); if (s != null) { if (s.LevelId != CurrentLevelId) SelectLevel(s.LevelId); FocusRequested?.Invoke(s.Center); } }
+
+    // ---- Level context menu ----
+    [RelayCommand] private void AddLevelAbove(Guid id) { var n = Actions.AddLevelNextTo(id, true, $"R+{Building.Levels.Count}"); CurrentLevelId = n.Id; Refresh(); }
+    [RelayCommand] private void AddLevelBelow(Guid id) { var n = Actions.AddLevelNextTo(id, false, $"S-{Building.Levels.Count(l => l.AltitudeMm < 0) + 1}"); CurrentLevelId = n.Id; Refresh(); }
+    [RelayCommand] private async Task RenameLevelAsync(Guid id)
+    {
+        var l = Building.Levels.First(x => x.Id == id);
+        if (await Dialogs.PromptAsync("Renommer le niveau", "Nom", l.Name) is { Length: > 0 } name) { Actions.RenameLevel(id, name); Refresh(); }
+    }
+    [RelayCommand] private async Task SetLevelGeometryAsync(Guid id)
+    {
+        var l = Building.Levels.First(x => x.Id == id);
+        var text = await Dialogs.PromptAsync("Altitude et hauteur", "Altitude ; hauteur (m)", $"{l.AltitudeMm / 1000.0:0.00} ; {l.HeightMm / 1000.0:0.00}".Replace(',', '.'));
+        var parts = text?.Split(';', StringSplitOptions.TrimEntries);
+        if (parts is { Length: 2 } && double.TryParse(parts[0].Replace(',', '.'), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var alt) && double.TryParse(parts[1].Replace(',', '.'), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var h) && h > 0)
+        { Actions.SetLevelGeometry(id, (int)Math.Round(alt * 1000), (int)Math.Round(h * 1000)); Refresh(); }
+    }
+    [RelayCommand] private void SetLevelKind(string spec) { var parts = spec.Split(':'); Actions.SetLevelKind(Guid.Parse(parts[0]), Enum.Parse<LevelKind>(parts[1])); Refresh(); }
+    [RelayCommand] private void ApplyThickness()
+    {
+        if (CurrentLevel is not { } l || SelectedWalls.Count == 0 || PropThickness < 20) return;
+        var n = Actions.SetWallThickness(l.Id, SelectedWalls.ToList(), PropThickness); Status = n > 0 ? $"Épaisseur {PropThickness} mm" : "Seuls les murs rectangulaires sont modifiables"; Refresh();
     }
 
     // ---- Risers ----
@@ -257,6 +366,11 @@ public partial class MainViewModel : ObservableObject
     public bool IsRiserTool => Tool == ToolKind.Riser;
     public bool IsPipeTool => Tool == ToolKind.DrawPipe;
     public bool IsPlaceTool => Tool == ToolKind.Place;
+    public bool IsDoorTool => Tool == ToolKind.Door;
+    public bool IsWindowTool => Tool == ToolKind.Window;
+    public bool IsSpaceTool => Tool == ToolKind.Space;
+    public bool IsMeasureTool => Tool == ToolKind.Measure;
+    public bool IsNumberTool => Tool == ToolKind.NumberCellars;
     public string SelectionText => SelectedSegment != null ? T("pipe.selected") : SelectedWalls.Count == 0 ? T("no.selection") : T("walls.selected", SelectedWalls.Count);
 
     public MainViewModel() : this(startWithSample: true) { }
@@ -288,8 +402,8 @@ public partial class MainViewModel : ObservableObject
     partial void OnModeChanged(ViewMode value) { OnPropertyChanged(nameof(Is3D)); OnPropertyChanged(nameof(IsElevation)); OnPropertyChanged(nameof(IsPlan)); Changed?.Invoke(); }
     partial void OnToolChanged(ToolKind value)
     {
-        OnPropertyChanged(nameof(IsSelectTool)); OnPropertyChanged(nameof(IsDrawTool)); OnPropertyChanged(nameof(IsAlignTool)); OnPropertyChanged(nameof(IsRiserTool)); OnPropertyChanged(nameof(IsPipeTool)); OnPropertyChanged(nameof(IsPlaceTool));
-        Hint = value switch { ToolKind.DrawWall => T("hint.draw.wall"), ToolKind.Riser => T("hint.riser"), ToolKind.DrawPipe => T("hint.draw.pipe"), ToolKind.Place => T("hint.place"), ToolKind.Align => T("hint.align"), _ => T("hint.select") }; if (value != ToolKind.Align) AlignCancel();
+        OnPropertyChanged(nameof(IsSelectTool)); OnPropertyChanged(nameof(IsDrawTool)); OnPropertyChanged(nameof(IsAlignTool)); OnPropertyChanged(nameof(IsRiserTool)); OnPropertyChanged(nameof(IsPipeTool)); OnPropertyChanged(nameof(IsPlaceTool)); OnPropertyChanged(nameof(IsDoorTool)); OnPropertyChanged(nameof(IsWindowTool)); OnPropertyChanged(nameof(IsSpaceTool)); OnPropertyChanged(nameof(IsMeasureTool)); OnPropertyChanged(nameof(IsNumberTool)); MeasurePoints.Clear(); NumberPending.Clear();
+        Hint = value switch { ToolKind.DrawWall => T("hint.draw.wall"), ToolKind.Riser => T("hint.riser"), ToolKind.DrawPipe => T("hint.draw.pipe"), ToolKind.Place => T("hint.place"), ToolKind.Align => T("hint.align"), ToolKind.Door => T("hint.door"), ToolKind.Window => T("hint.window"), ToolKind.Space => T("hint.space"), ToolKind.Measure => T("hint.measure"), ToolKind.NumberCellars => T("hint.number"), _ => T("hint.select") }; if (value != ToolKind.Align) AlignCancel();
         Changed?.Invoke();
     }
 
@@ -304,12 +418,19 @@ public partial class MainViewModel : ObservableObject
         SelectedWalls.IntersectWith(CurrentLevel?.Walls.Select(w => w.Id) ?? []);
         Levels.Clear();
         foreach (var l in Building.Levels.AsEnumerable().Reverse()) // top level first, like an elevator
-            Levels.Add(new LevelItem(l.Id, l.Name, $"{l.AltitudeMm / 1000.0:0.0} m", l.Id == CurrentLevel?.Id, l.Walls.Count));
+            Levels.Add(new LevelItem(l.Id, l.Name, $"{l.AltitudeMm / 1000.0:0.0} m", l.Id == CurrentLevel?.Id, l.Walls.Count, $"{l.Name} — {l.Kind} — altitude {l.AltitudeMm / 1000.0:0.00} m, hauteur {l.HeightMm / 1000.0:0.00} m"));
         Networks.Clear();
         foreach (var n in Building.Networks)
         { var c = NetworkQueries.ColorOf(n.Type); Networks.Add(new NetworkItem(n.Id, n.Name, n.Type.ToString(), n.Visible, n.Locked, $"#{c.R:X2}{c.G:X2}{c.B:X2}")); }
+        SpaceItems.Clear();
+        foreach (var lv in Building.Levels.AsEnumerable().Reverse())
+            foreach (var sp in lv.Spaces)
+            {
+                var c = new PointMm((int)sp.Outline.Average(p => p.X), (int)sp.Outline.Average(p => p.Y));
+                SpaceItems.Add(new SpaceItem(lv.Id, sp.Id, sp.Name, sp.Number ?? "", sp.Kind.ToString(), sp.Lot ?? "", $"{SpaceFinder.AreaMm2(sp.Outline) / 1e6:0.0} m²", sp.Stability == Stability.Common, c));
+            }
         var sel = CurrentLevel?.Walls.FirstOrDefault(w => SelectedWalls.Contains(w.Id));
-        if (sel != null) { PropLabel = sel.Label ?? ""; PropHeight = sel.HeightMm ?? 0; }
+        if (sel != null) { PropLabel = sel.Label ?? ""; PropHeight = sel.HeightMm ?? 0; PropThickness = WallGeometry.Axis(sel)?.ThicknessMm ?? 0; }
         OnPropertyChanged(nameof(CurrentLevel)); OnPropertyChanged(nameof(SelectionText));
         Changed?.Invoke();
     }

@@ -7,6 +7,7 @@ using ImmeubleCad.Core.Model;
 using ImmeubleCad.Core.Networks;
 using ImmeubleCad.Core.Catalog;
 using ImmeubleCad.Core.Tools;
+using ImmeubleCad.Core.Geometry;
 
 namespace ImmeubleCad.Desktop;
 
@@ -37,7 +38,7 @@ public class PlanView : Control
         return bmp;
     }
 
-    public PlanView() { Focusable = true; ClipToBounds = true; }
+    public PlanView() { Focusable = true; ClipToBounds = true; DataContextChanged += (_, _) => { if (Vm != null) Vm.FocusRequested += CenterOn; }; }
 
     private ToolKind? _chainKind;
     private bool IsChain => Vm is { IsDrawTool: true } or { IsPipeTool: true };
@@ -50,6 +51,7 @@ public class PlanView : Control
     }
     private readonly List<(Rect Rect, Guid LevelId, PointMm Center)> _arrows = new();
     private PointMm _hover;
+    private (Wall Wall, Opening Opening)? _openingDrag;
     private PipeHandleTool? _handleTool;
     private string _typed = "";
 
@@ -113,6 +115,11 @@ public class PlanView : Control
         if (props.IsRightButtonPressed) { DrawTool?.Cancel(); _gesture = Gesture.None; InvalidateVisual(); return; }
         if (vm.IsAlignTool) { var m = ToMm(p); vm.AlignClick(m.X, m.Y); InvalidateVisual(); return; }
         if (IsChain) { Invalidate(); DrawTool!.Down(TP(e)); e.Pointer.Capture(this); InvalidateVisual(); return; }
+        if (vm.IsDoorTool) { vm.PlaceOpening(ToMm(p), OpeningKind.Door); return; }
+        if (vm.IsWindowTool) { vm.PlaceOpening(ToMm(p), OpeningKind.Window); return; }
+        if (vm.IsSpaceTool) { vm.PlaceSpace(ToMm(p)); return; }
+        if (vm.IsNumberTool) { vm.NumberClick(ToMm(p)); return; }
+        if (vm.IsMeasureTool) { vm.MeasureClick(Snapper.Snap(ToMm(p), Polys()).Point); InvalidateVisual(); return; }
         if (vm.IsRiserTool) { vm.PlaceRiser(ToMm(p)); return; }
         if (vm.IsPlaceTool) { vm.PlaceFromPalette(ToMm(p)); return; }
         foreach (var (rect, lvl, c) in _arrows)
@@ -127,7 +134,8 @@ public class PlanView : Control
             _handleTool = new PipeHandleTool(vm.Actions, pipe.Network.Id, pipe.Segment.Id, PipeHandle.Body, vm.Snapper_GridMm()); _typed = ""; _handleTool.Down(HandlePointer(e)); e.Pointer.Capture(this); InvalidateVisual(); return;
         }
         vm.ClearSegment();
-        _start = _now = p; _startMm = ToMm(p); _delta = (0, 0); _addToSelection = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+        _start = _now = p;
+        if (vm.HitOpening(ToMm(p)) is { } oh) { _openingDrag = oh; e.Pointer.Capture(this); return; } _startMm = ToMm(p); _delta = (0, 0); _addToSelection = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
         var hit = HitWall(_startMm);
         if (hit != null && vm.SelectedWalls.Contains(hit.Id) && !_addToSelection) _gesture = Gesture.Move;       // drag the group
         else if (hit != null) { vm.SelectWalls([hit.Id], _addToSelection); _gesture = Gesture.Move; }            // select then drag
@@ -145,6 +153,8 @@ public class PlanView : Control
         if (_handleTool != null) { _handleTool.ForceElbow = e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Alt); _handleTool.Move(HandlePointer(e)); InvalidateVisual(); return; }
         if (IsChain) { DrawTool?.Move(TP(e)); InvalidateVisual(); return; }
         if (vm.IsPlaceTool || vm.IsRiserTool) { InvalidateVisual(); return; }
+        if (_openingDrag != null) { _now = p; InvalidateVisual(); return; }
+        if (vm.IsMeasureTool || vm.IsNumberTool) { InvalidateVisual(); }
         if (_gesture == Gesture.None) return;
         _now = p;
         if (_gesture == Gesture.Move)
@@ -169,7 +179,8 @@ public class PlanView : Control
         if (Vm is not { } vm) return;
         if (IsChain) { DrawTool?.Up(TP(e)); InvalidateVisual(); return; }
         if (_handleTool != null) { _handleTool.Up(HandlePointer(e)); if (_handleTool.State == ToolState.Committed) FinishHandle(vm); else if (_handleTool.State == ToolState.Placing && _handleTool.Handle == PipeHandle.Body) { _handleTool.Cancel(); _handleTool = null; vm.AfterEdit(); } /* a plain click on the body only selects */ InvalidateVisual(); return; }
-        if (vm.IsRiserTool || vm.IsPlaceTool || vm.IsAlignTool) return;
+        if (vm.IsRiserTool || vm.IsPlaceTool || vm.IsAlignTool || vm.IsDoorTool || vm.IsWindowTool || vm.IsSpaceTool || vm.IsNumberTool || vm.IsMeasureTool) return;
+        if (_openingDrag is { } od) { var to = ToMm(e.GetPosition(this)); _openingDrag = null; if (Math.Abs(_now.X - _start.X) + Math.Abs(_now.Y - _start.Y) > 3) vm.MoveOpeningTo(od.Wall, od.Opening, to); InvalidateVisual(); return; }
         if (_gesture == Gesture.Move && Math.Abs(_now.X - _start.X) + Math.Abs(_now.Y - _start.Y) > 3) vm.MoveSelection(_delta.X, _delta.Y);
         else if (_gesture == Gesture.Box)
         {
@@ -190,6 +201,8 @@ public class PlanView : Control
     protected override void OnKeyDown(KeyEventArgs e)
     {
         if (Vm is not { } vm) return;
+        if (vm.IsNumberTool && e.Key == Key.Enter) { vm.NumberCommit(); InvalidateVisual(); e.Handled = true; return; }
+        if (e.Key == Key.Escape && (vm.IsDoorTool || vm.IsWindowTool || vm.IsSpaceTool || vm.IsMeasureTool || vm.IsNumberTool || vm.IsPlaceTool || vm.IsRiserTool)) { vm.SetToolCommand.Execute("Select"); e.Handled = true; return; }
         if (vm.IsAlignTool)
         {
             if (e.Key == Key.Enter) vm.AlignApply(); else if (e.Key == Key.Back) vm.AlignUndoPair(); else if (e.Key == Key.Escape) { vm.AlignCancel(); vm.SetToolCommand.Execute("Select"); } else return;
@@ -226,6 +239,69 @@ public class PlanView : Control
     }
 
         public void CenterOn(PointMm c) => Offset = (Bounds.Width / 2 - c.X * Scale, Bounds.Height / 2 - c.Y * Scale);
+
+    private static FormattedText Txt(string t, double size, IBrush b) => new(t, System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, size, b);
+
+    private void DrawSpaces(DrawingContext ctx, Level l, bool dark)
+    {
+        foreach (var sp in l.Spaces)
+        {
+            if (Vm!.CommonOnly && sp.Stability == Stability.Private) continue;
+            var pending = Vm!.NumberPending.Contains(sp.Id);
+            var g = new StreamGeometry(); using (var c = g.Open()) { c.BeginFigure(ToScreen(sp.Outline[0]), true); foreach (var p in sp.Outline.Skip(1)) c.LineTo(ToScreen(p)); c.EndFigure(true); }
+            ctx.DrawGeometry(new SolidColorBrush(pending ? Color.FromArgb(90, 255, 160, 0) : sp.Stability == Stability.Common ? Color.FromArgb(34, 80, 160, 255) : Color.FromArgb(22, 120, 200, 120)), null, g);
+            var cx = (int)sp.Outline.Average(p => p.X); var cy = (int)sp.Outline.Average(p => p.Y); var cs = ToScreen(new PointMm(cx, cy));
+            var label = sp.Number != null ? $"{sp.Name}" : sp.Name; var ft = Txt(label, 12, dark ? Brushes.Gainsboro : Brushes.DimGray);
+            ctx.DrawText(ft, new Point(cs.X - ft.Width / 2, cs.Y - ft.Height / 2));
+        }
+    }
+
+    private void DrawOpenings(DrawingContext ctx, Level l, bool dark)
+    {
+        var bg = new SolidColorBrush(dark ? Color.FromRgb(30, 32, 36) : Color.FromRgb(250, 250, 248));
+        foreach (var w in l.Walls)
+        {
+            if (Vm!.CommonOnly && w.Stability == Stability.Private) continue;
+            if (WallGeometry.Axis(w) is not { } ax) continue;
+            double dx = ax.B.X - ax.A.X, dy = ax.B.Y - ax.A.Y; var len = Math.Sqrt(dx * dx + dy * dy); double ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
+            foreach (var o in w.Openings)
+            {
+                var c0 = ax.PointAt(o.PositionMm - o.WidthMm / 2.0); var c1 = ax.PointAt(o.PositionMm + o.WidthMm / 2.0); var h = ax.ThicknessMm / 2.0;
+                PointMm Q(PointMm c, double side) => new((int)(c.X + nx * h * side), (int)(c.Y + ny * h * side));
+                var cut = new StreamGeometry(); using (var cx = cut.Open()) { cx.BeginFigure(ToScreen(Q(c0, 1)), true); cx.LineTo(ToScreen(Q(c1, 1))); cx.LineTo(ToScreen(Q(c1, -1))); cx.LineTo(ToScreen(Q(c0, -1))); cx.EndFigure(true); }
+                ctx.DrawGeometry(bg, null, cut);                                                                                       // hole in the wall
+                var pen = new Pen(dark ? Brushes.Gainsboro : Brushes.Black, 1.2);
+                if (o.Kind == OpeningKind.Window) { foreach (var side in new[] { 1.0, 0.0, -1.0 }) ctx.DrawLine(pen, ToScreen(Q(c0, side)), ToScreen(Q(c1, side))); }
+                else if (o.Kind == OpeningKind.Door)
+                {   // leaf perpendicular to the wall at the hinge, arc swept by the free end
+                    var hinge = o.SwingLeft ? c0 : c1; var free = o.SwingLeft ? c1 : c0; var dir = o.SwingOut ? -1 : 1;
+                    var leafEnd = new PointMm((int)(hinge.X + nx * o.WidthMm * dir), (int)(hinge.Y + ny * o.WidthMm * dir));
+                    ctx.DrawLine(pen, ToScreen(hinge), ToScreen(leafEnd));
+                    var arc = new StreamGeometry(); using (var ac = arc.Open())
+                    {
+                        ac.BeginFigure(ToScreen(free), false);
+                        for (var k = 1; k <= 12; k++)
+                        {
+                            var a = Math.PI / 2 * k / 12; var vx = (free.X - hinge.X) * Math.Cos(a) + nx * dir * o.WidthMm * Math.Sin(a); var vy = (free.Y - hinge.Y) * Math.Cos(a) + ny * dir * o.WidthMm * Math.Sin(a);
+                            ac.LineTo(ToScreen(new PointMm((int)(hinge.X + vx), (int)(hinge.Y + vy))));
+                        }
+                        ac.EndFigure(false);
+                    }
+                    ctx.DrawGeometry(null, new Pen(dark ? Brushes.Gainsboro : Brushes.Black, 0.8, DashStyle.Dash), arc);
+                }
+                if (!string.IsNullOrEmpty(o.Label)) { var cm = ax.PointAt(o.PositionMm); var ft = Txt(o.Label, 10, Brushes.SteelBlue); var sp = ToScreen(cm); ctx.DrawText(ft, new Point(sp.X - ft.Width / 2, sp.Y - 18)); }
+            }
+        }
+    }
+
+    private void DrawMeasure(DrawingContext ctx)
+    {
+        if (Vm is not { IsMeasureTool: true } vm || vm.MeasurePoints.Count == 0) return;
+        var a = ToScreen(vm.MeasurePoints[0]); var b = vm.MeasurePoints.Count == 2 ? ToScreen(vm.MeasurePoints[1]) : ToScreen(_hover);
+        ctx.DrawLine(new Pen(Brushes.DeepPink, 2, DashStyle.Dash), a, b); ctx.DrawEllipse(Brushes.DeepPink, null, a, 4, 4); ctx.DrawEllipse(Brushes.DeepPink, null, b, 4, 4);
+        var end = vm.MeasurePoints.Count == 2 ? vm.MeasurePoints[1] : _hover; var d = Math.Sqrt(Math.Pow(end.X - vm.MeasurePoints[0].X, 2) + Math.Pow(end.Y - vm.MeasurePoints[0].Y, 2)) / 1000;
+        ctx.DrawText(Txt($"{d:0.00} m", 13, Brushes.DeepPink), new Point((a.X + b.X) / 2 + 8, (a.Y + b.Y) / 2 - 18));
+    }
 
     private void DrawHandles(DrawingContext ctx, Level l)
     {
@@ -312,8 +388,11 @@ public class PlanView : Control
         var wallFill = new SolidColorBrush(dark ? Color.FromRgb(190, 192, 198) : Color.FromRgb(70, 72, 78));
         var sel = new SolidColorBrush(Color.FromRgb(255, 140, 0));
         DrawWalls(ctx, l, wallFill, new Pen(new SolidColorBrush(dark ? Colors.Black : Colors.Black), 0.8), null, Vm.SelectedWalls, sel);
+        DrawSpaces(ctx, l, dark);
+        DrawOpenings(ctx, l, dark);
         DrawNetworks(ctx, l, dark);
         DrawHandles(ctx, l);
+        DrawMeasure(ctx);
         if (_gesture == Gesture.Move && (_delta.X != 0 || _delta.Y != 0))   // ghost of the move
             DrawWalls(ctx, l, new SolidColorBrush(Color.FromArgb(110, 255, 140, 0)), new Pen(Brushes.OrangeRed, 1.2, DashStyle.Dash), _delta, Vm.SelectedWalls, null, onlySelected: true);
         if (_gesture == Gesture.Box)

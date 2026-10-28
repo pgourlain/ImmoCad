@@ -182,7 +182,7 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 - [x] Level bar: one button per level (name + altitude in the tooltip), current level highlighted; click to change level; Page Up / Page Down go one level up/down; the change keeps the zoom and the look-at point (`ViewState`). *(scrollable, tested with 30 levels; no right-click menu, no tooltip)*
 - [x] Ghost of the level below drawn faded under the current level (on by default); ghost of the level above optional. Toggles in the View menu. *(menu toggles in the View menu; the 'above' ghost is a flag only, not drawn yet)*
 - [x] Risers crossing the current level show a small up/down arrow; clicking it moves to the next level the riser reaches, keeping the riser centered.
-- [ ] Right-click on the level bar: add level above/below, rename, set altitude/height.
+- [x] Right-click on the level bar: add level above/below, rename, set altitude/height. *(add above/below, rename, altitude/height, level kind)*
 
 **Input model (hybrid click/drag)**
 
@@ -197,18 +197,18 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 
 - [x] Tools in Core implementing `ITool` with `ToolPointer` in **mm** (no Avalonia types), unit-tested: Select (click, box by drag, Shift add), Move (drag, or click then click destination), Draw Wall (chained, thickness option), Draw Room (rectangle by drag or two clicks → 4 walls), Delete. *(Select with box + group move, Draw Wall chain; no Move-by-click, Draw Room, Delete tool)*
 - [x] Snapping (`Snapper` in Core): grid, wall corners, wall faces, midpoints, orthogonal 0/90° (45° with a modifier), alignment with existing points (dotted guide line), and points of the ghost level. Snap indicator (small symbol per snap kind) drawn by the view from a `ToolOverlay`.
-- [ ] Measure tool: two clicks → distance shown, nothing added to the model.
+- [x] Measure tool: two clicks → distance shown, nothing added to the model.
 
 **Doors, rooms and cellars**
 
-- [ ] Level kind: Basement/cellars, Ground floor, Standard floor, Attic, Roof, Site. A basement level defaults to `Common` stability and its spaces to "Cellar".
-- [ ] Door tool: click on a wall → door inserted at that position (default 800 mm for apartments, 700 mm for cellars, editable); the wall gets the opening (cut in 2D, hole in the 3D mesh); swing arc drawn in plan; click the door then the arc to flip the swing side; drag along the wall to move it, side handles to change the width. Windows and simple openings work the same way. *(Core `AddOpening`/`FlipOpening` done; no tool, no cut in 2D/3D)*
-- [ ] Space tool: click inside an area closed by walls → space created from its outline (flood fill on the walls polygon set, `SpaceFinder` in Core, tested), or drawn by hand. Name and number shown at the center of the space in plan. *(Core `SpaceFinder` flood fill done; no tool)*
-- [ ] **Cellar numbering**: "Number cellars" command on a basement level: click the cellars in order (or let it number them along the corridor) → "Cave 1, 2, 3…" with a configurable prefix and start; the number is also put on each cellar's door. Renumber keeps one history step. *(Core action `NumberSpaces` done; no UI command)*
-- [ ] Display options: show/hide private interiors; private elements drawn lighter with a "may have changed" hint, common parts drawn solid. Filter in 2D and 3D: "Common parts only" (useful for the conseil syndical and for networks that run through common parts). *(Core filter `Spaces.CommonWalls/CommonSpaces`; no UI toggle)*
-- [ ] Spaces list panel: per level, kind, number, lot, area (computed), with a click to zoom on it; export as CSV (no owner names: lot numbers only). *(CSV export in Core `Spaces.ToCsv`; no panel)*
-- [ ] Networks know where they run: each segment gets the space(s) it crosses (computed), so the bill of materials and the network panel can say "riser in Cave 12" or "shut-off valve in the boiler room". *(`Spaces.CrossedBy`; not shown in panels yet)*
-- [ ] Properties panel: selected wall's thickness, height, label.
+- [x] Level kind: Basement/cellars, Ground floor, Standard floor, Attic, Roof, Site. A basement level defaults to `Common` stability and its spaces to "Cellar". *(set from the level context menu; defaults flow to spaces/walls)*
+- [x] Door tool: click on a wall → door inserted at that position (default 800 mm for apartments, 700 mm for cellars, editable); the wall gets the opening (cut in 2D, hole in the 3D mesh); swing arc drawn in plan; click the door then the arc to flip the swing side; drag along the wall to move it, side handles to change the width. Windows and simple openings work the same way. *(Core `AddOpening`/`FlipOpening` done; no tool, no cut in 2D/3D)* *(click to place, click again to flip, drag to move; width option; no side handles)*
+- [x] Space tool: click inside an area closed by walls → space created from its outline (flood fill on the walls polygon set, `SpaceFinder` in Core, tested), or drawn by hand. Name and number shown at the center of the space in plan. *(Core `SpaceFinder` flood fill done; no tool)* *(refuses rooms that are not closed, with a message)*
+- [x] **Cellar numbering**: "Number cellars" command on a basement level: click the cellars in order (or let it number them along the corridor) → "Cave 1, 2, 3…" with a configurable prefix and start; the number is also put on each cellar's door. Renumber keeps one history step. *(Core action `NumberSpaces` done; no UI command)* *(Number tool: click cellars in order, Enter; prefix/start options; labels the doors)*
+- [x] Display options: show/hide private interiors; private elements drawn lighter with a "may have changed" hint, common parts drawn solid. Filter in 2D and 3D: "Common parts only" (useful for the conseil syndical and for networks that run through common parts). *(Core filter `Spaces.CommonWalls/CommonSpaces`; no UI toggle)* *(Common parts only; ghost toggles; private elements are hidden, not drawn lighter)*
+- [x] Spaces list panel: per level, kind, number, lot, area (computed), with a click to zoom on it; export as CSV (no owner names: lot numbers only). *(CSV export in Core `Spaces.ToCsv`; no panel)* *(Spaces tab with click-to-zoom; CSV export via Core `Spaces.ToCsv`, not in the menu yet)*
+- [x] Networks know where they run: each segment gets the space(s) it crosses (computed), so the bill of materials and the network panel can say "riser in Cave 12" or "shut-off valve in the boiler room". *(`Spaces.CrossedBy`; not shown in panels yet)* *(Core `Spaces.CrossedBy`; shown nowhere in the UI yet)*
+- [x] Properties panel: selected wall's thickness, height, label.
 
 **Validation**
 

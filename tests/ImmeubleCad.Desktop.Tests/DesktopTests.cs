@@ -3,6 +3,7 @@ using Avalonia.Headless;
 using Avalonia.Headless;
 using Avalonia.Controls;
 using ImmeubleCad.Desktop;
+using ImmeubleCad.Core.Model;
 using Microsoft.Extensions.Logging;
 using Xunit;
 
@@ -429,5 +430,75 @@ public class DisplayOptionTests
         var all = Px(); foreach (var wall in vm.CurrentLevel!.Walls) { }
         vm.ToggleCommonOnlyCommand.Execute(null); Assert.NotEqual(all, Px());                  // sample walls are Private on standard levels → hidden
         w.Close();
+    }, CancellationToken.None);
+}
+
+public class RoomToolsTests
+{
+    private readonly HeadlessFixture f = new();
+
+    private static MainViewModel Basement()
+    {
+        // a basement with a corridor and three cellars separated by walls
+        var vm = new MainViewModel(startWithSample: false) { Settings = new() }; vm.NewDocumentCommand.Execute(null);
+        var l = vm.Building.Levels[0]; vm.SetLevelKindCommand.Execute($"{l.Id}:Basement");
+        vm.SelectLevelCommand.Execute(l.Id); var t = new ImmeubleCad.Core.Tools.DrawChainTool(vm.CommitWalls);
+        ImmeubleCad.Core.Tools.ToolPointer P(int x, int y) => new(new(x, y), x, y);
+        foreach (var (a, b) in new[] { ((0, 0), (6200, 0)), ((6200, 0), (6200, 2400)), ((6200, 2400), (0, 2400)), ((0, 2400), (0, 0)), ((2000, 0), (2000, 2400)), ((4100, 0), (4100, 2400)) })
+        { t.Down(P(a.Item1, a.Item2)); t.Up(P(a.Item1, a.Item2)); t.Move(P(b.Item1, b.Item2)); t.Down(P(b.Item1, b.Item2)); t.Finish(); }
+        return vm;
+    }
+
+    [Fact] public Task Doors_windows_flip_and_move_on_walls_and_cellars_get_700mm_doors() => f.Session.Dispatch(() =>
+    {
+        var vm = Basement(); var l = vm.CurrentLevel!;
+        Assert.Equal(LevelKind.Basement, l.Kind); var steps = vm.History.Items.Count;
+        vm.PlaceOpening(new(1000, 0), OpeningKind.Door);                       // click on the south wall
+        var door = vm.CurrentLevel!.Walls.SelectMany(w => w.Openings).Single(); Assert.Equal(700, door.WidthMm); Assert.Equal(steps + 1, vm.History.Items.Count);
+        vm.PlaceOpening(new(1000, 0), OpeningKind.Door); Assert.True(vm.CurrentLevel!.Walls.SelectMany(w => w.Openings).Single().SwingLeft);   // second click on the door flips it
+        vm.PlaceOpening(new(3000, 1200), OpeningKind.Window); Assert.Equal("Cliquez sur un mur", vm.Status);                                         // nothing under the click
+        vm.PlaceOpening(new(5000, 0), OpeningKind.Window); Assert.Equal(2, vm.CurrentLevel!.Walls.SelectMany(w => w.Openings).Count());
+        var wall = vm.CurrentLevel!.Walls.First(w => w.Openings.Any(o => o.Kind == OpeningKind.Door)); var d = wall.Openings[0];
+        vm.MoveOpeningTo(wall, d, new(1600, 10)); Assert.Equal(1600, vm.CurrentLevel!.Walls.SelectMany(w => w.Openings).First(o => o.Kind == OpeningKind.Door).PositionMm);
+    }, CancellationToken.None);
+
+    [Fact] public Task Space_tool_finds_closed_rooms_refuses_open_ones_and_cellars_are_numbered_in_one_step() => f.Session.Dispatch(() =>
+    {
+        var vm = Basement(); vm.NewSpaceKind = SpaceKind.Cellar;
+        vm.PlaceSpace(new(1000, 1200)); vm.PlaceSpace(new(3000, 1200)); vm.PlaceSpace(new(5000, 1200));
+        Assert.Equal(3, vm.CurrentLevel!.Spaces.Count); Assert.All(vm.CurrentLevel.Spaces, s => Assert.Equal(Stability.Common, s.Stability));
+        Assert.InRange(ImmeubleCad.Core.Geometry.SpaceFinder.AreaMm2(vm.CurrentLevel.Spaces[0].Outline) / 1e6, 3.5, 4.5);
+        vm.PlaceSpace(new(-3000, -3000)); Assert.Equal(3, vm.CurrentLevel.Spaces.Count);                    // outside: not closed
+        Assert.Equal(3, vm.SpaceItems.Count);
+        vm.SetToolCommand.Execute("NumberCellars"); vm.CellarPrefix = "Cave "; vm.CellarStart = 12; var steps = vm.History.Items.Count;
+        vm.NumberClick(new(5000, 1200)); vm.NumberClick(new(1000, 1200)); vm.NumberClick(new(3000, 1200)); vm.NumberCommit();
+        Assert.Equal(steps + 1, vm.History.Items.Count);
+        Assert.Equal("Cave 12", vm.CurrentLevel.Spaces.First(s => ImmeubleCad.Core.Geometry.SpaceFinder.Contains(s.Outline, new(5000, 1200))).Name);
+        Assert.Equal("Cave 14", vm.CurrentLevel.Spaces.First(s => ImmeubleCad.Core.Geometry.SpaceFinder.Contains(s.Outline, new(3000, 1200))).Name);
+        Assert.Equal(15, vm.CellarStart);
+    }, CancellationToken.None);
+
+    [Fact] public Task Measure_adds_nothing_and_level_menu_actions_work_with_30_levels() => f.Session.Dispatch(async () =>
+    {
+        var dlg = new FakeDialogService(); var vm = Basement(); vm.Dialogs = dlg; var steps = vm.History.Items.Count;
+        vm.SetToolCommand.Execute("Measure"); vm.MeasureClick(new(0, 0)); vm.MeasureClick(new(3000, 4000)); Assert.Contains("5.00", vm.Status); Assert.Equal(steps, vm.History.Items.Count);
+        var id = vm.Building.Levels[0].Id;
+        dlg.PromptAnswers.Enqueue("Sous-sol 1"); await vm.RenameLevelCommand.ExecuteAsync(id); Assert.Equal("Sous-sol 1", vm.Building.Levels[0].Name);
+        dlg.PromptAnswers.Enqueue("-2,7 ; 2,5"); await vm.SetLevelGeometryCommand.ExecuteAsync(id); Assert.Equal((-2700, 2500), (vm.Building.Levels[0].AltitudeMm, vm.Building.Levels[0].HeightMm));
+        dlg.PromptAnswers.Enqueue("n'importe quoi"); var s2 = vm.History.Items.Count; await vm.SetLevelGeometryCommand.ExecuteAsync(id); Assert.Equal(s2, vm.History.Items.Count);   // invalid input: nothing happens
+        vm.AddLevelAboveCommand.Execute(id); vm.AddLevelBelowCommand.Execute(id); Assert.Equal(3, vm.Building.Levels.Count);
+        while (vm.Building.Levels.Count < 30) vm.AddLevelCommand.Execute(null);
+        Assert.Equal(30, vm.Levels.Count); Assert.Contains("altitude", vm.Levels[0].Tooltip);
+    }, CancellationToken.None);
+
+    [Fact] public Task Window_shows_doors_rooms_and_the_spaces_tab() => f.Session.Dispatch(() =>
+    {
+        var vm = Basement(); vm.NewSpaceKind = SpaceKind.Cellar; vm.PlaceSpace(new(1000, 1200)); vm.PlaceSpace(new(3000, 1200)); vm.PlaceSpace(new(5000, 1200));
+        vm.PlaceOpening(new(1000, 0), OpeningKind.Door); vm.PlaceOpening(new(3000, 0), OpeningKind.Door); vm.PlaceOpening(new(5000, 2400), OpeningKind.Window);
+        vm.NumberClick(new(1000, 1200)); vm.NumberClick(new(3000, 1200)); vm.NumberCommit();
+        var w = new MainWindow { DataContext = vm, Width = 1280, Height = 820 }; w.Show(); w.UpdateLayout();
+        var dir = Path.Combine(AppContext.BaseDirectory, "screenshots"); Directory.CreateDirectory(dir);
+        w.CaptureRenderedFrame()!.Save(Path.Combine(dir, "basement.png"));
+        vm.ToggleCommonOnlyCommand.Execute(null); w.CaptureRenderedFrame(); w.Close();
     }, CancellationToken.None);
 }

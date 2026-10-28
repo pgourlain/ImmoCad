@@ -397,6 +397,46 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
     public void FlipOpening(Guid levelId, Guid wallId, Guid openingId) =>
         Edit("Flip opening", BuildingEventKind.WallChanged, () => { var o = Find(levelId).Walls.First(w => w.Id == wallId).Openings.First(o => o.Id == openingId); o.SwingLeft = !o.SwingLeft; return openingId; }, i => i);
 
+    /// <summary>Changes the thickness of rectangular walls symmetrically about their centre line (other footprints are left unchanged).</summary>
+    public int SetWallThickness(Guid levelId, IEnumerable<Guid> wallIds, int thicknessMm)
+    {
+        var ids = wallIds.ToHashSet(); var changed = 0;
+        var l = Find(levelId);
+        if (!l.Walls.Any(w => ids.Contains(w.Id) && w.Footprint.Count == 4 && Geometry.WallGeometry.Axis(w) != null)) return 0;
+        Edit("Wall thickness", BuildingEventKind.WallChanged, () =>
+        {
+            foreach (var w in l.Walls.Where(w => ids.Contains(w.Id) && w.Footprint.Count == 4))
+                if (Geometry.WallGeometry.Axis(w) is { } ax) { w.Footprint = Geometry.WallGeometry.Rectangle(ax.A, ax.B, thicknessMm).ToList(); changed++; }
+            return levelId;
+        }, i => i);
+        return changed;
+    }
+
+    public void MoveOpening(Guid levelId, Guid wallId, Guid openingId, int positionMm, int? widthMm = null) =>
+        Edit("Move opening", BuildingEventKind.WallChanged, () =>
+        {
+            var o = Find(levelId).Walls.First(w => w.Id == wallId).Openings.First(o => o.Id == openingId); o.PositionMm = positionMm; if (widthMm is { } wd) o.WidthMm = wd; return openingId;
+        }, i => i);
+
+    public void DeleteOpening(Guid levelId, Guid wallId, Guid openingId) =>
+        Edit("Delete opening", BuildingEventKind.WallChanged, () => { Find(levelId).Walls.First(w => w.Id == wallId).Openings.RemoveAll(o => o.Id == openingId); return openingId; }, i => i);
+
+    public void SetLevelKind(Guid levelId, LevelKind kind) =>
+        Edit("Level kind", BuildingEventKind.LevelChanged, () => { Find(levelId).Kind = kind; return levelId; }, i => i);
+
+    public void SetSpaceProperties(Guid levelId, Guid spaceId, string name, SpaceKind kind, string? number, string? lot) =>
+        Edit("Space properties", BuildingEventKind.LevelChanged, () =>
+        {
+            var s = Find(levelId).Spaces.First(x => x.Id == spaceId); s.Name = name; s.Kind = kind; s.Number = number; s.Lot = lot; s.Stability = Spaces.DefaultFor(Find(levelId).Kind, kind); return spaceId;
+        }, i => i);
+
+    /// <summary>Adds a level directly above (or below) the given one, using its height. One history step.</summary>
+    public Level AddLevelNextTo(Guid levelId, bool above, string name)
+    {
+        var l = Find(levelId);
+        return AddLevel(name, above ? l.AltitudeMm + l.HeightMm : l.AltitudeMm - 2700, above ? l.HeightMm : 2700, above ? LevelKind.Standard : LevelKind.Basement);
+    }
+
     public void SetStability(Guid levelId, Guid spaceId, Stability stability) =>
         Edit("Set stability", BuildingEventKind.LevelChanged, () => { Find(levelId).Spaces.First(s => s.Id == spaceId).Stability = stability; return spaceId; }, i => i);
 

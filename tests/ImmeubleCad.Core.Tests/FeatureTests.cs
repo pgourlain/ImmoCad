@@ -658,3 +658,44 @@ public class TranslationTests
         Translations.Language = "fr"; Assert.Equal("Prêt", Translations.T("ready")); Assert.Equal("unknown.key", Translations.T("unknown.key"));
     }
 }
+
+public class WallToolsTests
+{
+    private static (Building, BuildingActions, BuildingHistory) New()
+    { var b = new Building(); var h = new BuildingHistory(); return (b, new BuildingActions(b, h, new BuildingEventsService()), h); }
+
+    [Fact] public void Axis_position_and_thickness_of_a_rectangular_wall()
+    {
+        var w = new Wall { Footprint = [new(0, 0), new(4000, 0), new(4000, 200), new(0, 200)] };
+        var ax = ImmeubleCad.Core.Geometry.WallGeometry.Axis(w)!.Value;
+        Assert.Equal(4000, ax.Length, 3); Assert.Equal(200, ax.ThicknessMm); Assert.Equal(new PointMm(0, 100), ax.A); Assert.Equal(new PointMm(4000, 100), ax.B);
+        Assert.Equal(1500, ImmeubleCad.Core.Geometry.WallGeometry.PositionAlong(w, new(1500, 130))!.Value, 3);
+        Assert.Null(ImmeubleCad.Core.Geometry.WallGeometry.PositionAlong(w, new(1500, 2000)));
+        Assert.Null(ImmeubleCad.Core.Geometry.WallGeometry.PositionAlong(w, new(-900, 100)));
+    }
+
+    [Fact] public void Thickness_change_is_symmetric_one_step_and_undoable_and_skips_non_rectangles()
+    {
+        var (b, a, h) = New(); var l = a.AddLevel("RDC", 0);
+        var w = a.AddWall(l.Id, [new(0, 0), new(4000, 0), new(4000, 200), new(0, 200)]); var tri = a.AddWall(l.Id, [new(0, 0), new(100, 0), new(0, 100)]);
+        var before = BuildingJson.Serialize(b); var steps = h.Items.Count;
+        Assert.Equal(1, a.SetWallThickness(l.Id, [w.Id, tri.Id], 300));
+        var fp = b.Levels[0].Walls[0].Footprint; Assert.Equal(-50, fp.Min(p => p.Y)); Assert.Equal(250, fp.Max(p => p.Y)); Assert.Equal(steps + 1, h.Items.Count);
+        h.Undo(b); Assert.Equal(before, BuildingJson.Serialize(b));
+        var now = h.Items.Count; Assert.Equal(0, a.SetWallThickness(l.Id, [tri.Id], 300)); Assert.Equal(now, h.Items.Count);    // nothing to do: no history entry
+    }
+
+    [Fact] public void Opening_move_delete_level_kind_space_props_and_neighbour_levels()
+    {
+        var (b, a, h) = New(); var l = a.AddLevel("RDC", 0); var w = a.AddWall(l.Id, [new(0, 0), new(4000, 0), new(4000, 200), new(0, 200)]);
+        var d = a.AddOpening(l.Id, w.Id, OpeningKind.Window, 1000); Assert.Equal(900, d.SillMm);
+        a.MoveOpening(l.Id, w.Id, d.Id, 2500, 1500); Assert.Equal(2500, b.Levels[0].Walls[0].Openings[0].PositionMm); Assert.Equal(1500, b.Levels[0].Walls[0].Openings[0].WidthMm);
+        a.DeleteOpening(l.Id, w.Id, d.Id); Assert.Empty(b.Levels[0].Walls[0].Openings); h.Undo(b); Assert.Single(b.Levels[0].Walls[0].Openings);
+        var up = a.AddLevelNextTo(l.Id, true, "R+1"); var down = a.AddLevelNextTo(l.Id, false, "Cave");
+        Assert.Equal(2700, up.AltitudeMm); Assert.Equal(-2700, down.AltitudeMm); Assert.Equal(LevelKind.Basement, down.Kind); Assert.Equal("Cave", b.Levels[0].Name);
+        a.SetLevelKind(l.Id, LevelKind.Attic); Assert.Equal(LevelKind.Attic, b.Levels.First(x => x.Name == "RDC").Kind);
+        var sp = a.AddSpace(l.Id, [new(0, 0), new(1000, 0), new(1000, 1000)], "x", SpaceKind.Room);
+        a.SetSpaceProperties(l.Id, sp.Id, "Cave 3", SpaceKind.Cellar, "3", "Lot 12"); var s = b.Levels.First(x => x.Name == "RDC").Spaces[0];
+        Assert.Equal(("Cave 3", "3", "Lot 12", Stability.Common), (s.Name, s.Number, s.Lot, s.Stability));
+    }
+}

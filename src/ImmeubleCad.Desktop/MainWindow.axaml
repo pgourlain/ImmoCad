@@ -13,6 +13,7 @@
       <Setter Property="Background" Value="Transparent" />
     </Style>
     <Style Selector="Button.level.current"><Setter Property="Background" Value="{DynamicResource SystemAccentColor}" /><Setter Property="Foreground" Value="White" /></Style>
+    <Style Selector="TabItem"><Setter Property="FontSize" Value="12" /><Setter Property="Padding" Value="8,4" /><Setter Property="MinHeight" Value="26" /></Style>
     <Style Selector="Border.bar"><Setter Property="Background" Value="{DynamicResource SystemChromeLowColor}" /></Style>
     <Style Selector="TextBlock.caption"><Setter Property="Opacity" Value="0.65" /><Setter Property="FontSize" Value="11" /></Style>
   </Window.Styles>
@@ -53,6 +54,11 @@
         <ToggleButton Classes="tool" Content="▭" ToolTip.Tip="Dessiner un mur" IsChecked="{Binding IsDrawTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="DrawWall" />
         <ToggleButton Classes="tool" Content="◎" ToolTip.Tip="Colonne (vue de dessus)" IsChecked="{Binding IsRiserTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Riser" />
         <ToggleButton Classes="tool" Content="╋" ToolTip.Tip="Tuyau" IsChecked="{Binding IsPipeTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="DrawPipe" />
+        <ToggleButton Classes="tool" Content="⌷" ToolTip.Tip="Porte" IsChecked="{Binding IsDoorTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Door" />
+        <ToggleButton Classes="tool" Content="⊟" ToolTip.Tip="Fenêtre" IsChecked="{Binding IsWindowTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Window" />
+        <ToggleButton Classes="tool" Content="▢" ToolTip.Tip="Pièce (clic dans un espace fermé)" IsChecked="{Binding IsSpaceTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Space" />
+        <ToggleButton Classes="tool" Content="№" ToolTip.Tip="Numéroter les caves" IsChecked="{Binding IsNumberTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="NumberCellars" />
+        <ToggleButton Classes="tool" Content="⟷" ToolTip.Tip="Mesurer" IsChecked="{Binding IsMeasureTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Measure" />
         <ToggleButton Classes="tool" Content="⌖" ToolTip.Tip="Aligner sur le niveau du dessous (par points)" IsChecked="{Binding IsAlignTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Align" />
         <Separator Margin="0,6" />
         <Button Classes="tool" Content="⤒" ToolTip.Tip="Déplacer la sélection à l'étage au-dessus (Ctrl+PgUp)" Command="{Binding MoveSelectionUpCommand}" />
@@ -64,7 +70,7 @@
 
     <!-- side panels -->
     <Border DockPanel.Dock="Left" Classes="bar" Width="270" Padding="8" BorderBrush="{DynamicResource SystemBaseLowColor}" BorderThickness="1,0,0,0">
-      <TabControl FontSize="13">
+      <TabControl>
         <TabItem Header="Palette">
           <DockPanel>
             <TextBox DockPanel.Dock="Top" Watermark="Rechercher…" Text="{Binding Search}" Margin="0,4,0,6" />
@@ -133,11 +139,35 @@
             </ItemsControl>
           </ScrollViewer>
         </TabItem>
+        <TabItem Header="Espaces">
+          <DockPanel>
+            <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,6">
+              <TextBlock Text="NUMÉROTATION DES CAVES" Classes="caption" />
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6"><TextBox Text="{Binding CellarPrefix}" /><NumericUpDown Grid.Column="1" Value="{Binding CellarStart}" Minimum="0" Width="100" /></Grid>
+              <ComboBox ItemsSource="{Binding SpaceKinds}" SelectedItem="{Binding NewSpaceKind}" HorizontalAlignment="Stretch" />
+            </StackPanel>
+            <ScrollViewer>
+              <ItemsControl ItemsSource="{Binding SpaceItems}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:SpaceItem">
+                    <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="8,4" Margin="0,0,0,2" Background="Transparent"
+                            Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).FocusSpaceCommand}" CommandParameter="{Binding Id}">
+                      <Grid ColumnDefinitions="*,Auto"><StackPanel><TextBlock Text="{Binding Name}" FontWeight="SemiBold" /><TextBlock Text="{Binding Kind}" Classes="caption" /></StackPanel>
+                        <TextBlock Grid.Column="1" Text="{Binding Area}" VerticalAlignment="Center" Classes="caption" /></Grid>
+                    </Button>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </DockPanel>
+        </TabItem>
         <TabItem Header="Propriétés">
           <StackPanel Spacing="6" Margin="0,6">
             <TextBlock Text="{Binding SelectionText}" FontWeight="SemiBold" />
             <TextBox Watermark="Libellé" Text="{Binding PropLabel}" />
             <NumericUpDown Value="{Binding PropHeight}" Minimum="0" Maximum="10000" Increment="50" FormatString="Hauteur 0 &quot;mm&quot; (0 = niveau)" />
+            <NumericUpDown Value="{Binding PropThickness}" Minimum="0" Maximum="1000" Increment="10" FormatString="Épaisseur 0 &quot;mm&quot;" />
+            <Button Content="Appliquer l'épaisseur" Command="{Binding ApplyThicknessCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
             <Button Content="Appliquer" Command="{Binding ApplyPropertiesCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
           </StackPanel>
         </TabItem>
@@ -153,8 +183,19 @@
           <ItemsControl ItemsSource="{Binding Levels}">
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:LevelItem">
-                <Button Classes="level" Classes.current="{Binding IsCurrent}"
+                <Button Classes="level" Classes.current="{Binding IsCurrent}" ToolTip.Tip="{Binding Tooltip}"
                         Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).SelectLevelCommand}" CommandParameter="{Binding Id}">
+                  <Button.ContextMenu>
+                    <ContextMenu>
+                      <MenuItem Header="Ajouter un niveau au-dessus" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).AddLevelAboveCommand}" CommandParameter="{Binding Id}" />
+                      <MenuItem Header="Ajouter un niveau en dessous" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).AddLevelBelowCommand}" CommandParameter="{Binding Id}" />
+                      <MenuItem Header="Renommer…" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).RenameLevelCommand}" CommandParameter="{Binding Id}" />
+                      <MenuItem Header="Altitude et hauteur…" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).SetLevelGeometryCommand}" CommandParameter="{Binding Id}" />
+                      <MenuItem Header="Type : sous-sol / caves" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).SetLevelKindCommand}" CommandParameter="{Binding BasementSpec}" />
+                      <MenuItem Header="Type : rez-de-chaussée" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).SetLevelKindCommand}" CommandParameter="{Binding GroundSpec}" />
+                      <MenuItem Header="Type : étage courant" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).SetLevelKindCommand}" CommandParameter="{Binding StandardSpec}" />
+                    </ContextMenu>
+                  </Button.ContextMenu>
                   <Grid ColumnDefinitions="*,Auto">
                     <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
                     <TextBlock Grid.Column="1" Text="{Binding Altitude}" FontSize="10" Opacity="0.7" VerticalAlignment="Center" Margin="8,0,0,0" />

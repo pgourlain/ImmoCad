@@ -16,6 +16,8 @@ public interface IDialogService
     Task<SaveChoice> ConfirmSaveAsync(string documentName);
     Task ShowErrorAsync(string title, string message);
     Task<ImportWizardViewModel?> RunImportWizardAsync(byte[] image);
+    /// <summary>Single text input; null when cancelled.</summary>
+    Task<string?> PromptAsync(string title, string label, string initial);
 }
 
 /// <summary>Scripted answers for tests; records what was asked.</summary>
@@ -28,6 +30,8 @@ public sealed class FakeDialogService : IDialogService
     public Task<string?> PickSaveAsync(string title, string pattern, string? suggestedName = null) { Asked.Add("save:" + title); return Task.FromResult(SaveAnswers.Count > 0 ? SaveAnswers.Dequeue() : null); }
     public Task<SaveChoice> ConfirmSaveAsync(string documentName) { Asked.Add("confirm:" + documentName); return Task.FromResult(SaveChoices.Count > 0 ? SaveChoices.Dequeue() : SaveChoice.Cancel); }
     public Task ShowErrorAsync(string title, string message) { Errors.Add($"{title}: {message}"); return Task.CompletedTask; }
+    public Queue<string?> PromptAnswers { get; } = new();
+    public Task<string?> PromptAsync(string title, string label, string initial) { Asked.Add("prompt:" + title); return Task.FromResult(PromptAnswers.Count > 0 ? PromptAnswers.Dequeue() : null); }
     public Task<ImportWizardViewModel?> RunImportWizardAsync(byte[] image) => Task.FromResult(Wizard?.Invoke(image));
 }
 
@@ -59,6 +63,17 @@ public sealed class AvaloniaDialogService(Window owner) : IDialogService
         var ok = new Button { Content = "OK", HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right }; ok.Click += (_, _) => w.Close();
         w.Content = new StackPanel { Margin = new(20), Spacing = 16, Children = { new TextBlock { Text = message, TextWrapping = Avalonia.Media.TextWrapping.Wrap }, ok } };
         await w.ShowDialog(owner);
+    }
+
+    public async Task<string?> PromptAsync(string title, string label, string initial)
+    {
+        string? result = null;
+        var w = new Window { Title = title, Width = 380, SizeToContent = SizeToContent.Height, WindowStartupLocation = WindowStartupLocation.CenterOwner, CanResize = false };
+        var box = new TextBox { Text = initial }; var ok = new Button { Content = "OK", IsDefault = true }; var cancel = new Button { Content = ImmeubleCad.Core.Translations.T("dialog.cancel"), IsCancel = true };
+        ok.Click += (_, _) => { result = box.Text; w.Close(); }; cancel.Click += (_, _) => w.Close();
+        w.Content = new StackPanel { Margin = new(20), Spacing = 10, Children = { new TextBlock { Text = label }, box, new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right, Children = { cancel, ok } } } };
+        w.Opened += (_, _) => { box.Focus(); box.SelectAll(); };
+        await w.ShowDialog(owner); return result;
     }
 
     public async Task<ImportWizardViewModel?> RunImportWizardAsync(byte[] image)
