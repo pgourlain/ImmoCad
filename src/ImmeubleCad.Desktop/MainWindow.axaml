@@ -23,6 +23,9 @@
         </DataTemplate>
       </ItemsControl.ItemTemplate>
     </ItemsControl>
-    <vm:PlanView x:Name="Plan" Level="{Binding CurrentLevel}" />
+    <Grid>
+      <vm:PlanView x:Name="Plan" Level="{Binding CurrentLevel}" IsVisible="{Binding !Is3D}" />
+      <vm:Viewport3D x:Name="View3D" Building="{Binding Building}" CurrentLevel="{Binding CurrentLevel}" IsVisible="{Binding Is3D}" />
+    </Grid>
   </DockPanel>
 </Window>

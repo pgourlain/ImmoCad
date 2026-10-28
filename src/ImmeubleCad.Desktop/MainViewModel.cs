@@ -17,6 +17,8 @@ public partial class MainViewModel : ObservableObject
 
     [ObservableProperty] private Level? _currentLevel;
     [ObservableProperty] private ViewMode _mode = ViewMode.Plan;
+    public bool Is3D => Mode != ViewMode.Plan;
+    partial void OnModeChanged(ViewMode value) => OnPropertyChanged(nameof(Is3D));
     [ObservableProperty] private string _status = "Ready";
 
     public MainViewModel()
@@ -27,7 +29,7 @@ public partial class MainViewModel : ObservableObject
         Actions.AddWall(rdc.Id, [new(0, 0), new(200, 0), new(200, 4000), new(0, 4000)]);
         Actions.AddLevel("R+1", 2700);
         History.MarkClean();
-        Refresh(); CurrentLevel = Levels.FirstOrDefault();
+        Refresh(); CurrentLevel = Building.Levels.FirstOrDefault();
     }
 
     private void Refresh() { Levels.Clear(); foreach (var l in Building.Levels.AsEnumerable().Reverse()) Levels.Add(l); }

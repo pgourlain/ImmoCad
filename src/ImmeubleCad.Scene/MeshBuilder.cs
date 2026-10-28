@@ -81,3 +81,19 @@ public static class MeshBuilder
         return best;
     }
 }
+
+public static class WireEdges
+{
+    /// <summary>Unique triangle edges of a mesh as index pairs (for wireframe).</summary>
+    public static List<(int A, int B)> Of(Mesh m)
+    {
+        var set = new HashSet<(int, int)>();
+        for (var i = 0; i + 2 < m.Indices.Count; i += 3)
+            for (var k = 0; k < 3; k++)
+            {
+                int a = m.Indices[i + k], b = m.Indices[i + (k + 1) % 3];
+                set.Add(a < b ? (a, b) : (b, a));
+            }
+        return set.ToList();
+    }
+}

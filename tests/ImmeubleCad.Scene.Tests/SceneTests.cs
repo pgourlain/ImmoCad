@@ -28,3 +28,23 @@ public class SceneTests
         Assert.Equal(2.71f, m.Positions.Where((_, i) => i % 3 == 2).Max(), 3);
     }
 }
+
+public class CameraTests
+{
+    [Fact] public void Target_projects_to_center_and_orbit_is_clamped()
+    {
+        var c = new OrbitCamera { Target = (1, 2, 3) };
+        var (x, y, _) = c.Project(1, 2, 3);
+        Assert.Equal(0, x, 9); Assert.Equal(0, y, 9);
+        c.Orbit(0, 100); Assert.True(c.Pitch < Math.PI / 2);
+    }
+
+    [Fact] public void Higher_point_projects_higher()
+    {
+        var c = new OrbitCamera { Target = (0, 0, 0), Pitch = 0.3 };
+        Assert.True(c.Project(0, 0, 2).Y > c.Project(0, 0, 0).Y);
+    }
+
+    [Fact] public void Wire_edges_of_box_are_18_unique()
+        => Assert.Equal(18, WireEdges.Of(MeshBuilder.Box(0, 0, 0, 1, 1, 1)).Count);
+}

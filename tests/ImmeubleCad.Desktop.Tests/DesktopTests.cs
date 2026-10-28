@@ -37,6 +37,17 @@ public class DesktopTests
         w.Close();
     }, CancellationToken.None);
 
+    [Fact] public Task Switch_to_3d_renders_and_back() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(); var w = new MainWindow { DataContext = vm }; w.Show();
+        vm.SetModeCommand.Execute("Solid");
+        Assert.True(vm.Is3D);
+        var dir = Path.Combine(AppContext.BaseDirectory, "screenshots"); Directory.CreateDirectory(dir);
+        w.CaptureRenderedFrame()!.Save(Path.Combine(dir, "3d.png"));
+        vm.SetModeCommand.Execute("Plan"); Assert.False(vm.Is3D);
+        w.Close();
+    }, CancellationToken.None);
+
     [Fact] public Task Undo_redo_levels() => f.Session.Dispatch(() =>
     {
         var vm = new MainViewModel();
