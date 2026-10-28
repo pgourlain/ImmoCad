@@ -116,3 +116,51 @@ public class FeatureTests
         Assert.Equal(["Mode", "Scale", "Selection"], seen);
     }
 }
+
+public class GeometryTests
+{
+    private static readonly ((double, double), (double, double))[] Dummy = [];
+
+    [Fact] public void ImageFit_recovers_affine_exactly()
+    {
+        var t = new ImmeubleCad.Core.Geometry.Affine(1.03, 0.01, 50, -0.01, 1.0, -20);
+        var src = new (double, double)[] { (0, 0), (1000, 0), (0, 800), (1000, 800) };
+        var pairs = src.Select(p => (p, t.Apply(p.Item1, p.Item2))).ToList();
+        var fit = ImmeubleCad.Core.Geometry.ImageFit.Fit(pairs.Select(p => ((p.p.Item1, p.p.Item2), p.Item2)).ToList())!.Value;
+        Assert.All(ImmeubleCad.Core.Geometry.ImageFit.Residuals(fit, pairs.Select(p => ((p.p.Item1, p.p.Item2), p.Item2)).ToList()), r => Assert.True(r < 1e-6));
+        Assert.Equal(1.03, fit.A, 6);
+    }
+
+    [Fact] public void ImageFit_two_pairs_is_similarity_and_collinear_is_degenerate()
+    {
+        var two = new[] { ((0.0, 0.0), (10.0, 10.0)), ((100.0, 0.0), (10.0, 210.0)) };
+        var f = ImmeubleCad.Core.Geometry.ImageFit.Fit(two)!.Value;
+        var (x, y) = f.Apply(50, 0);
+        Assert.Equal(10, x, 6); Assert.Equal(110, y, 6);
+        var col = new[] { ((0.0, 0.0), (0.0, 0.0)), ((1.0, 1.0), (2.0, 2.0)), ((2.0, 2.0), (4.0, 4.0)) };
+        Assert.Null(ImmeubleCad.Core.Geometry.ImageFit.Fit(col));
+    }
+
+    [Fact] public void SpaceFinder_finds_closed_room_and_rejects_open()
+    {
+        static Wall W(int x0, int y0, int x1, int y1) => new() { Footprint = [new(x0, y0), new(x1, y0), new(x1, y1), new(x0, y1)] };
+        var l = new Level { Walls = [W(0, 0, 3000, 200), W(0, 2800, 3000, 3000), W(0, 0, 200, 3000), W(2800, 0, 3000, 3000)] };
+        var o = ImmeubleCad.Core.Geometry.SpaceFinder.Find(l, new(1500, 1500))!;
+        Assert.Equal(2600L * 2600, ImmeubleCad.Core.Geometry.SpaceFinder.AreaMm2(o));
+        l.Walls.RemoveAt(3);
+        Assert.Null(ImmeubleCad.Core.Geometry.SpaceFinder.Find(l, new(1500, 1500)));
+    }
+
+    [Fact] public void Valve_only_drops_on_pipe()
+    {
+        var b = new Building(); var a = new BuildingActions(b, new BuildingHistory(), new BuildingEventsService());
+        var n = a.AddNetwork("N", NetworkType.ColdWater); a.AddPipeRun(n.Id, [new(0, 0, 0), new(1000, 0, 0)]);
+        var valve = ImmeubleCad.Core.Catalog.EquipmentCatalog.Find("shutoff-valve")!;
+        Assert.True(ImmeubleCad.Core.Catalog.PlacementRules.Check(valve, new(500, 50, 0), n).Valid);
+        Assert.False(ImmeubleCad.Core.Catalog.PlacementRules.Check(valve, new(500, 900, 0), n).Valid);
+        Assert.True(ImmeubleCad.Core.Catalog.PlacementRules.Check(ImmeubleCad.Core.Catalog.EquipmentCatalog.Find("radiator")!, new(0, 0, 0), null).Valid);
+    }
+
+    [Fact] public void Catalog_entries_valid() =>
+        Assert.All(ImmeubleCad.Core.Catalog.EquipmentCatalog.Default, e => { Assert.True(e.WidthMm > 0 && e.HeightMm > 0); Assert.NotEmpty(e.Name); });
+}
