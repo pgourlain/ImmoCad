@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=ImmeubleCad
+Exec=ImmeubleCad %f
+Categories=Graphics;Engineering;
+MimeType=application/x-immeuble;

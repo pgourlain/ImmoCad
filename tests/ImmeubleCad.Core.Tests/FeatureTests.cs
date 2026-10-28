@@ -275,3 +275,32 @@ public class SiteTests
         Assert.Equal((10000, 5000), a.FromLambert(e, n));
     }
 }
+
+public class SettingsTests
+{
+    [Fact] public void Settings_round_trip_recent_and_corrupt_file_is_ignored()
+    {
+        var p = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + "/settings.json");
+        var s = new AppSettings(); for (var i = 0; i < 12; i++) s.AddRecent("f" + i); s.AddRecent("f5");
+        s.RiserTemplates.Add(new("ECS+EF", 150, [NetworkType.DomesticHotWater, NetworkType.ColdWater]));
+        SettingsStore.Save(s, p);
+        var r = SettingsStore.Load(p);
+        Assert.Equal(10, r.RecentFiles.Count); Assert.Equal("f5", r.RecentFiles[0]); Assert.Equal(150, r.RiserTemplates[0].SpacingMm);
+        File.WriteAllText(p, "{ not json"); Assert.Equal("fr", SettingsStore.Load(p).Language);
+    }
+
+    [Fact] public void Autosave_offers_recovery_only_after_a_crash()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "as" + Guid.NewGuid().ToString("N")); var svc = new AutosaveService(dir);
+        var b = new Building { Name = "x" };
+        svc.MarkStarted(); svc.Save(b); Assert.True(svc.HasRecovery); Assert.Equal("x", svc.Recover()!.Name);
+        svc.MarkCleanExit(); Assert.False(svc.HasRecovery);
+    }
+
+    [Fact] public void Sample_building_is_complete_and_clean()
+    {
+        var (b, h) = SampleBuilding.Create();
+        Assert.Equal(3, b.Levels.Count); Assert.Equal(2, b.Networks.Count); Assert.Single(b.Equipment); Assert.False(h.IsDirty);
+        Assert.Empty(FittingResolver.Validate(b.Networks[0]).Where(w => w.Contains("axis")));
+    }
+}
