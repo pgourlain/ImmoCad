@@ -22,6 +22,7 @@ case "$RID" in
     fi
     cp -R "$OUT/publish/." "$APP/Contents/MacOS/"
     sed "s/@VERSION@/$VERSION/g" "$ROOT/packaging/Info.plist" > "$APP/Contents/Info.plist"
+    (cd "$OUT" && ditto -c -k --keepParent ImmoCad.app "ImmoCad-$VERSION-$RID-app.zip")
     hdiutil create -quiet -volname ImmoCad -srcfolder "$APP" -ov -format UDZO "$OUT/ImmoCad-$VERSION-$RID.dmg" ;;
 esac
 echo "Packaged $OUT"
