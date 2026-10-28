@@ -176,6 +176,11 @@
             <NumericUpDown Value="{Binding PropThickness}" Minimum="0" Maximum="1000" Increment="10" FormatString="Épaisseur 0 &quot;mm&quot;" />
             <Button Content="Appliquer l'épaisseur" Command="{Binding ApplyThicknessCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
             <Separator />
+            <TextBlock Text="ÉTENDUE DE LA COLONNE" Classes="caption" />
+            <TextBlock Text="{Binding ExtentInfo}" Classes="caption" />
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="6"><ComboBox ItemsSource="{Binding LevelNames}" SelectedIndex="{Binding ExtentFrom}" HorizontalAlignment="Stretch" /><ComboBox Grid.Column="1" ItemsSource="{Binding LevelNames}" SelectedIndex="{Binding ExtentTo}" HorizontalAlignment="Stretch" /></Grid>
+            <Button Content="Appliquer l'étendue" Command="{Binding ApplyExtentCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+            <Separator />
             <TextBlock Text="ÉQUIPEMENT" Classes="caption" />
             <TextBlock Text="{Binding EqInfo}" TextWrapping="Wrap" Classes="caption" />
             <TextBox Watermark="Libellé (ex. Radiateur séjour)" Text="{Binding EqLabel}" />

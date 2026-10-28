@@ -260,17 +260,17 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 
 - [x] Palette panel (left, collapsible) with categories: **Structure** (wall, partition, door, window, slab, stairs, service shaft), **Networks** (pipe, riser, riser templates), **Valves & fittings** (shut-off valve, thermostatic valve, balancing valve, air vent, check valve, pressure reducer, meter), **Equipment** (radiator, boiler, hot-water tank, manifold, circulator pump), **Sanitary** (washbasin, sink, WC, shower, bathtub). Search box, "Recent" section at the top, large icons with labels (beginner friendly). *(search + categories as list; not collapsible, no Recent section shown, no large icons)*
 - [x] Two kinds of entries: **drawing tools** (wall, partition, pipe, riser: clicking the entry activates the tool) and **objects to drop** (everything else: drag onto the view, or click the entry then click in the view, using the hybrid input). *(click entry then click in view; no drag-and-drop)*
-- [ ] Object catalog as JSON in resources (`catalog/*.json`, source-generated deserialization): id, category, name (translated), parameters with defaults (width, height, diameter…), **2D symbol** (simple vector path, standard plumbing/heating symbols), **3D shape** (combination of boxes and cylinders built by `ImmeubleCad.Scene`), typed **ports** (network type + diameter + position/direction). Catalog test: every entry loads, has a symbol, a shape and valid ports.
+- [x] Object catalog as JSON in resources (`catalog/*.json`, source-generated deserialization): id, category, name (translated), parameters with defaults (width, height, diameter…), **2D symbol** (simple vector path, standard plumbing/heating symbols), **3D shape** (combination of boxes and cylinders built by `ImmeubleCad.Scene`), typed **ports** (network type + diameter + position/direction). Catalog test: every entry loads, has a symbol, a shape and valid ports. *(17 entries in `catalog/*.json`; names fr/en; parameters, 2D symbol paths, 3D boxes/cylinders, typed ports; test loads every entry)*
 - [x] Drop rules (`PlacementRules` in Core, unit-tested): doors/windows snap into walls; radiators and sanitary objects snap against a wall face at a default height (radiator 150 mm above floor), oriented along the wall; **inline components (valves, meters, pumps) only drop onto a pipe**: they snap to it, split the segment, align with its axis and take its diameter. In the network graph an inline component is a **node with a `Component`**; it is counted in the bill of materials. *(valves/meters snap onto pipes and split them; radiators snap to wall faces, default height from the catalog)*
 - [x] Preview while dragging: ghost of the object, green when the placement is valid, red with a hint when not ("A valve must be placed on a pipe"). *(ghost follows the cursor; green/red + hint)*
-- [ ] User objects (later): duplicate a catalog entry, change its parameters, save it in the user's catalog folder.
+- [x] User objects (later): duplicate a catalog entry, change its parameters, save it in the user's catalog folder. *(Core: duplicate, change parameters, save/load in a folder; no UI to create them yet)*
 
 **Equipment**
 
 - [x] Equipment model: instance of a catalog entry with its parameter values, position, level, orientation, host (wall face, pipe) and ports.
 - [x] **Riser (colonne)** is not a separate type: it is a set of vertical segments of one network. The Riser tool creates it (see Phase 8a).
-- [ ] Connect: drag from a radiator port to a riser or a pipe → creates the connection segments with orthogonal routing (down to a chosen height, along the wall, to the riser). One history step. *(Core `ConnectOrthogonal`; no drag UI)*
-- [ ] Properties panel: equipment dimensions, ports, level, label (e.g. "Radiateur séjour").
+- [x] Connect: drag from a radiator port to a riser or a pipe → creates the connection segments with orthogonal routing (down to a chosen height, along the wall, to the riser). One history step. *(Core `ConnectOrthogonal`; no drag UI)*
+- [x] Properties panel: equipment dimensions, ports, level, label (e.g. "Radiateur séjour").
 
 **Validation**
 
@@ -292,7 +292,7 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 
 **8c — Extent over several levels**
 
-- [ ] Every vertical run has an editable extent "from level X to level Y" (Properties panel) and top/bottom handles in elevation and 3D views that snap to level altitudes; slab crossings are added automatically. *(Core `SetRiserExtent`; no Properties/handle UI yet)*
+- [x] Every vertical run has an editable extent "from level X to level Y" (Properties panel) and top/bottom handles in elevation and 3D views that snap to level altitudes; slab crossings are added automatically. *(Core `SetRiserExtent`; no Properties/handle UI yet)* *(Properties: from/to level; elevation view: top/bottom handles snap to level lines; no 3D handles)*
 
 **8d — Direct manipulation with handles**
 

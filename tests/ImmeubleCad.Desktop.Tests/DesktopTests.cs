@@ -693,3 +693,27 @@ public class EquipmentUiTests
         Assert.Equal(tank + 2, vm.Building.Equipment.Count); Assert.Contains(ImmeubleCad.Core.SceneMapper.Map(vm.Building).Boxes, b => b.Radius > 0);   // the tank is a cylinder
     }, CancellationToken.None);
 }
+
+public class ExtentUiTests
+{
+    private readonly HeadlessFixture f = new();
+
+    [Fact] public Task Select_a_riser_in_elevation_drag_its_top_handle_to_a_level_and_edit_the_extent_in_properties() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(); var w = new MainWindow { DataContext = vm, Width = 1280, Height = 820 }; w.Show(); w.UpdateLayout();
+        vm.SelectWalls([vm.CurrentLevel!.Walls[0].Id], false); vm.ShowElevationCommand.Execute(null); w.UpdateLayout(); w.CaptureRenderedFrame();
+        var elev = w.FindControl<ElevationView>("Elev")!; var plane = vm.Plane!;
+        var net = vm.Building.Networks[0]; var seg = net.Segments[0]; var node = net.Nodes.OrderBy(n => n.Position.Z).Last();
+        vm.SelectSegment(net.Id, seg.Id); Assert.Contains("→", vm.ExtentInfo); Assert.Equal(["RDC", "R+1", "R+2"], vm.LevelNames); Assert.Equal(0, vm.ExtentFrom); Assert.Equal(2, vm.ExtentTo);
+        // properties: from R+1 to R+2 only
+        var steps = vm.History.Items.Count; vm.ExtentFrom = 1; vm.ExtentTo = 2; vm.ApplyExtentCommand.Execute(null);
+        Assert.Equal(steps + 1, vm.History.Items.Count); Assert.Equal(2700, vm.Building.Networks[0].Nodes.Min(n => n.Position.Z)); Assert.Equal(8100, vm.Building.Networks[0].Nodes.Max(n => n.Position.Z));
+        // handle drag (through the view's release path): the top end goes to the level line nearest the drop
+        var topNode = vm.Building.Networks[0].Nodes.OrderBy(n => n.Position.Z).Last(); steps = vm.History.Items.Count;
+        Assert.True(vm.DragVerticalEnd(vm.Building.Networks[0].Id, topNode.Id, 5390)); Assert.Equal(5400, vm.Building.Networks[0].Nodes.Max(n => n.Position.Z)); Assert.Equal(steps + 1, vm.History.Items.Count);
+        Assert.False(vm.DragVerticalEnd(vm.Building.Networks[0].Id, topNode.Id, 2700));                       // would collapse the run onto its other end
+        Assert.Equal((1, 1), (vm.ExtentFrom, vm.ExtentTo));                                                     // the panel follows: the run now spans R+1 only
+        w.CaptureRenderedFrame()!.Save(Path.Combine(AppContext.BaseDirectory, "screenshots", "extent.png"));
+        vm.UndoCommand.Execute(null); vm.UndoCommand.Execute(null); Assert.Equal(0, vm.Building.Networks[0].Nodes.Min(n => n.Position.Z));
+    }, CancellationToken.None);
+}

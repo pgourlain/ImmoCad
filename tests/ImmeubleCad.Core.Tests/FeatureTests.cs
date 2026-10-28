@@ -931,3 +931,18 @@ public class ConnectPortTests
         h.Undo(b); h.Undo(b); Assert.Equal(before, BuildingJson.Serialize(b));
     }
 }
+
+public class ExtentTests
+{
+    [Fact] public void Top_and_bottom_of_a_vertical_run_move_to_level_altitudes_and_refuse_bad_moves()
+    {
+        var (b, h) = SampleBuilding.Create(); var a = new BuildingActions(b, h, new BuildingEventsService()); var r = b.Networks[0]; var top = r.Nodes.OrderBy(n => n.Position.Z).Last(); var bottom = r.Nodes.OrderBy(n => n.Position.Z).First();
+        var steps = h.Items.Count; var before = BuildingJson.Serialize(b);
+        Assert.True(a.SetNodeAltitude(r.Id, top.Id, ImmeubleCad.Core.Geometry.ElevationPlane.SnapZ(b, 5390)));                // R+2 floor
+        Assert.Equal(5400, top.Position.Z); Assert.Equal(steps + 1, h.Items.Count);
+        Assert.False(a.SetNodeAltitude(r.Id, top.Id, 5400)); Assert.False(a.SetNodeAltitude(r.Id, bottom.Id, 5400 - 0 + 0 == 5400 ? 5400 : 0));   // same altitude as the other end / unchanged: refused
+        Assert.Equal(steps + 1, h.Items.Count);
+        var floors = b.Levels.Select(l => l.AltitudeMm).ToList(); Assert.Equal(2, FittingResolver.Resolve(r, b.Levels).Count(f => f.Kind == FittingKind.EndCap));
+        h.Undo(b); Assert.Equal(before, BuildingJson.Serialize(b));
+    }
+}

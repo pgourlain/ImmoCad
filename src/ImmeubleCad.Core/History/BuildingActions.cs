@@ -405,6 +405,17 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
         return (ax.Item1 == 1 || (a.X == c.X)) && (ax.Item2 == 1 || (a.Y == c.Y)) && (ax.Item3 == 1 || (a.Z == c.Z));
     }
 
+    /// <summary>Moves the end node of a vertical run to a new altitude (top/bottom handle). Refuses when the node is not the end of a vertical segment.</summary>
+    public bool SetNodeAltitude(Guid networkId, Guid nodeId, int zMm)
+    {
+        var net = Net(networkId); var node = net.Nodes.First(n => n.Id == nodeId); var segs = net.Segments.Where(s => s.A == nodeId || s.B == nodeId).ToList();
+        if (segs.Count != 1) return false;
+        var other = net.Nodes.First(n => n.Id == (segs[0].A == nodeId ? segs[0].B : segs[0].A)).Position;
+        if (other.X != node.Position.X || other.Y != node.Position.Y || other.Z == zMm || zMm == node.Position.Z) return false;      // must stay vertical and keep a length
+        Edit("Riser extent", BuildingEventKind.NetworkChanged, () => { node.Position = node.Position with { Z = zMm }; return nodeId; }, i => i);
+        return true;
+    }
+
     public void MoveNode(Guid networkId, Guid nodeId, PointMm3 p) =>
         Edit("Move node", BuildingEventKind.NetworkChanged, () => { Net(networkId).Nodes.First(n => n.Id == nodeId).Position = p; return nodeId; }, i => i);
 

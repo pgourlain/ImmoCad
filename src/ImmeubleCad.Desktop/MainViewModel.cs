@@ -149,9 +149,36 @@ public partial class MainViewModel : ObservableObject
         Status = segs == null ? "Connexion impossible (tuyau non orthogonal)" : $"Connecté : {segs.Count} tronçon(s)"; Refresh(); SelectEquipment(equipmentId); return segs != null;
     }
 
+    // ---- Riser extent (from level X to level Y) ----
+    public ObservableCollection<string> LevelNames { get; } = new();
+    [ObservableProperty] private int _extentFrom; [ObservableProperty] private int _extentTo; [ObservableProperty] private string _extentInfo = "";
+    /// <summary>Fills the extent fields from the selected vertical run (levels it spans).</summary>
+    private void RefreshExtent()
+    {
+        LevelNames.Clear(); foreach (var l in Building.Levels) LevelNames.Add(l.Name);
+        if (SelectedSegment is not { } sel) { ExtentInfo = ""; return; }
+        var n = Building.Networks.FirstOrDefault(x => x.Id == sel.NetworkId); if (n == null || n.Nodes.Count == 0) return;
+        var lo = n.Nodes.Min(x => x.Position.Z); var hi = n.Nodes.Max(x => x.Position.Z);
+        ExtentFrom = Math.Max(0, Building.Levels.FindLastIndex(l => l.AltitudeMm <= lo)); ExtentTo = Math.Max(0, Building.Levels.FindLastIndex(l => l.AltitudeMm < hi));
+        ExtentInfo = $"{n.Name} : {lo / 1000.0:0.00} → {hi / 1000.0:0.00} m";
+    }
+    [RelayCommand] private void ApplyExtent()
+    {
+        if (SelectedSegment is not { } sel || Building.Levels.Count == 0) return;
+        var a = Math.Clamp(ExtentFrom, 0, Building.Levels.Count - 1); var b = Math.Clamp(ExtentTo, 0, Building.Levels.Count - 1); var (lo, hi) = (Math.Min(a, b), Math.Max(a, b));
+        Actions.SetRiserExtent(sel.NetworkId, Building.Levels[lo].AltitudeMm, Building.Levels[hi].AltitudeMm + Building.Levels[hi].HeightMm); Status = "Étendue de la colonne modifiée";
+        var keep = sel; Refresh(); SelectSegment(keep.NetworkId, keep.SegmentId);
+    }
+    /// <summary>Top/bottom handle of a vertical pipe (elevation view): snaps to the level lines. One history step.</summary>
+    public bool DragVerticalEnd(Guid networkId, Guid nodeId, int zMm)
+    {
+        var ok = Actions.SetNodeAltitude(networkId, nodeId, ElevationPlane.SnapZ(Building, zMm, 150)); if (ok) { var s = SelectedSegment; Refresh(); if (s != null) SelectSegment(s.Value.NetworkId, s.Value.SegmentId); }
+        return ok;
+    }
+
     // ---- Pipe selection (handles) ----
     public (Guid NetworkId, Guid SegmentId)? SelectedSegment { get; private set; }
-    public void SelectSegment(Guid networkId, Guid segmentId) { SelectedWalls.Clear(); SelectedEquipmentId = null; SelectedSegment = (networkId, segmentId); Status = "Tuyau sélectionné — poignées : prolonger, coude (Ctrl), té (milieu)"; OnPropertyChanged(nameof(SelectionText)); Changed?.Invoke(); }
+    public void SelectSegment(Guid networkId, Guid segmentId) { SelectedWalls.Clear(); SelectedEquipmentId = null; SelectedSegment = (networkId, segmentId); RefreshExtent(); Status = "Tuyau sélectionné — poignées : prolonger, coude (Ctrl), té (milieu)"; OnPropertyChanged(nameof(SelectionText)); Changed?.Invoke(); }
     public void ClearSegment() { SelectedSegment = null; }
     public int Snapper_GridMm() => 50;
     public void AfterEdit(string? message = null) { if (message != null) Status = message; Refresh(); }
