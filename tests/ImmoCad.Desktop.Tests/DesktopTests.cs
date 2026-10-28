@@ -1207,4 +1207,14 @@ public class NorthUpTests
         c.Camera.Yaw = 0; c.Camera.Pitch = 0.02; cube.Click(new(56, 58)); Assert.Equal(0, c.Camera.Yaw, 3);
         w.Close();
     }, CancellationToken.None);
+
+    [Fact] public void Wizard_aligns_a_picked_wall_line_to_the_nearest_horizontal_or_vertical_axis()
+    {
+        Assert.Equal(5.71, ImportWizardViewModel.TiltOf((0, 0), (100, 10)), 2);          // slightly clockwise from horizontal
+        Assert.Equal(-5.71, ImportWizardViewModel.TiltOf((0, 0), (10, 100)), 2);         // near-vertical: measured from the vertical axis
+        Assert.Equal(0, ImportWizardViewModel.TiltOf((5, 5), (5, 300)), 6);
+        Assert.Equal(3, ImportWizardViewModel.TiltOf((100, 0), (0, -5.24)), 0);     // leftwards line, same axis
+        var w = new ImportWizardViewModel(WizardTests.PlanPng()); w.AlignToLine((50, 240), (550, 265));
+        Assert.Equal(2.86, w.Angle, 2); Assert.Equal(w.Angle, w.AppliedAngle);
+    }
 }

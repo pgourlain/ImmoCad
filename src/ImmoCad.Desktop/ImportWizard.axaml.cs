@@ -16,12 +16,21 @@ public partial class ImportWizard : Window
     public ImportWizard(byte[] image) : this()
     {
         DataContext = new ImportWizardViewModel(image);
+        Vm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(ImportWizardViewModel.Angle)) { Canvas.PreviewDeg = -(Vm.Angle - Vm.AppliedAngle); Canvas.InvalidateVisual(); } };
         Canvas.SetImage(Vm.Image); Canvas.PixelClicked += OnPixel; Canvas.OutlineClicked += i => { Vm.Reject(i); Canvas.InvalidateVisual(); UpdateReview(); };
         ShowStep();
     }
 
     private void OnPixel((double X, double Y) p)
     {
+        if (Vm.Step == WizardStep.Straighten)
+        {   // two clicks along a wall: it becomes horizontal or vertical
+            if (Canvas.RefPoints.Count >= 2) Canvas.RefPoints.Clear();
+            Canvas.RefPoints.Add(p);
+            if (Canvas.RefPoints.Count == 2) { var (a, b) = (Canvas.RefPoints[0], Canvas.RefPoints[1]); Canvas.RefPoints.Clear(); Vm.AlignToLine(a, b); Canvas.SetImage(Vm.Image, keepView: true); Help.Text = T("wiz.s1.help"); }
+            else Help.Text = T("wiz.ref.points", 1);
+            Canvas.InvalidateVisual(); return;
+        }
         if (Vm.Step != WizardStep.Calibrate) return;
         Vm.AddCalibrationPoint(p.X, p.Y); Canvas.Points.Clear(); Canvas.Points.AddRange(Vm.CalibrationPoints); Canvas.InvalidateVisual(); UpdateCal();
     }
@@ -41,6 +50,7 @@ public partial class ImportWizard : Window
         };
         NextBtn.Content = Vm.Step == WizardStep.Review ? T("wiz.confirm") : T("wiz.next"); BackBtn.IsEnabled = Vm.Step != WizardStep.Straighten;
         Canvas.Fade = Vm.Step == WizardStep.Detect ? 0.35 : 1; Canvas.Outlines = Vm.Step == WizardStep.Review ? Vm.Detected : null; Canvas.Rejected = Vm.Rejected;
+        Canvas.RefPoints.Clear(); Canvas.Guides = GuidesBox.IsChecked == true && Vm.Step is WizardStep.Straighten or WizardStep.Calibrate;
         Canvas.Points.Clear(); if (Vm.Step == WizardStep.Calibrate) Canvas.Points.AddRange(Vm.CalibrationPoints);
         if (Vm.Step == WizardStep.Detect) PreviewMask(); else Canvas.ClearMask();
         UpdateCal(); UpdateReview(); Canvas.InvalidateVisual();
@@ -49,8 +59,12 @@ public partial class ImportWizard : Window
     private void PreviewMask() { var m = Vm.PreviewMask(); Canvas.SetMask(m, Vm.Gray!.Width, Vm.Gray.Height); }
     private void UpdateReview() => ReviewText.Text = T("wiz.review.count", Vm.Detected.Count - Vm.Rejected.Count, Vm.Detected.Count);
 
-    private void OnAutoDeskew(object? s, RoutedEventArgs e) { Vm.AutoDeskew(); Canvas.SetImage(Vm.Image); }
-    private void OnAngleChanged(object? s, Avalonia.Input.PointerReleasedEventArgs e) { Vm.ApplyRotation(); Canvas.SetImage(Vm.Image); }
+    private void OnAutoDeskew(object? s, RoutedEventArgs e) { Vm.AutoDeskew(); Canvas.SetImage(Vm.Image, keepView: true); }
+    private void OnAngleChanged(object? s, Avalonia.Input.PointerReleasedEventArgs e) { Vm.ApplyRotation(); Canvas.SetImage(Vm.Image, keepView: true); }
+    private void OnZoomIn(object? s, RoutedEventArgs e) => Canvas.ZoomBy("in");
+    private void OnZoomOut(object? s, RoutedEventArgs e) => Canvas.ZoomBy("out");
+    private void OnFit(object? s, RoutedEventArgs e) => Canvas.ZoomBy("fit");
+    private void OnGuides(object? s, RoutedEventArgs e) { Canvas.Guides = GuidesBox.IsChecked == true && Vm.Step is WizardStep.Straighten or WizardStep.Calibrate; Canvas.InvalidateVisual(); }
     private void OnAutoThickness(object? s, RoutedEventArgs e) { Vm.AutoThickness(); PreviewMask(); }
     private void OnDetectParam(object? s, Avalonia.Input.PointerReleasedEventArgs e) => PreviewMask();
 

@@ -42,7 +42,23 @@ public partial class ImportWizardViewModel : ObservableObject
     /// <summary>Rotates the original by -Angle (straightens a tilt of Angle) and redecodes.</summary>
     public void ApplyRotation()
     {
-        Image = PlanImport.Rotate(Original, -Angle); Gray = PlanImport.Decode(Image); CalibrationPoints.Clear(); Calibration = null;
+        Image = PlanImport.Rotate(Original, -Angle); AppliedAngle = Angle; Gray = PlanImport.Decode(Image); CalibrationPoints.Clear(); Calibration = null;
+    }
+
+    /// <summary>Angle currently baked into <see cref="Image"/> (the canvas previews the difference live while the slider moves).</summary>
+    public double AppliedAngle { get; private set; }
+
+    /// <summary>Tilt (degrees, clockwise in image coordinates) of the line a→b relative to the nearest horizontal or vertical axis.</summary>
+    public static double TiltOf((double X, double Y) a, (double X, double Y) b)
+    {
+        var theta = Math.Atan2(b.Y - a.Y, b.X - a.X) * 180 / Math.PI; return theta - 90 * Math.Round(theta / 90);
+    }
+
+    /// <summary>Rotates the picture so that the line a→b (two points along a wall) becomes exactly horizontal or vertical.</summary>
+    public void AlignToLine((double X, double Y) a, (double X, double Y) b)
+    {
+        if (Math.Abs(b.X - a.X) + Math.Abs(b.Y - a.Y) < 2) return;
+        Angle = TiltOf(a, b); Message = $"{Angle:0.00}°"; ApplyRotation();
     }
 
     public void AddCalibrationPoint(double x, double y)

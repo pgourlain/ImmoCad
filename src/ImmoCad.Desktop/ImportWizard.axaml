@@ -11,11 +11,17 @@
         <StackPanel Spacing="10">
           <TextBlock x:Name="Title" FontSize="18" FontWeight="SemiBold" />
           <TextBlock x:Name="Help" TextWrapping="Wrap" Opacity="0.75" />
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <Button Content="+" vm:L.Tip="wiz.zoomin" Click="OnZoomIn" Width="34" HorizontalContentAlignment="Center" />
+            <Button Content="−" vm:L.Tip="wiz.zoomout" Click="OnZoomOut" Width="34" HorizontalContentAlignment="Center" />
+            <Button vm:L.Content="wiz.fit" Click="OnFit" />
+            <CheckBox x:Name="GuidesBox" vm:L.Content="wiz.guides" IsChecked="True" IsCheckedChanged="OnGuides" />
+          </StackPanel>
 
           <StackPanel x:Name="PStraighten" Spacing="8">
             <Button vm:L.Content="wiz.autodeskew" Click="OnAutoDeskew" HorizontalAlignment="Stretch" />
             <TextBlock Text="{Binding AngleLabel}" />
-            <Slider Minimum="-10" Maximum="10" Value="{Binding Angle}" TickFrequency="0.1" PointerReleased="OnAngleChanged" />
+            <Slider Minimum="-45" Maximum="45" Value="{Binding Angle}" TickFrequency="0.1" PointerReleased="OnAngleChanged" />
           </StackPanel>
 
           <StackPanel x:Name="PCalibrate" Spacing="8" IsVisible="False">

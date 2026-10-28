@@ -16,12 +16,32 @@ public class ImageCanvas : Control
     public Bitmap? MaskOverlay { get; private set; }
     public IReadOnlyList<WallOutline>? Outlines { get; set; }
     public ISet<int>? Rejected { get; set; }
+    /// <summary>Alignment helpers: points picked along a wall (cyan) and guide lines that follow the pointer.</summary>
+    public List<(double X, double Y)> RefPoints { get; } = new();
+    public bool Guides { get; set; }
+    /// <summary>Live preview of a rotation not yet applied (degrees, clockwise).</summary>
+    public double PreviewDeg { get; set; }
     public event Action<(double X, double Y)>? PixelClicked;
     public event Action<int>? OutlineClicked;
-    private double _scale = 1; private Point _offset; private Point? _pan; private bool _fit = true;
+    private double _scale = 1; private Point _offset; private Point? _pan; private bool _fit = true; private bool _space; private Point? _cursor;
+
+    public ImageCanvas() { Focusable = true; ClipToBounds = true; }
+    public double Zoom => _scale;
 
     internal void PixelClicked_ForTest(double x, double y) => PixelClicked?.Invoke((x, y));
-    public void SetImage(byte[] png) { Picture = new Bitmap(new MemoryStream(png)); _fit = true; InvalidateVisual(); }
+    public void SetImage(byte[] png, bool keepView = false) { Picture = new Bitmap(new MemoryStream(png)); _fit = !keepView || _scale <= 0; PreviewDeg = 0; InvalidateVisual(); }
+
+    /// <summary>"in", "out" (about the centre) or "fit".</summary>
+    public void ZoomBy(string how)
+    {
+        if (how == "fit") { _fit = true; InvalidateVisual(); return; }
+        ZoomAt(new Point(Bounds.Width / 2, Bounds.Height / 2), how == "in" ? 1.25 : 1 / 1.25);
+    }
+    private void ZoomAt(Point p, double factor)
+    {
+        var before = ToPixel(p); _scale = Math.Clamp(_scale * factor, 0.02, 40);
+        _offset = new Point(p.X - before.X * _scale, p.Y - before.Y * _scale); InvalidateVisual();
+    }
 
     public void SetMask(byte[] mask, int w, int h)
     {
@@ -44,8 +64,8 @@ public class ImageCanvas : Control
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
-        var props = e.GetCurrentPoint(this).Properties;
-        if (props.IsMiddleButtonPressed || props.IsRightButtonPressed) { _pan = e.GetPosition(this); return; }
+        Focus(); var props = e.GetCurrentPoint(this).Properties;
+        if (props.IsMiddleButtonPressed || props.IsRightButtonPressed || _space || e.KeyModifiers.HasFlag(KeyModifiers.Shift)) { _pan = e.GetPosition(this); e.Pointer.Capture(this); return; }
         var px = ToPixel(e.GetPosition(this));
         if (Outlines != null)
         {
@@ -56,13 +76,25 @@ public class ImageCanvas : Control
     }
     protected override void OnPointerMoved(PointerEventArgs e)
     {
-        if (_pan is not { } l) return; var p = e.GetPosition(this); _offset += p - l; _pan = p; InvalidateVisual();
+        _cursor = e.GetPosition(this);
+        if (_pan is not { } l) { if (Guides) InvalidateVisual(); return; }
+        var p = e.GetPosition(this); _offset += p - l; _pan = p; InvalidateVisual();
     }
-    protected override void OnPointerReleased(PointerReleasedEventArgs e) => _pan = null;
+    protected override void OnPointerExited(PointerEventArgs e) { _cursor = null; if (Guides) InvalidateVisual(); }
+    protected override void OnPointerReleased(PointerReleasedEventArgs e) { _pan = null; e.Pointer.Capture(null); }
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        if (e.Key == Key.Space) { _space = true; Cursor = new Cursor(StandardCursorType.Hand); e.Handled = true; }
+        else if (e.Key is Key.OemPlus or Key.Add) { ZoomBy("in"); e.Handled = true; }
+        else if (e.Key is Key.OemMinus or Key.Subtract) { ZoomBy("out"); e.Handled = true; }
+        else if (e.Key is Key.D0 or Key.NumPad0) { ZoomBy("fit"); e.Handled = true; }
+    }
+    protected override void OnKeyUp(KeyEventArgs e) { if (e.Key == Key.Space) { _space = false; Cursor = null; e.Handled = true; } }
+    protected override void OnLostFocus(FocusChangedEventArgs e) { _space = false; Cursor = null; base.OnLostFocus(e); }
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
     {
-        var p = e.GetPosition(this); var before = ToPixel(p); _scale = Math.Clamp(_scale * (e.Delta.Y > 0 ? 1.15 : 1 / 1.15), 0.02, 40);
-        _offset = new Point(p.X - before.X * _scale, p.Y - before.Y * _scale); InvalidateVisual();
+        if (OperatingSystem.IsMacOS() && !e.KeyModifiers.HasFlag(KeyModifiers.Meta)) { _offset += new Vector(e.Delta.X * 40, e.Delta.Y * 40); InvalidateVisual(); e.Handled = true; return; }   // trackpad: two fingers pan
+        ZoomAt(e.GetPosition(this), Math.Pow(1.15, Math.Clamp(e.Delta.Y, -3, 3)));
     }
 
     private static bool Inside(IReadOnlyList<PointPx> poly, (double X, double Y) p)
@@ -83,7 +115,8 @@ public class ImageCanvas : Control
             _offset = new Point((Bounds.Width - Picture.PixelSize.Width * _scale) / 2, (Bounds.Height - Picture.PixelSize.Height * _scale) / 2); _fit = false;
         }
         var dest = new Rect(_offset.X, _offset.Y, Picture.PixelSize.Width * _scale, Picture.PixelSize.Height * _scale);
-        using (ctx.PushOpacity(Fade)) ctx.DrawImage(Picture, new Rect(Picture.PixelSize.ToSize(1)), dest);
+        var tilt = Matrix.CreateTranslation(-dest.Center.X, -dest.Center.Y) * Matrix.CreateRotation(PreviewDeg * Math.PI / 180) * Matrix.CreateTranslation(dest.Center.X, dest.Center.Y);
+        using (ctx.PushTransform(tilt)) using (ctx.PushOpacity(Fade)) ctx.DrawImage(Picture, new Rect(Picture.PixelSize.ToSize(1)), dest);
         if (MaskOverlay != null) ctx.DrawImage(MaskOverlay, new Rect(MaskOverlay.PixelSize.ToSize(1)), dest);
         if (Outlines != null)
             for (var i = 0; i < Outlines.Count; i++)
@@ -98,6 +131,17 @@ public class ImageCanvas : Control
                 }
                 ctx.DrawGeometry(rej ? new SolidColorBrush(Color.FromArgb(60, 120, 120, 120)) : new SolidColorBrush(Color.FromArgb(40, 50, 205, 50)), pen, g);
             }
+        if (Guides && _cursor is { } cur)
+        {
+            var g = new Pen(new SolidColorBrush(Color.FromArgb(200, 0, 200, 255)), 1, DashStyle.Dash);
+            ctx.DrawLine(g, new Point(0, cur.Y), new Point(Bounds.Width, cur.Y)); ctx.DrawLine(g, new Point(cur.X, 0), new Point(cur.X, Bounds.Height));
+        }
+        for (var i = 0; i < RefPoints.Count; i++)
+        {
+            var s = ToScreen(RefPoints[i].X, RefPoints[i].Y); var cy = new Pen(Brushes.Cyan, 2);
+            ctx.DrawEllipse(Brushes.Cyan, new Pen(Brushes.White, 2), s, 5, 5);
+            if (i % 2 == 1) ctx.DrawLine(cy, ToScreen(RefPoints[i - 1].X, RefPoints[i - 1].Y), s);
+        }
         for (var i = 0; i < Points.Count; i++)
         {
             var s = ToScreen(Points[i].X, Points[i].Y);
