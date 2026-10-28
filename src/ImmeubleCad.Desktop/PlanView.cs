@@ -52,8 +52,21 @@ public class PlanView : Control
     }
     private readonly List<(Rect Rect, Guid LevelId, PointMm Center)> _arrows = new();
     private PointMm _hover;
+    private string _chainTyped = "", _chainAngle = ""; private int _chainField;     // typed length / angle while placing; Tab switches field
     private (Wall Wall, Opening Opening)? _openingDrag;
+
+    private void ShowChainMenu(DrawChainTool t)
+    {
+        var menu = new ContextMenu();
+        MenuItem Item(string h, Action a, bool enabled = true) { var m = new MenuItem { Header = h, IsEnabled = enabled }; m.Click += (_, _) => { a(); InvalidateVisual(); }; return m; }
+        menu.Items.Add(Item("Terminer", () => t.Finish(), t.Points.Count >= 2));
+        menu.Items.Add(Item("Annuler le dernier point", () => t.Backspace(), t.Points.Count > 1));
+        menu.Items.Add(Item("Fermer le contour", () => t.Close(), t.Points.Count >= 3));
+        menu.Items.Add(Item("Annuler", () => t.Cancel()));
+        menu.Open(this);
+    }
     internal StretchHandle? StretchActiveForTest => _stretch;
+    internal DrawChainTool? DrawToolForTest => DrawTool;
     private StretchHandle? _stretch; private Affine _stretchStart; private (double X, double Y) _stretchFrom; private Affine? _stretchLive;
     private PipeHandleTool? _handleTool;
     private string _typed = "";
@@ -120,9 +133,18 @@ public class PlanView : Control
         var props = e.GetCurrentPoint(this).Properties; var p = e.GetPosition(this);
         if (props.IsMiddleButtonPressed) { _pan = p; return; }
         if (Vm is not { } vm) return;
-        if (props.IsRightButtonPressed) { DrawTool?.Cancel(); _gesture = Gesture.None; InvalidateVisual(); return; }
+        if (props.IsRightButtonPressed)
+        {
+            if (IsChain && DrawTool is { Points.Count: > 0 } dt) { ShowChainMenu(dt); return; }
+            DrawTool?.Cancel(); _gesture = Gesture.None; InvalidateVisual(); return;
+        }
         if (vm.IsAlignTool) { var m = ToMm(p); vm.AlignClick(m.X, m.Y); InvalidateVisual(); return; }
-        if (IsChain) { Invalidate(); DrawTool!.Down(TP(e)); e.Pointer.Capture(this); InvalidateVisual(); return; }
+        if (IsChain)
+        {
+            Invalidate(); _chainTyped = ""; _chainAngle = ""; _chainField = 0;
+            if (e.ClickCount >= 2 && DrawTool!.Points.Count >= 2) { DrawTool.DoubleClick(); InvalidateVisual(); return; }      // double-click finishes
+            DrawTool!.Down(TP(e)); e.Pointer.Capture(this); InvalidateVisual(); return;
+        }
         if (vm.IsStretchTool)
         {
             if (vm.CurrentLevel?.ImageTransform is { Length: 6 } m0 && vm.BackgroundSize() is { } sz0)
@@ -233,8 +255,22 @@ public class PlanView : Control
         }
         if (DrawTool != null && IsChain)
         {
-            if (e.Key == Key.Enter) DrawTool.Finish(); else if (e.Key == Key.Back) DrawTool.Backspace(); else if (e.Key == Key.Escape) { DrawTool.Cancel(); vm.SetToolCommand.Execute("Select"); }
-            InvalidateVisual(); return;
+            var ch = e.Key >= Key.D0 && e.Key <= Key.D9 ? (char)('0' + (e.Key - Key.D0)) : e.Key >= Key.NumPad0 && e.Key <= Key.NumPad9 ? (char)('0' + (e.Key - Key.NumPad0)) : e.Key is Key.OemPeriod or Key.OemComma or Key.Decimal ? '.' : e.Key == Key.OemMinus ? '-' : '\0';
+            if (ch != '\0' && DrawTool.Points.Count > 0) { if (_chainField == 0) _chainTyped += ch; else _chainAngle += ch; InvalidateVisual(); e.Handled = true; return; }
+            if (e.Key == Key.Tab && DrawTool.Points.Count > 0 && _chainTyped.Length > 0) { _chainField = 1 - _chainField; InvalidateVisual(); e.Handled = true; return; }
+            if (e.Key == Key.Enter)
+            {
+                if (_chainTyped.Length > 0 && DrawChainTool.TryParseLength(_chainTyped, out var mm))
+                {
+                    double? angle = double.TryParse(_chainAngle.Replace(',', '.'), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var a) ? a : null;
+                    DrawTool.ApplyLength(mm, angle); _chainTyped = ""; _chainAngle = ""; _chainField = 0;
+                }
+                else DrawTool.Finish();
+            }
+            else if (e.Key == Key.Back) { if (_chainField == 1 && _chainAngle.Length > 0) _chainAngle = _chainAngle[..^1]; else if (_chainTyped.Length > 0) _chainTyped = _chainTyped[..^1]; else DrawTool.Backspace(); }
+            else if (e.Key == Key.Escape) { if (_chainTyped.Length > 0) { _chainTyped = ""; _chainAngle = ""; _chainField = 0; } else if (!DrawTool.EscapeStep()) vm.SetToolCommand.Execute("Select"); }
+            else return;
+            InvalidateVisual(); e.Handled = true; return;
         }
         if (_handleTool != null && _handleTool.State is ToolState.Dragging or ToolState.Placing)
         {   // typed length while a handle gesture is running: digits, comma/point, Enter applies, Esc cancels
@@ -466,7 +502,15 @@ public class PlanView : Control
                 var a = t.Points[^1];
                 ctx.DrawLine(new Pen(Brushes.OrangeRed, 1, DashStyle.Dash), ToScreen(a), ToScreen(pv));
                 var len = Math.Sqrt(Math.Pow(pv.X - a.X, 2) + Math.Pow(pv.Y - a.Y, 2)) / 1000;
-                ctx.DrawText(new FormattedText($"{len:0.00} m", System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 12, Brushes.OrangeRed), ToScreen(pv) + new Point(8, -16));
+                var live = t.Live(); var segLabel = $"{len:0.00} m  {(live?.AngleDeg ?? 0):0}°";
+                ctx.DrawText(new FormattedText(segLabel, System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 12, Brushes.OrangeRed), ToScreen(pv) + new Point(8, -16));
+                if (_chainTyped.Length > 0 || _chainAngle.Length > 0)
+                {   // input box near the cursor: length (Tab → angle), Enter applies
+                    var box = new Rect(ToScreen(pv).X + 12, ToScreen(pv).Y + 8, 150, 46);
+                    ctx.DrawRectangle(Brushes.White, new Pen(Brushes.OrangeRed, 1.5), box, 4, 4);
+                    ctx.DrawText(new FormattedText($"{(_chainField == 0 ? "▶ " : "  ")}Longueur : {_chainTyped} m", System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 12, Brushes.Black), box.TopLeft + new Point(6, 5));
+                    ctx.DrawText(new FormattedText($"{(_chainField == 1 ? "▶ " : "  ")}Angle : {_chainAngle}°", System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 12, Brushes.Black), box.TopLeft + new Point(6, 24));
+                }
             }
         }
         if (Vm.IsAlignTool)

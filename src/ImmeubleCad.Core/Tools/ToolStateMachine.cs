@@ -46,15 +46,21 @@ public abstract class ToolStateMachine
     private static double Dist(ToolPointer a, ToolPointer b) => Math.Sqrt((a.ScreenX - b.ScreenX) * (a.ScreenX - b.ScreenX) + (a.ScreenY - b.ScreenY) * (a.ScreenY - b.ScreenY));
 }
 
-/// <summary>Chained wall/pipe drawing: each click adds a point; Finish commits the whole run as one history step.</summary>
+/// <summary>Chained wall/pipe drawing: each click adds a point; Enter / double-click finish; Backspace removes the last point; clicking the first point closes the outline. The whole run is one commit (one history step).</summary>
 public sealed class DrawChainTool(Action<IReadOnlyList<PointMm>> commit) : ToolStateMachine
 {
     private readonly List<PointMm> _pts = new();
     public IReadOnlyList<PointMm> Points => _pts;
     public PointMm? Preview { get; private set; }
+    public int CloseRadiusMm { get; set; } = 150;
+    public bool WasClosed { get; private set; }
 
     protected override void OnStart(ToolPointer p) { if (_pts.Count == 0) _pts.Add(p.Mm); }
-    protected override void OnPlace(ToolPointer p) { _pts.Add(p.Mm); }
+    protected override void OnPlace(ToolPointer p)
+    {
+        if (_pts.Count >= 3 && Near(p.Mm, _pts[0])) { Close(); return; }          // clicking the first point closes the outline
+        _pts.Add(p.Mm);
+    }
     protected override void OnPreview(ToolPointer p) => Preview = p.Mm;
     protected override void OnCommit(ToolPointer p)
     {
@@ -63,16 +69,50 @@ public sealed class DrawChainTool(Action<IReadOnlyList<PointMm>> commit) : ToolS
         _pts.Clear(); Preview = null;
     }
     protected override void OnCancel() { _pts.Clear(); Preview = null; }
+
     public void Backspace() { if (_pts.Count > 1) _pts.RemoveAt(_pts.Count - 1); }
+
+    /// <summary>Double-click: the second click of the pair already added a duplicate point, drop it, then finish.</summary>
+    public void DoubleClick()
+    {
+        if (_pts.Count >= 2 && _pts[^1] == _pts[^2]) _pts.RemoveAt(_pts.Count - 1);
+        Finish();
+    }
+
+    /// <summary>Closes the outline back on its first point and commits.</summary>
+    public void Close()
+    {
+        if (_pts.Count < 3) return;
+        _pts.Add(_pts[0]); WasClosed = true; Finish();
+    }
+
+    /// <summary>First Escape cancels the segment being drawn, a second one the whole run.</summary>
+    public bool EscapeStep()
+    {
+        if (_pts.Count > 1) { _pts.RemoveAt(_pts.Count - 1); Preview = null; return true; }    // segment in progress dropped, run kept
+        Cancel(); return false;
+    }
+
     /// <summary>Typed length along the current direction (mm).</summary>
-    public PointMm? ApplyLength(int lengthMm)
+    public PointMm? ApplyLength(int lengthMm, double? angleDeg = null)
     {
         if (_pts.Count == 0 || Preview is not { } pv) return null;
         var o = _pts[^1]; double dx = pv.X - o.X, dy = pv.Y - o.Y; var l = Math.Sqrt(dx * dx + dy * dy);
-        if (l < 1) return null;
+        if (angleDeg is { } a) { var r = a * Math.PI / 180; dx = Math.Cos(r); dy = Math.Sin(r); l = 1; }
+        else if (l < 1) return null;
         var np = new PointMm(o.X + (int)Math.Round(dx / l * lengthMm), o.Y + (int)Math.Round(dy / l * lengthMm));
         _pts.Add(np); return np;
     }
+
+    /// <summary>Length and angle of the segment being drawn, for the rubber band label.</summary>
+    public (double LengthMm, double AngleDeg)? Live()
+    {
+        if (_pts.Count == 0 || Preview is not { } pv) return null; var o = _pts[^1];
+        return (Math.Sqrt(Math.Pow(pv.X - o.X, 2) + Math.Pow(pv.Y - o.Y, 2)), Math.Atan2(pv.Y - o.Y, pv.X - o.X) * 180 / Math.PI);
+    }
+
+    private bool Near(PointMm a, PointMm b) => Math.Sqrt(Math.Pow(a.X - b.X, 2) + Math.Pow(a.Y - b.Y, 2)) <= CloseRadiusMm;
+
     public static bool TryParseLength(string s, out int mm)
     {
         s = s.Trim().Replace(',', '.');

@@ -622,3 +622,33 @@ public class StretchUiTests
         vm.UndoCommand.Execute(null); vm.UndoCommand.Execute(null); Assert.True(vm.History.CanUndo);
     }, CancellationToken.None);
 }
+
+public class ChainUiTests
+{
+    private readonly HeadlessFixture f = new();
+
+    [Fact] public Task Draw_wall_with_typed_length_and_angle_double_click_and_escape_steps() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(startWithSample: false) { Settings = new() }; vm.NewDocumentCommand.Execute(null);
+        var w = new MainWindow { DataContext = vm, Width = 1280, Height = 820 }; w.Show(); w.UpdateLayout(); w.CaptureRenderedFrame();
+        var plan = w.FindControl<PlanView>("Plan")!; plan.Scale = 0.08; plan.Offset = (100, 100); w.CaptureRenderedFrame();
+        Avalonia.Point At(int x, int y) => plan.TranslatePoint(plan.ToScreenForTest(new(x, y)), w)!.Value;
+        vm.SetToolCommand.Execute("DrawWall"); var walls = vm.CurrentLevel!.Walls.Count; var steps = vm.History.Items.Count;
+        w.MouseDown(At(0, 0), Avalonia.Input.MouseButton.Left); w.MouseUp(At(0, 0), Avalonia.Input.MouseButton.Left);             // click mode: first point
+        w.MouseMove(At(1500, 20));
+        foreach (var k in new[] { Avalonia.Input.Key.D2, Avalonia.Input.Key.OemPeriod, Avalonia.Input.Key.D4 }) w.KeyPress(k, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, null);
+        w.KeyPress(Avalonia.Input.Key.Enter, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.Enter, null);       // 2.4 m along the pointer direction
+        Assert.Equal(2, plan.DrawToolForTest!.Points.Count); Assert.Equal(2400, plan.DrawToolForTest.Points[1].X);
+        w.MouseMove(At(2400, 1500)); w.MouseDown(At(2400, 1500), Avalonia.Input.MouseButton.Left); w.MouseUp(At(2400, 1500), Avalonia.Input.MouseButton.Left);
+        w.MouseMove(At(0, 1500)); w.MouseDown(At(0, 1500), Avalonia.Input.MouseButton.Left);
+        w.MouseUp(At(0, 1500), Avalonia.Input.MouseButton.Left); w.MouseDown(At(0, 1500), Avalonia.Input.MouseButton.Left);                                                    // double-click finishes
+        Assert.Equal(walls + 3, vm.CurrentLevel!.Walls.Count); Assert.Equal(steps + 1, vm.History.Items.Count);                        // 3 segments, one history step
+        w.CaptureRenderedFrame()!.Save(Path.Combine(AppContext.BaseDirectory, "screenshots", "chain.png"));
+        // Escape: staged cancel, nothing committed
+        w.MouseDown(At(0, 800), Avalonia.Input.MouseButton.Left); var d1 = $"{plan.DrawToolForTest?.Points.Count}/{plan.DrawToolForTest?.State}"; w.MouseUp(At(0, 800), Avalonia.Input.MouseButton.Left); var d2 = $"{plan.DrawToolForTest?.Points.Count}/{plan.DrawToolForTest?.State}"; w.MouseMove(At(1000, 800)); w.MouseDown(At(1000, 800), Avalonia.Input.MouseButton.Left);
+        Assert.True(plan.DrawToolForTest != null && plan.DrawToolForTest.Points.Count == 2, $"before esc ({d1} {d2} at={At(0, 800)} plan={plan.Bounds}): tool={vm.Tool} points={plan.DrawToolForTest?.Points.Count} state={plan.DrawToolForTest?.State}");
+        w.KeyPress(Avalonia.Input.Key.Escape, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.Escape, null); Assert.Single(plan.DrawToolForTest!.Points) ;
+        w.KeyPress(Avalonia.Input.Key.Escape, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.Escape, null);
+        Assert.Equal(walls + 3, vm.CurrentLevel!.Walls.Count); Assert.True(vm.IsSelectTool);
+    }, CancellationToken.None);
+}

@@ -804,3 +804,44 @@ public class FittingCoverageTests
         Assert.Equal("HeatingReturn:EndCap@450,300,0;HeatingReturn:EndCap@450,300,8100;HeatingSupply:Elbow90@300,300,8100;HeatingSupply:EndCap@1300,300,8100;HeatingSupply:EndCap@300,300,0", text);
     }
 }
+
+public class ChainToolDetailTests
+{
+    private static ToolPointer P(int x, int y) => new(new(x, y), x, y);
+    private static void Click(DrawChainTool t, int x, int y) { t.Down(P(x, y)); t.Up(P(x, y)); }
+    private static void Place(DrawChainTool t, int x, int y) { t.Move(P(x, y)); t.Down(P(x, y)); }
+
+    [Fact] public void Clicking_the_first_point_closes_the_outline_in_one_commit()
+    {
+        var runs = new List<IReadOnlyList<PointMm>>(); var t = new DrawChainTool(runs.Add);
+        Click(t, 0, 0); Place(t, 3000, 0); Place(t, 3000, 2000); Place(t, 40, 30);        // near the first point
+        var run = Assert.Single(runs); Assert.True(t.WasClosed); Assert.Equal(run[0], run[^1]); Assert.Equal(4, run.Count);
+    }
+
+    [Fact] public void Double_click_finishes_without_a_duplicate_point_and_backspace_removes_the_last_point()
+    {
+        var runs = new List<IReadOnlyList<PointMm>>(); var t = new DrawChainTool(runs.Add);
+        Click(t, 0, 0); Place(t, 1000, 0); Place(t, 1000, 1000); t.Backspace(); Assert.Equal(2, t.Points.Count);
+        Place(t, 2000, 0); Place(t, 2000, 0); t.DoubleClick();
+        Assert.Equal([new PointMm(0, 0), new PointMm(1000, 0), new PointMm(2000, 0)], Assert.Single(runs));
+    }
+
+    [Fact] public void Escape_cancels_the_segment_first_then_the_run_and_commits_nothing()
+    {
+        var runs = new List<IReadOnlyList<PointMm>>(); var t = new DrawChainTool(runs.Add);
+        Click(t, 0, 0); Place(t, 1000, 0); Place(t, 1000, 1000);
+        Assert.True(t.EscapeStep()); Assert.Equal(2, t.Points.Count);               // first Escape: only the segment in progress
+        Assert.True(t.EscapeStep()); Assert.Single(t.Points);
+        Assert.False(t.EscapeStep()); Assert.Empty(t.Points); Assert.Equal(ToolState.Idle, t.State); Assert.Empty(runs);
+    }
+
+    [Fact] public void Typed_length_and_angle_place_the_next_point_exactly()
+    {
+        var runs = new List<IReadOnlyList<PointMm>>(); var t = new DrawChainTool(runs.Add);
+        Click(t, 0, 0); t.Move(P(500, 20));
+        Assert.Equal(new PointMm(2400, 0), t.ApplyLength(2400, 0));                 // 2.4 m at 0°
+        t.Move(P(2400, 100)); Assert.Equal(new PointMm(2400, 1500), t.ApplyLength(1500, 90));
+        var (len, ang) = t.Live()!.Value; Assert.True(len > 0 && ang is > -181 and < 181);
+        t.Finish(); Assert.Single(runs); Assert.Equal(3, runs[0].Count);
+    }
+}

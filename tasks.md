@@ -187,10 +187,10 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 **Input model (hybrid click/drag)**
 
 - [x] `ToolStateMachine` base in Core: `Idle → Pressed → Dragging | Placing → Committed`, drag threshold in screen pixels passed by the view (default 4 px), so click mode and drag mode come for free in every tool. Tests for both paths and for the threshold.
-- [ ] Chained tools (Draw Wall, later Draw Pipe): each click adds a point and starts the next segment; double-click or Enter finishes; Backspace removes the last point; Escape cancels the segment in progress (a second Escape cancels the whole run); clicking the first point closes the outline.
+- [x] Chained tools (Draw Wall, later Draw Pipe): each click adds a point and starts the next segment; double-click or Enter finishes; Backspace removes the last point; Escape cancels the segment in progress (a second Escape cancels the whole run); clicking the first point closes the outline.
 - [x] Rubber band preview with live length and angle shown next to the cursor. *(length only, no angle)*
-- [ ] Typed values while placing: typing a number shows an input box near the cursor; Enter applies it as the segment length along the current direction (`2.4` = 2.4 m, `2400mm` accepted). Tab switches to the angle field.
-- [ ] Right-click while placing: context menu Finish / Undo last point / Close outline / Cancel.
+- [x] Typed values while placing: typing a number shows an input box near the cursor; Enter applies it as the segment length along the current direction (`2.4` = 2.4 m, `2400mm` accepted). Tab switches to the angle field. *(length, Tab → angle; Enter applies)*
+- [x] Right-click while placing: context menu Finish / Undo last point / Close outline / Cancel.
 - [x] Status bar hint per tool state (e.g. "Click the next point — Enter to finish — Esc to cancel"), translated. *(French only; English translation table pending)*
 
 **Tools**
