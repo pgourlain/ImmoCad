@@ -179,7 +179,7 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 - [x] `PlanView` control: background image, walls (filled polygons), grid, zoom around the mouse (⌘/Ctrl + wheel, pinch), pan (Space + drag, middle mouse). *(grid, walls, ghost of level below, zoom/pan; no background image yet)*
 **Moving between levels**
 
-- [ ] Level bar: one button per level (name + altitude in the tooltip), current level highlighted; click to change level; Page Up / Page Down go one level up/down; the change keeps the zoom and the look-at point (`ViewState`).
+- [x] Level bar: one button per level (name + altitude in the tooltip), current level highlighted; click to change level; Page Up / Page Down go one level up/down; the change keeps the zoom and the look-at point (`ViewState`). *(scrollable, tested with 30 levels; no right-click menu, no tooltip)*
 - [ ] Ghost of the level below drawn faded under the current level (on by default); ghost of the level above optional. Toggles in the View menu.
 - [ ] Risers crossing the current level show a small up/down arrow; clicking it moves to the next level the riser reaches, keeping the riser centered.
 - [ ] Right-click on the level bar: add level above/below, rename, set altitude/height.
@@ -195,7 +195,7 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 
 **Tools**
 
-- [ ] Tools in Core implementing `ITool` with `ToolPointer` in **mm** (no Avalonia types), unit-tested: Select (click, box by drag, Shift add), Move (drag, or click then click destination), Draw Wall (chained, thickness option), Draw Room (rectangle by drag or two clicks → 4 walls), Delete.
+- [x] Tools in Core implementing `ITool` with `ToolPointer` in **mm** (no Avalonia types), unit-tested: Select (click, box by drag, Shift add), Move (drag, or click then click destination), Draw Wall (chained, thickness option), Draw Room (rectangle by drag or two clicks → 4 walls), Delete. *(Select with box + group move, Draw Wall chain; no Move-by-click, Draw Room, Delete tool)*
 - [x] Snapping (`Snapper` in Core): grid, wall corners, wall faces, midpoints, orthogonal 0/90° (45° with a modifier), alignment with existing points (dotted guide line), and points of the ghost level. Snap indicator (small symbol per snap kind) drawn by the view from a `ToolOverlay`.
 - [ ] Measure tool: two clicks → distance shown, nothing added to the model.
 

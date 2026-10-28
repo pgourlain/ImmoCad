@@ -304,3 +304,42 @@ public class SettingsTests
         Assert.Empty(FittingResolver.Validate(b.Networks[0]).Where(w => w.Contains("axis")));
     }
 }
+
+public class WallMoveTests
+{
+    private static (Building, BuildingActions, BuildingHistory) New()
+    { var b = new Building(); var h = new BuildingHistory(); return (b, new BuildingActions(b, h, new BuildingEventsService()), h); }
+
+    [Fact] public void Thirty_levels_stay_sorted_and_undo_is_exact()
+    {
+        var (b, a, h) = New();
+        for (var i = 29; i >= 0; i--) a.AddLevel(i == 0 ? "RDC" : "R+" + i, i * 2700);
+        Assert.Equal(30, b.Levels.Count); Assert.Equal("RDC", b.Levels[0].Name); Assert.Equal("R+29", b.Levels[^1].Name);
+        for (var i = 0; i < 30; i++) h.Undo(b);
+        Assert.Empty(b.Levels);
+    }
+
+    [Fact] public void Move_group_within_level_and_between_levels_is_one_step()
+    {
+        var (b, a, h) = New(); var l0 = a.AddLevel("RDC", 0); var l1 = a.AddLevel("R+1", 2700);
+        var w1 = a.AddWall(l0.Id, [new(0, 0), new(1000, 0), new(1000, 200), new(0, 200)]);
+        var w2 = a.AddWall(l0.Id, [new(0, 0), new(200, 0), new(200, 1000), new(0, 1000)]);
+        var n = h.Items.Count; var before = BuildingJson.Serialize(b);
+        a.MoveWalls(l0.Id, [w1.Id, w2.Id], 500, -100);
+        Assert.Equal(n + 1, h.Items.Count); Assert.Equal(new PointMm(500, -100), l0.Walls[0].Footprint[0]);
+        a.MoveWalls(l0.Id, [w1.Id, w2.Id], 0, 0, l1.Id);
+        Assert.Empty(l0.Walls); Assert.Equal(2, l1.Walls.Count);
+        h.Undo(b); h.Undo(b); Assert.Equal(before, BuildingJson.Serialize(b));
+        a.MoveWalls(l0.Id, [w1.Id], 0, 0, l1.Id); h.Undo(b); Assert.Equal(before, BuildingJson.Serialize(b));
+    }
+
+    [Fact] public void Copy_and_delete_walls()
+    {
+        var (b, a, h) = New(); var l0 = a.AddLevel("RDC", 0); var l1 = a.AddLevel("R+1", 2700); var l2 = a.AddLevel("R+2", 5400);
+        var w = a.AddWall(l0.Id, [new(0, 0), new(1000, 0), new(1000, 200)]);
+        a.CopyWalls(l0.Id, [w.Id], [l1.Id, l2.Id]);
+        Assert.Single(l1.Walls); Assert.Single(l2.Walls); Assert.NotEqual(w.Id, l1.Walls[0].Id);
+        a.DeleteWalls(l1.Id, [l1.Walls[0].Id]); Assert.Empty(l1.Walls);
+        h.Undo(b); Assert.Single(b.Levels[1].Walls); // undo restores a fresh object graph
+    }
+}

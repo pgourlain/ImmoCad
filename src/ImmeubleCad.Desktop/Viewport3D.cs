@@ -10,16 +10,14 @@ namespace ImmeubleCad.Desktop;
 /// <summary>3D view drawn with Avalonia (software wireframe). OpenGL path can replace Render later; same camera math in Scene.</summary>
 public class Viewport3D : Control
 {
-    public static readonly StyledProperty<Building?> BuildingProperty = AvaloniaProperty.Register<Viewport3D, Building?>(nameof(Building));
-    public static readonly StyledProperty<Level?> CurrentLevelProperty = AvaloniaProperty.Register<Viewport3D, Level?>(nameof(CurrentLevel));
-    public Building? Building { get => GetValue(BuildingProperty); set => SetValue(BuildingProperty, value); }
-    public Level? CurrentLevel { get => GetValue(CurrentLevelProperty); set => SetValue(CurrentLevelProperty, value); }
+    private MainViewModel? Vm => DataContext as MainViewModel;
+    private Building? Building => Vm?.Building;
+    private Level? CurrentLevel => Vm?.CurrentLevel;
     public OrbitCamera Camera { get; } = new();
     public bool Xray { get; set; }
     public bool CutAboveCurrent { get; set; } = true;
     private Point? _last;
 
-    static Viewport3D() => AffectsRender<Viewport3D>(BuildingProperty, CurrentLevelProperty);
 
     protected override void OnPointerPressed(PointerPressedEventArgs e) { _last = e.GetPosition(this); e.Pointer.Capture(this); }
     protected override void OnPointerReleased(PointerReleasedEventArgs e) { _last = null; e.Pointer.Capture(null); }

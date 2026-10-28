@@ -1,44 +1,114 @@
 <Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:vm="using:ImmeubleCad.Desktop" xmlns:m="using:ImmeubleCad.Core.Model" x:Class="ImmeubleCad.Desktop.MainWindow"
-        x:DataType="vm:MainViewModel" Title="ImmeubleCad" Width="1200" Height="800">
+        xmlns:vm="using:ImmeubleCad.Desktop"
+        x:Class="ImmeubleCad.Desktop.MainWindow" x:DataType="vm:MainViewModel"
+        Title="ImmeubleCad" Width="1280" Height="820" MinWidth="800" MinHeight="500">
+  <Window.Styles>
+    <Style Selector="Button.tool, ToggleButton.tool">
+      <Setter Property="Width" Value="44" /><Setter Property="Height" Value="44" /><Setter Property="Margin" Value="0,0,0,4" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" /><Setter Property="CornerRadius" Value="8" /><Setter Property="FontSize" Value="18" />
+    </Style>
+    <Style Selector="Button.level">
+      <Setter Property="HorizontalAlignment" Value="Stretch" /><Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="Padding" Value="8,3" /><Setter Property="Margin" Value="0,0,0,2" /><Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.level.current"><Setter Property="Background" Value="{DynamicResource SystemAccentColor}" /><Setter Property="Foreground" Value="White" /></Style>
+    <Style Selector="Border.bar"><Setter Property="Background" Value="{DynamicResource SystemChromeLowColor}" /></Style>
+    <Style Selector="TextBlock.caption"><Setter Property="Opacity" Value="0.65" /><Setter Property="FontSize" Value="11" /></Style>
+  </Window.Styles>
   <DockPanel>
     <Menu DockPanel.Dock="Top">
-      <MenuItem Header="_File">
-        <MenuItem Header="Open…" Click="OnOpen" HotKey="Ctrl+O" />
-        <MenuItem Header="Save…" Click="OnSave" HotKey="Ctrl+S" />
-        <MenuItem Header="Import plan (JPG/PNG)…" Click="OnImport" />
-        <MenuItem Header="Export">
+      <MenuItem Header="_Fichier">
+        <MenuItem Header="Ouvrir…" Click="OnOpen" HotKey="Ctrl+O" />
+        <MenuItem Header="Enregistrer…" Click="OnSave" HotKey="Ctrl+S" />
+        <Separator />
+        <MenuItem Header="Importer un plan (JPG/PNG)…" Click="OnImport" />
+        <MenuItem Header="Exporter">
           <MenuItem Header="IFC" Click="OnExport" Tag="ifc" />
-          <MenuItem Header="FreeCAD macro" Click="OnExport" Tag="freecad" />
+          <MenuItem Header="Macro FreeCAD" Click="OnExport" Tag="freecad" />
           <MenuItem Header="DXF" Click="OnExport" Tag="dxf" />
           <MenuItem Header="OBJ" Click="OnExport" Tag="obj" />
-          <MenuItem Header="Bill of materials (CSV)" Click="OnExport" Tag="csv" />
+          <MenuItem Header="Nomenclature (CSV)" Click="OnExport" Tag="csv" />
         </MenuItem>
       </MenuItem>
-      <MenuItem Header="_Edit">
-        <MenuItem Header="Undo" Command="{Binding UndoCommand}" HotKey="Ctrl+Z" />
-        <MenuItem Header="Redo" Command="{Binding RedoCommand}" HotKey="Ctrl+Shift+Z" />
+      <MenuItem Header="_Édition">
+        <MenuItem Header="Annuler" Command="{Binding UndoCommand}" HotKey="Ctrl+Z" />
+        <MenuItem Header="Rétablir" Command="{Binding RedoCommand}" HotKey="Ctrl+Shift+Z" />
+        <Separator />
+        <MenuItem Header="Tout sélectionner" Command="{Binding SelectAllCommand}" />
+        <MenuItem Header="Supprimer la sélection" Command="{Binding DeleteSelectionCommand}" />
+        <MenuItem Header="Copier la sélection sur tous les niveaux" Command="{Binding CopySelectionToAllLevelsCommand}" />
       </MenuItem>
-      <MenuItem Header="_Level"><MenuItem Header="Add level" Command="{Binding AddLevelCommand}" /></MenuItem>
+      <MenuItem Header="_Niveau">
+        <MenuItem Header="Ajouter un niveau" Command="{Binding AddLevelCommand}" />
+        <MenuItem Header="Sélection → étage au-dessus" Command="{Binding MoveSelectionUpCommand}" HotKey="Ctrl+PageUp" />
+        <MenuItem Header="Sélection → étage en dessous" Command="{Binding MoveSelectionDownCommand}" HotKey="Ctrl+PageDown" />
+      </MenuItem>
     </Menu>
-    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="4" Margin="4">
-      <ToggleButton x:Name="DrawWallBtn" Content="Draw wall" Click="OnToggleWall" />
-      <Button Content="2D" Command="{Binding SetModeCommand}" CommandParameter="Plan" />
-      <Button Content="3D" Command="{Binding SetModeCommand}" CommandParameter="Solid" />
-      <Button Content="Wireframe" Command="{Binding SetModeCommand}" CommandParameter="Wireframe" />
-    </StackPanel>
-    <Border DockPanel.Dock="Bottom" Padding="6"><TextBlock Text="{Binding Status}" /></Border>
-    <ItemsControl DockPanel.Dock="Left" ItemsSource="{Binding Levels}" Margin="4">
-      <ItemsControl.ItemTemplate>
-        <DataTemplate x:DataType="m:Level">
-          <Button Content="{Binding Name}" Margin="0,0,0,2" HorizontalAlignment="Stretch"
-                  Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).SelectLevelCommand}" CommandParameter="{Binding}" />
-        </DataTemplate>
-      </ItemsControl.ItemTemplate>
-    </ItemsControl>
+
+    <!-- status bar -->
+    <Border DockPanel.Dock="Bottom" Classes="bar" Padding="12,6">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock Text="{Binding Hint}" Classes="caption" VerticalAlignment="Center" />
+        <TextBlock Grid.Column="1" Text="{Binding Status}" VerticalAlignment="Center" />
+      </Grid>
+    </Border>
+
+    <!-- tool strip -->
+    <Border DockPanel.Dock="Left" Classes="bar" Padding="8">
+      <StackPanel>
+        <ToggleButton Classes="tool" Content="↖" ToolTip.Tip="Sélection / déplacement" IsChecked="{Binding IsSelectTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Select" />
+        <ToggleButton Classes="tool" Content="▭" ToolTip.Tip="Dessiner un mur" IsChecked="{Binding IsDrawTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="DrawWall" />
+        <Separator Margin="0,6" />
+        <Button Classes="tool" Content="⤒" ToolTip.Tip="Déplacer la sélection à l'étage au-dessus (Ctrl+PgUp)" Command="{Binding MoveSelectionUpCommand}" />
+        <Button Classes="tool" Content="⤓" ToolTip.Tip="Déplacer la sélection à l'étage en dessous (Ctrl+PgDn)" Command="{Binding MoveSelectionDownCommand}" />
+        <Button Classes="tool" Content="⧉" ToolTip.Tip="Copier la sélection sur tous les niveaux" Command="{Binding CopySelectionToAllLevelsCommand}" />
+        <Button Classes="tool" Content="✕" ToolTip.Tip="Supprimer la sélection (Suppr)" Command="{Binding DeleteSelectionCommand}" />
+      </StackPanel>
+    </Border>
+
+    <!-- level bar: scrolls, so 30+ levels fit -->
+    <Border DockPanel.Dock="Right" Classes="bar" Width="132" Padding="8">
+      <DockPanel>
+        <TextBlock DockPanel.Dock="Top" Text="NIVEAUX" Classes="caption" Margin="0,0,0,6" />
+        <Button DockPanel.Dock="Bottom" Content="+ Niveau" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Margin="0,6,0,0" Command="{Binding AddLevelCommand}" />
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <ItemsControl ItemsSource="{Binding Levels}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:LevelItem">
+                <Button Classes="level" Classes.current="{Binding IsCurrent}"
+                        Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).SelectLevelCommand}" CommandParameter="{Binding Id}">
+                  <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                    <TextBlock Grid.Column="1" Text="{Binding Altitude}" FontSize="10" Opacity="0.7" VerticalAlignment="Center" Margin="8,0,0,0" />
+                  </Grid>
+                </Button>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </DockPanel>
+    </Border>
+
+    <!-- view switch -->
+    <Border DockPanel.Dock="Top" Classes="bar" Padding="12,6">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <StackPanel Orientation="Horizontal" Spacing="4">
+          <Button Content="↶" Command="{Binding UndoCommand}" ToolTip.Tip="Annuler" />
+          <Button Content="↷" Command="{Binding RedoCommand}" ToolTip.Tip="Rétablir" />
+        </StackPanel>
+        <TextBlock Grid.Column="1" Text="{Binding SelectionText}" HorizontalAlignment="Center" VerticalAlignment="Center" Classes="caption" />
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
+          <Button Content="2D" Command="{Binding SetModeCommand}" CommandParameter="Plan" />
+          <Button Content="3D" Command="{Binding SetModeCommand}" CommandParameter="Solid" />
+          <Button Content="Filaire" Command="{Binding SetModeCommand}" CommandParameter="Wireframe" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
     <Grid>
-      <vm:PlanView x:Name="Plan" Focusable="True" Building="{Binding Building}" Level="{Binding CurrentLevel}" IsVisible="{Binding !Is3D}" />
-      <vm:Viewport3D x:Name="View3D" Building="{Binding Building}" CurrentLevel="{Binding CurrentLevel}" IsVisible="{Binding Is3D}" />
+      <vm:PlanView x:Name="Plan" IsVisible="{Binding !Is3D}" />
+      <vm:Viewport3D x:Name="View3D" IsVisible="{Binding Is3D}" />
     </Grid>
   </DockPanel>
 </Window>

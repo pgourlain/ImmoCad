@@ -90,6 +90,35 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
             return wallId;
         }, i => i);
 
+    /// <summary>Moves walls (a group) by dx/dy on their level, and optionally to another level. One history step.</summary>
+    public void MoveWalls(Guid levelId, IEnumerable<Guid> wallIds, int dx, int dy, Guid? targetLevelId = null) =>
+        Edit("Move walls", BuildingEventKind.WallChanged, () =>
+        {
+            var from = Find(levelId); var to = targetLevelId is { } t ? Find(t) : from; var ids = wallIds.ToHashSet();
+            var moving = from.Walls.Where(w => ids.Contains(w.Id)).ToList();
+            foreach (var w in moving)
+            {
+                w.Footprint = w.Footprint.Select(p => new PointMm(p.X + dx, p.Y + dy)).ToList();
+                w.Holes = w.Holes.Select(h => h.Select(p => new PointMm(p.X + dx, p.Y + dy)).ToList()).ToList();
+                if (to != from) { from.Walls.Remove(w); to.Walls.Add(w); }
+            }
+            return levelId;
+        }, i => i);
+
+    /// <summary>Copies walls to other levels (same XY), e.g. to repeat a floor plan. One history step.</summary>
+    public void CopyWalls(Guid levelId, IEnumerable<Guid> wallIds, IEnumerable<Guid> targetLevelIds) =>
+        Edit("Copy walls", BuildingEventKind.WallAdded, () =>
+        {
+            var src = Find(levelId).Walls.Where(w => wallIds.Contains(w.Id)).ToList();
+            foreach (var t in targetLevelIds.Where(t => t != levelId))
+                foreach (var w in src)
+                    Find(t).Walls.Add(new Wall { Footprint = w.Footprint.ToList(), Holes = w.Holes.Select(h => h.ToList()).ToList(), HeightMm = w.HeightMm, Label = w.Label, Stability = w.Stability });
+            return levelId;
+        }, i => i);
+
+    public void DeleteWalls(Guid levelId, IEnumerable<Guid> wallIds) =>
+        Edit("Delete walls", BuildingEventKind.WallRemoved, () => { var ids = wallIds.ToHashSet(); Find(levelId).Walls.RemoveAll(w => ids.Contains(w.Id)); return levelId; }, i => i);
+
     public void SetImageTransform(Guid levelId, double[] matrix2x3) =>
         Edit("Set image transform", BuildingEventKind.LevelChanged, () => { Find(levelId).ImageTransform = matrix2x3; return levelId; }, i => i);
 
