@@ -18,6 +18,8 @@ public interface IDialogService
     Task<ImportWizardViewModel?> RunImportWizardAsync(byte[] image);
     /// <summary>Single text input; null when cancelled.</summary>
     Task<string?> PromptAsync(string title, string label, string initial);
+    /// <summary>Export dialog: format, levels, networks, units. Null when cancelled.</summary>
+    Task<ExportRequest?> ShowExportDialogAsync(ImmeubleCad.Core.Model.Building building, string? preselect = null);
 }
 
 /// <summary>Scripted answers for tests; records what was asked.</summary>
@@ -30,6 +32,8 @@ public sealed class FakeDialogService : IDialogService
     public Task<string?> PickSaveAsync(string title, string pattern, string? suggestedName = null) { Asked.Add("save:" + title); return Task.FromResult(SaveAnswers.Count > 0 ? SaveAnswers.Dequeue() : null); }
     public Task<SaveChoice> ConfirmSaveAsync(string documentName) { Asked.Add("confirm:" + documentName); return Task.FromResult(SaveChoices.Count > 0 ? SaveChoices.Dequeue() : SaveChoice.Cancel); }
     public Task ShowErrorAsync(string title, string message) { Errors.Add($"{title}: {message}"); return Task.CompletedTask; }
+    public Queue<ExportRequest?> ExportAnswers { get; } = new();
+    public Task<ExportRequest?> ShowExportDialogAsync(ImmeubleCad.Core.Model.Building building, string? preselect = null) { Asked.Add("export-dialog"); return Task.FromResult(ExportAnswers.Count > 0 ? ExportAnswers.Dequeue() : null); }
     public Queue<string?> PromptAnswers { get; } = new();
     public Task<string?> PromptAsync(string title, string label, string initial) { Asked.Add("prompt:" + title); return Task.FromResult(PromptAnswers.Count > 0 ? PromptAnswers.Dequeue() : null); }
     public Task<ImportWizardViewModel?> RunImportWizardAsync(byte[] image) => Task.FromResult(Wizard?.Invoke(image));
@@ -63,6 +67,11 @@ public sealed class AvaloniaDialogService(Window owner) : IDialogService
         var ok = new Button { Content = "OK", HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right }; ok.Click += (_, _) => w.Close();
         w.Content = new StackPanel { Margin = new(20), Spacing = 16, Children = { new TextBlock { Text = message, TextWrapping = Avalonia.Media.TextWrapping.Wrap }, ok } };
         await w.ShowDialog(owner);
+    }
+
+    public async Task<ExportRequest?> ShowExportDialogAsync(ImmeubleCad.Core.Model.Building building, string? preselect = null)
+    {
+        var d = new ExportDialog(building, preselect); await d.ShowDialog(owner); return d.Result;
     }
 
     public async Task<string?> PromptAsync(string title, string label, string initial)

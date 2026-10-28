@@ -724,20 +724,28 @@ public partial class MainViewModel : ObservableObject
         }
         catch (Exception ex) { await Fail("importer", ex); }
     }
+    /// <summary>"ask" opens the export dialog (format, levels, networks, units); any other value exports that format directly with everything included.</summary>
     [RelayCommand] private async Task ExportAsync(string format)
     {
         if (ActiveIndex < 0) return;
         try
         {
-            var ext = format switch { "ifc" => "*.ifc", "freecad" => "*.FCMacro", "dxf" => "*.dxf", "obj" => "*.obj", "glb" => "*.glb", "bom_pdf" => "*.pdf", "svg" => "*.svg", _ => "*.csv" };
+            var options = new ExportOptions();
+            if (format == "ask")
+            {
+                if (await Dialogs.ShowExportDialogAsync(Building) is not { } req) return;
+                (format, options) = (req.Format, req.Options);
+            }
+            var ext = ExportFormats.Extension(format);
             if (await Dialogs.PickSaveAsync("Export", ext, Active.Title + ext.TrimStart('*')) is not { } path) return;
+            var data = options.Apply(Building);
             switch (format)
             {
-                case "csv": File.WriteAllText(path, BomFull.ToCsv(Building, true)); break;
-                case "bom_pdf": File.WriteAllBytes(path, BomFull.ToPdf(Building)); break;
-                case "glb": File.WriteAllBytes(path, GltfExporter.ExportGlb(Building)); break;
-                case "svg": File.WriteAllText(path, SvgExporter.Export(CurrentLevel!)); break;
-                default: Export(format, path); break;
+                case "csv": File.WriteAllText(path, BomFull.ToCsv(data, true)); break;
+                case "bom_pdf": File.WriteAllBytes(path, BomFull.ToPdf(data)); break;
+                case "glb": File.WriteAllBytes(path, GltfExporter.ExportGlb(data)); break;
+                case "svg": File.WriteAllText(path, SvgExporter.Export(data.Levels.FirstOrDefault(l => l.Id == CurrentLevelId) ?? data.Levels.FirstOrDefault() ?? new Level())); break;
+                default: File.WriteAllText(path, Exporters.All.First(x => x.Id == format).Export(Building, options)); break;
             }
             Status = "Exporté " + Path.GetFileName(path); OnLog?.Invoke($"Exported {format} to {path}");
         }

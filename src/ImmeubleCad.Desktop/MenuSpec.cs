@@ -41,7 +41,8 @@ public static class MenuFactory
                 new("Fermer", vm.CloseTabCommand, -1, Key: Key.W, UseCommandKey: true),
                 MenuItemSpec.Separator,
                 new("Importer un plan (JPG/PNG)…", vm.ImportPlanCommand),
-                new("Exporter",
+                new("Exporter…", vm.ExportCommand, "ask", Key: Key.E, UseCommandKey: true),
+                new("Export rapide",
                     Children:
                     [
                         new("IFC", vm.ExportCommand, "ifc"), new("Macro FreeCAD", vm.ExportCommand, "freecad"), new("DXF", vm.ExportCommand, "dxf"),

@@ -1,15 +1,36 @@
 using System.Globalization;
 using System.Text;
+using ImmeubleCad.Core.History;
 using ImmeubleCad.Core.Model;
 using ImmeubleCad.Scene;
 
 namespace ImmeubleCad.Core.Export;
+
+/// <summary>What to export: which levels and networks, and the unit of the written coordinates.</summary>
+public sealed record ExportOptions(IReadOnlySet<Guid>? Levels = null, IReadOnlySet<Guid>? Networks = null, bool Metres = false)
+{
+    /// <summary>Multiplier from the model's millimetres to the written unit.</summary>
+    public double Scale => Metres ? 0.001 : 1;
+
+    /// <summary>A filtered copy: only the chosen levels (with their equipment) and networks.</summary>
+    public Building Apply(Building source)
+    {
+        var copy = BuildingJson.Deserialize(BuildingJson.Serialize(source));
+        if (Levels != null) { copy.Levels.RemoveAll(l => !Levels.Contains(l.Id)); copy.Equipment.RemoveAll(e => !Levels.Contains(e.LevelId)); }
+        if (Networks != null) copy.Networks.RemoveAll(n => !Networks.Contains(n.Id));
+        return copy;
+    }
+}
 
 public interface IBuildingExporter
 {
     string Id { get; }
     string Extension { get; }
     string Export(Building b);
+    /// <summary>Filtered export with units; the default implementation filters and calls <see cref="Export(Building)"/>.</summary>
+    string Export(Building b, ExportOptions options) => Export(options.Apply(b));
+    /// <summary>A beginner-friendly line: which tool this format is for.</summary>
+    string Purpose => "";
 }
 
 internal static class F
@@ -21,14 +42,16 @@ internal static class F
 
 public sealed class ObjExporter : IBuildingExporter
 {
-    public string Id => "obj"; public string Extension => ".obj";
+    private double _k = 1;   // OBJ is written in metres unless millimetres are asked for
+    public string Export(Building b, ExportOptions o) { _k = o.Metres ? 1 : 1000; try { return Export(o.Apply(b)); } finally { _k = 1; } }
+    public string Id => "obj"; public string Extension => ".obj"; public string Purpose => "3D mesh for Blender, SketchUp, 3D printing (metres).";
     public string Export(Building b)
     {
         var sb = new StringBuilder("# ImmeubleCad\n"); var offset = 1;
         void Write(string name, Mesh m)
         {
             sb.Append("o ").AppendLine(name);
-            for (var i = 0; i < m.Positions.Count; i += 3) sb.AppendLine($"v {F.N(m.Positions[i])} {F.N(m.Positions[i + 1])} {F.N(m.Positions[i + 2])}");
+            for (var i = 0; i < m.Positions.Count; i += 3) sb.AppendLine($"v {F.N(m.Positions[i] * _k)} {F.N(m.Positions[i + 1] * _k)} {F.N(m.Positions[i + 2] * _k)}");
             for (var i = 0; i < m.Indices.Count; i += 3) sb.AppendLine($"f {m.Indices[i] + offset} {m.Indices[i + 1] + offset} {m.Indices[i + 2] + offset}");
             offset += m.VertexCount;
         }
@@ -59,12 +82,14 @@ public sealed class ObjExporter : IBuildingExporter
 /// <summary>Minimal ASCII DXF (R12): one layer per level walls and per network, LINE entities, mm.</summary>
 public sealed class DxfExporter : IBuildingExporter
 {
-    public string Id => "dxf"; public string Extension => ".dxf";
+    private double _k = 1;
+    public string Export(Building b, ExportOptions o) { _k = o.Scale; try { return Export(o.Apply(b)); } finally { _k = 1; } }
+    public string Id => "dxf"; public string Extension => ".dxf"; public string Purpose => "2D drawing for AutoCAD, LibreCAD, QCAD: one layer per level and per network.";
     public string Export(Building b)
     {
-        var sb = new StringBuilder("0\nSECTION\n2\nENTITIES\n");
+        var sb = new StringBuilder($"0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n9\n$INSUNITS\n70\n{(_k == 1 ? 4 : 6)}\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n");
         void Line(string layer, double x1, double y1, double z1, double x2, double y2, double z2) =>
-            sb.Append($"0\nLINE\n8\n{layer}\n10\n{F.N(x1)}\n20\n{F.N(y1)}\n30\n{F.N(z1)}\n11\n{F.N(x2)}\n21\n{F.N(y2)}\n31\n{F.N(z2)}\n");
+            sb.Append($"0\nLINE\n8\n{layer}\n10\n{F.N(x1 * _k)}\n20\n{F.N(y1 * _k)}\n30\n{F.N(z1 * _k)}\n11\n{F.N(x2 * _k)}\n21\n{F.N(y2 * _k)}\n31\n{F.N(z2 * _k)}\n");
         foreach (var l in b.Levels)
             foreach (var w in l.Walls)
                 for (var i = 0; i < w.Footprint.Count; i++)
@@ -85,7 +110,8 @@ public sealed class DxfExporter : IBuildingExporter
 /// <summary>FreeCAD macro rebuilding walls (extruded footprints) and pipes (cylinders), one group per network.</summary>
 public sealed class FreeCadMacroExporter : IBuildingExporter
 {
-    public string Id => "freecad"; public string Extension => ".FCMacro";
+    public string Export(Building b, ExportOptions o) => Export(o.Apply(b));   // FreeCAD's native unit is the millimetre: the macro always writes mm
+    public string Id => "freecad"; public string Extension => ".FCMacro"; public string Purpose => "Macro that rebuilds editable walls and pipes in FreeCAD.";
     public string Export(Building b)
     {
         var sb = new StringBuilder("import FreeCAD, Part\nfrom FreeCAD import Vector as V\ndoc = FreeCAD.newDocument('Immeuble')\n");
@@ -115,7 +141,8 @@ public sealed class FreeCadMacroExporter : IBuildingExporter
 /// <summary>Minimal IFC4 (STEP) skeleton: project, site, building, one storey per level, IfcWall / IfcPipeSegment entities.</summary>
 public sealed class IfcExporter : IBuildingExporter
 {
-    public string Id => "ifc"; public string Extension => ".ifc";
+    public string Export(Building b, ExportOptions o) => Export(o.Apply(b));
+    public string Id => "ifc"; public string Extension => ".ifc"; public string Purpose => "BIM exchange (Revit, ArchiCAD, FreeCAD BIM, BlenderBIM).";
     public string Export(Building b)
     {
         var sb = new StringBuilder();

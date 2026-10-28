@@ -717,3 +717,29 @@ public class ExtentUiTests
         vm.UndoCommand.Execute(null); vm.UndoCommand.Execute(null); Assert.Equal(0, vm.Building.Networks[0].Nodes.Min(n => n.Position.Z));
     }, CancellationToken.None);
 }
+
+public class ExportDialogTests
+{
+    private readonly HeadlessFixture f = new();
+
+    [Fact] public Task Export_dialog_filters_levels_networks_and_units_and_writes_the_file() => f.Session.Dispatch(async () =>
+    {
+        var dlg = new FakeDialogService(); var vm = new MainViewModel { Dialogs = dlg }; var rdc = vm.Building.Levels[0].Id;
+        var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".dxf");
+        dlg.ExportAnswers.Enqueue(new ExportRequest("dxf", new ImmeubleCad.Core.Export.ExportOptions(new HashSet<Guid> { rdc }, new HashSet<Guid>(), Metres: true))); dlg.SaveAnswers.Enqueue(path);
+        await vm.ExportCommand.ExecuteAsync("ask");
+        var text = File.ReadAllText(path); File.Delete(path);
+        Assert.Contains("WALLS_RDC", text); Assert.DoesNotContain("WALLS_R+1", text); Assert.DoesNotContain("NET_", text); Assert.Contains("\n70\n6\n", text.Replace("\r", ""));
+        dlg.ExportAnswers.Enqueue(null); await vm.ExportCommand.ExecuteAsync("ask"); Assert.Equal(2, dlg.Asked.Count(a => a == "export-dialog"));        // cancelled: nothing asked after
+        Assert.DoesNotContain(dlg.Asked.TakeLast(1), a => a.StartsWith("save"));
+    }, CancellationToken.None);
+
+    [Fact] public Task Real_dialog_lists_every_format_with_its_purpose_and_returns_the_request() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(); var d = new ExportDialog(vm.Building, "glb"); d.Show();
+        Assert.Equal(8, ExportFormats.All.Length); Assert.All(ExportFormats.All, x => Assert.False(string.IsNullOrWhiteSpace(x.Purpose)));
+        Assert.Equal("glb", ExportFormats.All[d.FindControl<Avalonia.Controls.ComboBox>("Formats")!.SelectedIndex].Id); Assert.Contains("Blender", d.FindControl<Avalonia.Controls.TextBlock>("Purpose")!.Text);
+        d.FindControl<Avalonia.Controls.RadioButton>("M")!.IsChecked = true; d.FindControl<Avalonia.Controls.Button>("OkBtn")!.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Avalonia.Controls.Button.ClickEvent));
+        Assert.NotNull(d.Result); Assert.True(d.Result!.Options.Metres); Assert.Equal(3, d.Result.Options.Levels!.Count);
+    }, CancellationToken.None);
+}

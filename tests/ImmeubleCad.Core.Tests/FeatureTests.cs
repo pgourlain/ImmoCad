@@ -946,3 +946,20 @@ public class ExtentTests
         h.Undo(b); Assert.Equal(before, BuildingJson.Serialize(b));
     }
 }
+
+public class ExportOptionsTests
+{
+    [Fact] public void Filters_levels_and_networks_and_units_apply_to_each_format()
+    {
+        var (b, _) = SampleBuilding.Create(); var rdc = b.Levels[0].Id; var heat = b.Networks.First(n => n.Type == NetworkType.HeatingSupply).Id;
+        var o = new ImmeubleCad.Core.Export.ExportOptions(new HashSet<Guid> { rdc }, new HashSet<Guid> { heat }, Metres: true);
+        var filtered = o.Apply(b); Assert.Single(filtered.Levels); Assert.Single(filtered.Networks); Assert.Single(filtered.Equipment); Assert.Equal(3, b.Levels.Count);
+        var dxf = new ImmeubleCad.Core.Export.DxfExporter().Export(b, o); Assert.Contains("WALLS_RDC", dxf); Assert.DoesNotContain("WALLS_R+1", dxf); Assert.DoesNotContain("HeatingReturn", dxf); Assert.Contains("$INSUNITS\n70\n6", dxf.Replace("\r", ""));
+        Assert.Contains("\n10\n8\n", dxf.Replace("\r", ""));                                                            // the 8000 mm wall is written as 8 (metres)
+        var mm = new ImmeubleCad.Core.Export.DxfExporter().Export(b, new ImmeubleCad.Core.Export.ExportOptions(Metres: false)); Assert.Contains("\n10\n8000\n", mm.Replace("\r", "")); Assert.Contains("$INSUNITS\n70\n4", mm.Replace("\r", ""));
+        var objM = new ImmeubleCad.Core.Export.ObjExporter().Export(b, o); var objMm = new ImmeubleCad.Core.Export.ObjExporter().Export(b, new ImmeubleCad.Core.Export.ExportOptions(Metres: false));
+        Assert.Contains("v 8 ", objM); Assert.Contains("v 8000 ", objMm); Assert.DoesNotContain("level_R+1", objM);
+        foreach (var e in ImmeubleCad.Core.Export.Exporters.All) Assert.False(string.IsNullOrWhiteSpace(e.Purpose), e.Id);
+        Assert.DoesNotContain("R+1", new ImmeubleCad.Core.Export.IfcExporter().Export(b, o)); Assert.DoesNotContain("R+1", new ImmeubleCad.Core.Export.FreeCadMacroExporter().Export(b, o));
+    }
+}
