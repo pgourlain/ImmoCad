@@ -31,7 +31,7 @@ public class ElevationView : Control
     private (Network Net, Segment Seg)? HitPipe(Point p)
     {
         if (Vm?.Plane is not { } plane) return null;
-        foreach (var (seg, u0, u1) in plane.Visible(Vm.Building).Where(v => v.Seg.Network.Visible && !v.Seg.Network.Locked))
+        foreach (var (seg, u0, u1) in plane.Visible(Vm.Building, Vm.ElevationReach).Where(v => v.Seg.Network.Visible && !v.Seg.Network.Locked))
         {
             Point a = S(u0, seg.A.Z), b = S(u1, seg.B.Z); double dx = b.X - a.X, dy = b.Y - a.Y; var l2 = dx * dx + dy * dy; var t = l2 < 1e-9 ? 0 : Math.Clamp(((p.X - a.X) * dx + (p.Y - a.Y) * dy) / l2, 0, 1);
             if (Math.Sqrt(Math.Pow(p.X - (a.X + t * dx), 2) + Math.Pow(p.Y - (a.Y + t * dy), 2)) <= 6) return (seg.Network, seg.Segment);
@@ -87,6 +87,13 @@ public class ElevationView : Control
         // face
         var bottom = b.Levels[0].AltitudeMm; var top = b.Levels[^1].AltitudeMm + b.Levels[^1].HeightMm;
         ctx.DrawRectangle(new SolidColorBrush(Color.FromArgb(40, 120, 120, 130)), new Pen(Brushes.Gray, 1), new Rect(S(0, top), S(plane.Length, bottom)));
+        if (Vm.Side != null)
+            foreach (var l in b.Levels)
+                foreach (var w in l.Walls)
+                {   // wall silhouettes for context (the whole building seen from this side)
+                    if (w.Footprint.Count < 2) continue; var us = w.Footprint.Select(p => plane.ProjectU(p)).ToList();
+                    ctx.DrawRectangle(new SolidColorBrush(Color.FromArgb(50, 130, 130, 140)), new Pen(new SolidColorBrush(Color.FromArgb(110, 110, 110, 120)), 0.8), new Rect(S(us.Min(), l.AltitudeMm + l.HeightMm), S(us.Max(), l.AltitudeMm)));
+                }
         // level lines
         foreach (var l in b.Levels)
         {
@@ -96,7 +103,7 @@ public class ElevationView : Control
         }
         ctx.DrawLine(new Pen(new SolidColorBrush(Color.FromRgb(90, 140, 220)), 1, DashStyle.Dash), new(_ox - 10, S(0, top).Y), new(Bounds.Width, S(0, top).Y));
         // pipes in the plane
-        foreach (var (seg, u0, u1) in plane.Visible(b).Where(v => v.Seg.Network.Visible))
+        foreach (var (seg, u0, u1) in plane.Visible(b, Vm.ElevationReach).Where(v => v.Seg.Network.Visible))
         {
             var c = NetworkQueries.ColorOf(seg.Network.Type); var w = Math.Max(2.5, seg.Segment.DiameterMm * _scale);
             ctx.DrawLine(new Pen(new SolidColorBrush(Color.FromRgb(c.R, c.G, c.B)), w, lineCap: PenLineCap.Round), S(u0, seg.A.Z), S(u1, seg.B.Z));
@@ -111,6 +118,6 @@ public class ElevationView : Control
         // rubber band
         if (_endDrag != null && _now is { } en) ctx.DrawLine(new Pen(Brushes.DodgerBlue, 2, DashStyle.Dash), new Point(S(_endDrag.Value.U, 0).X, en.Y), new Point(S(_endDrag.Value.U, 0).X + 30, en.Y));
         else if (_down is { } d && _now is { } n) ctx.DrawLine(new Pen(Brushes.OrangeRed, 2, DashStyle.Dash), Vm.IsRiserTool ? new Point(d.X, S(0, _z0).Y) : S(ToU(d.X), _z0), Vm.IsRiserTool ? new Point(d.X, n.Y) : new Point(n.X, S(0, _z0).Y));
-        ctx.DrawText(new FormattedText(ImmoCad.Core.Translations.T("elev.title", (plane.Length / 1000.0).ToString("0.00")), System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 14, txt), new Point(12, 8));
+        ctx.DrawText(new FormattedText(Vm.Side is { } sd ? T("elev.side", T("enum.ViewSide." + sd), Vm.ElevationDepth) : ImmoCad.Core.Translations.T("elev.title", (plane.Length / 1000.0).ToString("0.00")), System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 14, txt), new Point(12, 8));
     }
 }

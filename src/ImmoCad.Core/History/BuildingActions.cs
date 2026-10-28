@@ -443,7 +443,16 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
         Edit("Move node", BuildingEventKind.NetworkChanged, () => { Net(networkId).Nodes.First(n => n.Id == nodeId).Position = p; return nodeId; }, i => i);
 
     public void DeleteSegment(Guid networkId, Guid segId) =>
-        Edit("Delete segment", BuildingEventKind.NetworkChanged, () => { Net(networkId).Segments.RemoveAll(s => s.Id == segId); return segId; }, i => i);
+        Edit("Delete segment", BuildingEventKind.NetworkChanged, () =>
+        {   // nodes left without a segment go with it, and so does a network that becomes empty
+            var n = Net(networkId); n.Segments.RemoveAll(s => s.Id == segId);
+            n.Nodes.RemoveAll(x => !n.Segments.Any(s => s.A == x.Id || s.B == x.Id));
+            if (n.Segments.Count == 0) building.Networks.Remove(n);
+            return segId;
+        }, i => i);
+
+    public void DeleteSpace(Guid levelId, Guid spaceId) =>
+        Edit("Delete space", BuildingEventKind.LevelChanged, () => { Find(levelId).Spaces.RemoveAll(s => s.Id == spaceId); return spaceId; }, i => i);
 
     public void SetSegmentDiameter(Guid networkId, Guid segId, int diameterMm) =>
         Edit("Change diameter", BuildingEventKind.NetworkChanged, () => { Net(networkId).Segments.First(s => s.Id == segId).DiameterMm = diameterMm; return segId; }, i => i);

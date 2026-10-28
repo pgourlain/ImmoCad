@@ -15,7 +15,7 @@ public interface IDialogService
     Task<string?> PickSaveAsync(string title, string pattern, string? suggestedName = null);
     Task<SaveChoice> ConfirmSaveAsync(string documentName);
     Task ShowErrorAsync(string title, string message);
-    Task<ImportWizardViewModel?> RunImportWizardAsync(byte[] image);
+    Task<ImportWizardViewModel?> RunImportWizardAsync(byte[] image, IReadOnlyList<WizardReference>? references = null);
     /// <summary>Single text input; null when cancelled.</summary>
     Task<string?> PromptAsync(string title, string label, string initial);
     /// <summary>Export dialog: format, levels, networks, units. Null when cancelled.</summary>
@@ -36,7 +36,7 @@ public sealed class FakeDialogService : IDialogService
     public Task<ExportRequest?> ShowExportDialogAsync(ImmoCad.Core.Model.Building building, string? preselect = null) { Asked.Add("export-dialog"); return Task.FromResult(ExportAnswers.Count > 0 ? ExportAnswers.Dequeue() : null); }
     public Queue<string?> PromptAnswers { get; } = new();
     public Task<string?> PromptAsync(string title, string label, string initial) { Asked.Add("prompt:" + title); return Task.FromResult(PromptAnswers.Count > 0 ? PromptAnswers.Dequeue() : null); }
-    public Task<ImportWizardViewModel?> RunImportWizardAsync(byte[] image) => Task.FromResult(Wizard?.Invoke(image));
+    public Task<ImportWizardViewModel?> RunImportWizardAsync(byte[] image, IReadOnlyList<WizardReference>? references = null) => Task.FromResult(Wizard?.Invoke(image));
 }
 
 public sealed class AvaloniaDialogService(Window owner) : IDialogService
@@ -85,9 +85,9 @@ public sealed class AvaloniaDialogService(Window owner) : IDialogService
         await w.ShowDialog(owner); return result;
     }
 
-    public async Task<ImportWizardViewModel?> RunImportWizardAsync(byte[] image)
+    public async Task<ImportWizardViewModel?> RunImportWizardAsync(byte[] image, IReadOnlyList<WizardReference>? references = null)
     {
-        var wiz = new ImportWizard(image); await wiz.ShowDialog(owner); return wiz.Accepted ? wiz.Result : null;
+        var wiz = new ImportWizard(image, references); await wiz.ShowDialog(owner); return wiz.Accepted ? wiz.Result : null;
     }
 }
 

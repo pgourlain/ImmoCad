@@ -5,3 +5,7 @@
 - Plan: adaptive grid with scale bar, snap to grid (F9), origin marker, Space+drag / trackpad pan, Ctrl(⌘)+drag rotation, riser and door/window selection with properties, wall alignment (centre/left/right, Space) with dashed preview.
 - 3D: orientation view cube. Properties panel scrolls.
 - Import wizard: zoom/pan (wheel, Space+drag, trackpad), alignment guides, pick two points along a wall to make it horizontal/vertical, live rotation preview.
+- Import wizard: ±0.1° rotation buttons, scale and position taken from an already imported level.
+- Plan: dashed previews before placing doors, windows, risers, palette objects and rooms; rooms can be selected, renamed and deleted; Delete now works on pipes, risers and equipment.
+- Riser templates "cold + hot + hot return" and "drainage only" (new Hot water return network type).
+- Front / right / back / left views of the whole building (never from below), with pipe drawing at a chosen depth.

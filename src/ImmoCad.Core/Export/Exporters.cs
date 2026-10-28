@@ -151,7 +151,7 @@ public sealed class IfcExporter : IBuildingExporter
     private static readonly Dictionary<NetworkType, (double R, double G, double B)> Colour = new()
     {
         [NetworkType.HeatingSupply] = (0.85, 0.12, 0.12), [NetworkType.HeatingReturn] = (0.12, 0.24, 0.85), [NetworkType.DomesticHotWater] = (0.95, 0.45, 0.1),
-        [NetworkType.ColdWater] = (0.1, 0.6, 0.95), [NetworkType.Drainage] = (0.4, 0.4, 0.4), [NetworkType.Gas] = (0.9, 0.8, 0.1),
+        [NetworkType.ColdWater] = (0.1, 0.6, 0.95), [NetworkType.Drainage] = (0.4, 0.4, 0.4), [NetworkType.Gas] = (0.9, 0.8, 0.1), [NetworkType.DhwReturn] = (0.61, 0.29, 0.08),
     };
 
     public string Export(Building b)

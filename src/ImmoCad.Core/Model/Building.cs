@@ -4,7 +4,7 @@ public enum Stability { Common, Private }
 public enum LevelKind { Basement, Ground, Standard, Attic, Roof, Site }
 public enum OpeningKind { Door, Window, Opening }
 public enum SpaceKind { Cellar, Corridor, BoilerRoom, BikeRoom, Parking, Stairwell, ServiceShaft, Apartment, Room }
-public enum NetworkType { HeatingSupply, HeatingReturn, DomesticHotWater, ColdWater, Drainage, Gas }
+public enum NetworkType { HeatingSupply, HeatingReturn, DomesticHotWater, ColdWater, Drainage, Gas, DhwReturn }
 
 public sealed class Opening
 {

@@ -6,6 +6,9 @@ namespace ImmoCad.Core.Geometry;
 /// Vertical plane along a wall face seen from the front: u runs along A→B (mm), z is altitude. Pipes are placed at an offset
 /// from the face (default 50 mm) on the chosen side, so the elevation view and the plan agree.
 /// </summary>
+/// <summary>The four horizontal directions a building can be viewed from (never from below).</summary>
+public enum ViewSide { South, East, North, West }
+
 public sealed class ElevationPlane
 {
     public PointMm A { get; }
@@ -29,6 +32,22 @@ public sealed class ElevationPlane
     {
         var o = (offsetMm ?? OffsetMm) * Side;
         return new((int)Math.Round(A.X + _ux * u - _uy * o), (int)Math.Round(A.Y + _uy * u + _ux * o));
+    }
+
+    /// <summary>Whole-building elevation seen from one side, u growing to the viewer's right. Pipes placed on it sit <paramref name="depthMm"/> inside the outer bounding line.</summary>
+    public static ElevationPlane ForSide(Building b, ViewSide side, int depthMm = 0)
+    {
+        var pts = b.Levels.SelectMany(l => l.Walls.SelectMany(w => w.Footprint)).ToList();
+        int x0 = pts.Count > 0 ? pts.Min(p => p.X) : 0, x1 = pts.Count > 0 ? pts.Max(p => p.X) : 10000, y0 = pts.Count > 0 ? pts.Min(p => p.Y) : 0, y1 = pts.Count > 0 ? pts.Max(p => p.Y) : 10000;
+        if (x1 - x0 < 100) x1 = x0 + 100; if (y1 - y0 < 100) y1 = y0 + 100;
+        var (a, c) = side switch
+        {
+            ViewSide.South => (new PointMm(x0, y0), new PointMm(x1, y0)),   // viewer south of the building looking north: east on the right
+            ViewSide.East => (new PointMm(x1, y0), new PointMm(x1, y1)),    // looking west: north on the right
+            ViewSide.North => (new PointMm(x1, y1), new PointMm(x0, y1)),   // looking south: west on the right
+            _ => (new PointMm(x0, y1), new PointMm(x0, y0)),                // looking east: south on the right
+        };
+        return new ElevationPlane(a, c, -Math.Max(0, depthMm), -1);
     }
 
     public double ProjectU(PointMm p) => (p.X - A.X) * _ux + (p.Y - A.Y) * _uy;

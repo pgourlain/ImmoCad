@@ -12,7 +12,7 @@ public static class GltfExporter
     {
         [NetworkType.HeatingSupply] = [0.85f, 0.1f, 0.1f, 1], [NetworkType.HeatingReturn] = [0.1f, 0.2f, 0.85f, 1],
         [NetworkType.DomesticHotWater] = [0.95f, 0.45f, 0.1f, 1], [NetworkType.ColdWater] = [0.1f, 0.6f, 0.95f, 1],
-        [NetworkType.Drainage] = [0.4f, 0.4f, 0.4f, 1], [NetworkType.Gas] = [0.9f, 0.8f, 0.1f, 1],
+        [NetworkType.Drainage] = [0.4f, 0.4f, 0.4f, 1], [NetworkType.Gas] = [0.9f, 0.8f, 0.1f, 1], [NetworkType.DhwReturn] = [0.61f, 0.29f, 0.08f, 1],
     };
 
     public static byte[] ExportGlb(Building b)

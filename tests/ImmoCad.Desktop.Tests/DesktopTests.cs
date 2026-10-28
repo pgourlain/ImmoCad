@@ -471,7 +471,9 @@ public class RoomToolsTests
     {
         var vm = Basement(); var l = vm.CurrentLevel!;
         Assert.Equal(LevelKind.Basement, l.Kind); var steps = vm.History.Items.Count;
+        var pv = vm.OpeningPreview(new(1000, 0), OpeningKind.Door); Assert.NotNull(pv); Assert.Equal(700, pv!.Value.Width); Assert.Equal(steps, vm.History.Items.Count);   // preview changes nothing
         vm.PlaceOpening(new(1000, 0), OpeningKind.Door);                       // click on the south wall
+        Assert.Null(vm.OpeningPreview(new(1000, 0), OpeningKind.Door));          // over the door itself a click flips it: no new ghost
         var door = vm.CurrentLevel!.Walls.SelectMany(w => w.Openings).Single(); Assert.Equal(700, door.WidthMm); Assert.Equal(steps + 1, vm.History.Items.Count);
         vm.PlaceOpening(new(1000, 0), OpeningKind.Door); Assert.True(vm.CurrentLevel!.Walls.SelectMany(w => w.Openings).Single().SwingLeft);   // second click on the door flips it
         vm.PlaceOpening(new(3000, 1200), OpeningKind.Window); Assert.Equal("Cliquez sur un mur", vm.Status);                                         // nothing under the click
@@ -518,6 +520,55 @@ public class RoomToolsTests
         var dir = Path.Combine(AppContext.BaseDirectory, "screenshots"); Directory.CreateDirectory(dir);
         w.CaptureRenderedFrame()!.Save(Path.Combine(dir, "basement.png"));
         vm.ToggleCommonOnlyCommand.Execute(null); w.CaptureRenderedFrame(); w.Close();
+    }, CancellationToken.None);
+
+    [Fact] public Task A_room_is_selected_when_placed_or_clicked_and_can_be_renamed() => f.Session.Dispatch(() =>
+    {
+        var vm = Basement(); vm.PlaceSpace(new(1000, 1000));
+        var sp = vm.CurrentLevel!.Spaces.Single(); Assert.Equal(sp.Id, vm.SelectedSpaceId); Assert.True(vm.SelectedSpaceVisible);
+        vm.ClearSpace(); Assert.False(vm.SelectedSpaceVisible);
+        vm.SelectSpace(vm.SpaceAt(new(1000, 1000))!.Id); Assert.Equal(sp.DisplayName, vm.SpaceName);
+        var steps = vm.History.Items.Count;
+        vm.SpaceName = "Chaufferie"; vm.SpaceNumber = "C1"; vm.ApplySpaceCommand.Execute(null);
+        Assert.Equal("Chaufferie", vm.CurrentLevel!.Spaces.Single().DisplayName); Assert.Equal("C1", vm.CurrentLevel.Spaces.Single().Number); Assert.Equal(steps + 1, vm.History.Items.Count);
+        vm.ApplySpaceCommand.Execute(null); Assert.Equal("Chaufferie", vm.CurrentLevel.Spaces.Single().Name);   // untouched name stays
+    }, CancellationToken.None);
+
+    [Fact] public Task Side_views_show_the_whole_building_and_pipes_are_drawn_inside_it() => f.Session.Dispatch(() =>
+    {
+        var vm = Basement(); var pts = vm.Building.Levels.SelectMany(l => l.Walls.SelectMany(w => w.Footprint)).ToList();
+        int x0 = pts.Min(p => p.X), x1 = pts.Max(p => p.X), y0 = pts.Min(p => p.Y), y1 = pts.Max(p => p.Y);
+        vm.ElevationDepth = 700; vm.ShowSideCommand.Execute("South"); Assert.True(vm.IsElevation);
+        var south = vm.Plane!; Assert.Equal(x1 - x0, south.Length, 0); Assert.Equal(y0 + 700, south.ToPlan(0).Y); Assert.Equal(x0, south.ToPlan(0).X);   // inside, left = west
+        vm.RotateViewCommand.Execute(-1); Assert.Equal(ImmoCad.Core.Geometry.ViewSide.West, vm.Side);                                                                         // turns round the building
+        var west = vm.Plane!; Assert.Equal(y1 - y0, west.Length, 0); Assert.Equal(x0 + 700, west.ToPlan(0).X); Assert.Equal(y1, west.ToPlan(0).Y);    // looking east: south on the right
+        vm.RotateViewCommand.Execute(-1); vm.RotateViewCommand.Execute(-1); vm.RotateViewCommand.Execute(-1); Assert.Equal(ImmoCad.Core.Geometry.ViewSide.South, vm.Side);
+        var steps = vm.History.Items.Count; vm.PlaceHorizontalPipe(500, 3000, 1500); Assert.Equal(steps + 1, vm.History.Items.Count);
+        var n = vm.Building.Networks[^1].Nodes; Assert.All(n, q => Assert.Equal(y0 + 700, q.Position.Y));
+    }, CancellationToken.None);
+
+    [Fact] public Task Delete_removes_a_selected_pipe_room_or_equipment_in_one_undoable_step() => f.Session.Dispatch(() =>
+    {
+        var vm = Basement(); var nets = vm.Building.Networks.Count; vm.PlaceRiser(new(1000, 1000));
+        var net = vm.Building.Networks[^1]; Assert.Equal(nets + 1, vm.Building.Networks.Count);
+        vm.SelectSegment(net.Id, net.Segments[0].Id); var steps = vm.History.Items.Count;
+        vm.DeleteSelectionCommand.Execute(null);
+        Assert.Equal(nets, vm.Building.Networks.Count); Assert.Equal(steps + 1, vm.History.Items.Count); Assert.Null(vm.SelectedSegment);   // the emptied network goes too
+        vm.UndoCommand.Execute(null); Assert.Equal(nets + 1, vm.Building.Networks.Count); Assert.Equal(2, vm.Building.Networks[^1].Nodes.Count);
+        vm.PlaceSpace(new(1000, 1000)); steps = vm.History.Items.Count; vm.DeleteSelectionCommand.Execute(null);   // the new room is selected
+        Assert.Empty(vm.CurrentLevel!.Spaces); Assert.Equal(steps + 1, vm.History.Items.Count);
+    }, CancellationToken.None);
+
+    [Fact] public Task Placement_previews_for_risers_palette_objects_and_rooms_change_nothing() => f.Session.Dispatch(() =>
+    {
+        var vm = Basement(); var steps = vm.History.Items.Count;
+        vm.RiserTemplate = "tpl.dhw"; var risers = vm.RiserPreview(new(1000, 1000));
+        Assert.Equal(2, risers.Count); Assert.Equal(risers[0].At.X + vm.RiserSpacing, risers[1].At.X);
+        vm.RiserTemplate = "tpl.loop"; Assert.Equal([NetworkType.ColdWater, NetworkType.DomesticHotWater, NetworkType.DhwReturn], vm.RiserPreview(new(1000, 1000)).Select(r => r.Type));
+        vm.RiserTemplate = "tpl.drain"; var eu = vm.RiserPreview(new(1000, 1000)); Assert.Equal(NetworkType.Drainage, eu.Single().Type); Assert.True(eu.Single().DiameterMm >= 100);
+        Assert.Null(vm.PalettePreview(new(1000, 1000)));                        // no palette pick
+        Assert.NotNull(vm.SpacePreview(new(1000, 1000)));                       // closed basement walls: the room outline
+        Assert.Equal(steps, vm.History.Items.Count);
     }, CancellationToken.None);
 }
 
@@ -1216,5 +1267,18 @@ public class NorthUpTests
         Assert.Equal(3, ImportWizardViewModel.TiltOf((100, 0), (0, -5.24)), 0);     // leftwards line, same axis
         var w = new ImportWizardViewModel(WizardTests.PlanPng()); w.AlignToLine((50, 240), (550, 265));
         Assert.Equal(2.86, w.Angle, 2); Assert.Equal(w.Angle, w.AppliedAngle);
+    }
+
+    [Fact] public void Wizard_scales_a_new_plan_from_an_imported_level_and_places_it_on_it()
+    {
+        var png = WizardTests.PlanPng(); var h = new ImportWizardViewModel(png).Height;
+        // reference picture at 0.1 px/mm (10 mm per px), origin offset (1000, 2000) mm
+        var refr = new WizardReference("Basement", png, [10, 0, 1000, 0, -10, 2000 + 10 * h]);
+        var w = new ImportWizardViewModel(png, [refr]); Assert.Null(w.Reference); Assert.False(w.UsesReference);
+        w.Reference = refr; Assert.True(w.ShowingReference);
+        w.AddPoint(0, h); w.AddPoint(100, h); Assert.False(w.ShowingReference);        // reference: 1000 mm apart, at x=1000, y=2000
+        w.AddPoint(50, 300); w.AddPoint(250, 300);                                      // new plan: 200 px for 1000 mm
+        Assert.True(w.IsCalibrated); Assert.Equal(0.2, w.Calibration!.Value.PxPerMmX, 6);
+        Assert.Equal(1000 - 50 / 0.2, w.Offset.X, 6);
     }
 }

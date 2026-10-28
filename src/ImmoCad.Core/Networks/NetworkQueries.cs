@@ -47,7 +47,7 @@ public static class NetworkQueries
     public static Rgb ColorOf(NetworkType t) => t switch
     {
         NetworkType.HeatingSupply => new(0xD9, 0x1E, 0x1E), NetworkType.HeatingReturn => new(0x1E, 0x3C, 0xD9), NetworkType.DomesticHotWater => new(0xF2, 0x73, 0x1A),
-        NetworkType.ColdWater => new(0x1A, 0x99, 0xF2), NetworkType.Drainage => new(0x66, 0x66, 0x66), _ => new(0xE6, 0xCC, 0x1A),
+        NetworkType.ColdWater => new(0x1A, 0x99, 0xF2), NetworkType.Drainage => new(0x66, 0x66, 0x66), NetworkType.DhwReturn => new(0x9C, 0x4A, 0x14), _ => new(0xE6, 0xCC, 0x1A),
     };
     public readonly record struct Rgb(byte R, byte G, byte B);
 

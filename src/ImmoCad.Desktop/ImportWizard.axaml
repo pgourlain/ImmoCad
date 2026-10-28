@@ -22,15 +22,25 @@
             <Button vm:L.Content="wiz.autodeskew" Click="OnAutoDeskew" HorizontalAlignment="Stretch" />
             <TextBlock Text="{Binding AngleLabel}" />
             <Slider Minimum="-45" Maximum="45" Value="{Binding Angle}" TickFrequency="0.1" PointerReleased="OnAngleChanged" />
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <RepeatButton Content="−0.1°" vm:L.Tip="wiz.angle.down" Click="OnAngleDown" />
+              <RepeatButton Content="+0.1°" vm:L.Tip="wiz.angle.up" Click="OnAngleUp" />
+            </StackPanel>
           </StackPanel>
 
           <StackPanel x:Name="PCalibrate" Spacing="8" IsVisible="False">
-            <CheckBox vm:L.Content="wiz.twoaxes" IsChecked="{Binding TwoAxes}" />
-            <TextBlock vm:L.Text="wiz.dist.h" />
-            <NumericUpDown Value="{Binding DistanceMetres}" Minimum="0.1" Maximum="500" Increment="0.1" FormatString="0.00" />
-            <StackPanel IsVisible="{Binding TwoAxes}">
-              <TextBlock vm:L.Text="wiz.dist.v" />
-              <NumericUpDown Value="{Binding DistanceVMetres}" Minimum="0.1" Maximum="500" Increment="0.1" FormatString="0.00" />
+            <StackPanel x:Name="PRefPick" Spacing="4">
+              <TextBlock vm:L.Text="wiz.ref.level" />
+              <ComboBox x:Name="RefBox" HorizontalAlignment="Stretch" SelectionChanged="OnReferenceChanged" />
+            </StackPanel>
+            <StackPanel x:Name="PManual" Spacing="8">
+              <CheckBox vm:L.Content="wiz.twoaxes" IsChecked="{Binding TwoAxes}" />
+              <TextBlock vm:L.Text="wiz.dist.h" />
+              <NumericUpDown Value="{Binding DistanceMetres}" Minimum="0.1" Maximum="500" Increment="0.1" FormatString="0.00" />
+              <StackPanel IsVisible="{Binding TwoAxes}">
+                <TextBlock vm:L.Text="wiz.dist.v" />
+                <NumericUpDown Value="{Binding DistanceVMetres}" Minimum="0.1" Maximum="500" Increment="0.1" FormatString="0.00" />
+              </StackPanel>
             </StackPanel>
             <TextBlock x:Name="CalText" FontWeight="SemiBold" />
           </StackPanel>

@@ -59,7 +59,7 @@ public class PlanView : Control
         InvalidateVisual();
     }
     private readonly List<(Rect Rect, Guid LevelId, PointMm Center)> _arrows = new();
-    private PointMm _hover;
+    private PointMm _hover, _spaceFor; private List<PointMm>? _spaceOutline;
     private string _chainTyped = "", _chainAngle = ""; private int _chainField;     // typed length / angle while placing; Tab switches field
     private (Guid Id, PointMm To, PointMm From)? _eqDrag; private (Guid EqId, Port Port, PointMm3 At, PointMm To)? _connect;
     private (Wall Wall, Opening Opening)? _openingDrag;
@@ -261,7 +261,8 @@ public class PlanView : Control
         var hit = HitWall(_startMm);
         if (hit != null && vm.SelectedWalls.Contains(hit.Id) && !_addToSelection) _gesture = Gesture.Move;       // drag the group
         else if (hit != null) { vm.SelectWalls([hit.Id], _addToSelection); _gesture = Gesture.Move; }            // select then drag
-        else { if (!_addToSelection) { vm.SelectWalls([], false); vm.ClearOpening(); } _gesture = Gesture.Box; }
+        else if (!_addToSelection && vm.SpaceAt(_startMm) is { } room) { vm.SelectWalls([], false); vm.ClearOpening(); vm.SelectSpace(room.Id); _gesture = Gesture.Box; }
+        else { if (!_addToSelection) { vm.SelectWalls([], false); vm.ClearOpening(); vm.ClearSpace(); } _gesture = Gesture.Box; }
         e.Pointer.Capture(this); InvalidateVisual();
     }
 
@@ -281,7 +282,7 @@ public class PlanView : Control
         _hover = ToMm(p);
         if (_handleTool != null) { _handleTool.ForceElbow = e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Alt); _handleTool.Move(HandlePointer(e)); InvalidateVisual(); return; }
         if (IsChain) { DrawTool?.Move(TP(e)); InvalidateVisual(); return; }
-        if (vm.IsPlaceTool || vm.IsRiserTool) { InvalidateVisual(); return; }
+        if (vm.IsPlaceTool || vm.IsRiserTool || vm.IsDoorTool || vm.IsWindowTool || vm.IsSpaceTool) { InvalidateVisual(); return; }
         if (_connect is { } cn0) { _connect = (cn0.EqId, cn0.Port, cn0.At, ToMm(p)); InvalidateVisual(); return; }
         if (_eqDrag is { } ed0) { var m = ToMm(p); var d = (X: m.X - ed0.From.X, Y: m.Y - ed0.From.Y); var orig = Vm.Building.Equipment.First(q => q.Id == ed0.Id).Position; _eqDrag = (ed0.Id, new PointMm(Snap(orig.X + d.X, Snapper.GridMm), Snap(orig.Y + d.Y, Snapper.GridMm)), ed0.From); InvalidateVisual(); return; }
         if (_stretch is { } sh && Vm.BackgroundSize() is { } szm) { var mm = ToMm(p); _stretchLive = ImageStretch.Drag(_stretchStart, szm.W, szm.H, sh, _stretchFrom, (mm.X, mm.Y), keepRatio: e.KeyModifiers.HasFlag(KeyModifiers.Shift)); InvalidateVisual(); return; }
@@ -418,11 +419,38 @@ public class PlanView : Control
             if (Vm!.CommonOnly && sp.Stability == Stability.Private) continue;
             var pending = Vm!.NumberPending.Contains(sp.Id);
             var g = new StreamGeometry(); using (var c = g.Open()) { c.BeginFigure(ToScreen(sp.Outline[0]), true); foreach (var p in sp.Outline.Skip(1)) c.LineTo(ToScreen(p)); c.EndFigure(true); }
-            ctx.DrawGeometry(new SolidColorBrush(pending ? Color.FromArgb(90, 255, 160, 0) : sp.Stability == Stability.Common ? Color.FromArgb(34, 80, 160, 255) : Color.FromArgb(22, 120, 200, 120)), null, g);
+            if (Vm.SelectedSpaceId == sp.Id) ctx.DrawGeometry(new SolidColorBrush(Color.FromArgb(50, 255, 120, 0)), new Pen(Brushes.OrangeRed, 2), g);
+            else ctx.DrawGeometry(new SolidColorBrush(pending ? Color.FromArgb(90, 255, 160, 0) : sp.Stability == Stability.Common ? Color.FromArgb(34, 80, 160, 255) : Color.FromArgb(22, 120, 200, 120)), null, g);
             var cx = (int)sp.Outline.Average(p => p.X); var cy = (int)sp.Outline.Average(p => p.Y); var cs = ToScreen(new PointMm(cx, cy));
             var label = sp.DisplayName; var ft = Txt(label, 12, dark ? Brushes.Gainsboro : Brushes.DimGray);
             ctx.DrawText(ft, new Point(cs.X - ft.Width / 2, cs.Y - ft.Height / 2));
         }
+    }
+
+    /// <summary>Dashed ghost of the door/window that a click would place (cut, leaf and swing arc for a door).</summary>
+    private void DrawOpeningPreview(DrawingContext ctx, OpeningKind kind)
+    {
+        if (Vm!.OpeningPreview(_hover, kind) is not { } pv || WallGeometry.Axis(pv.Wall) is not { } ax) return;
+        double dx = ax.B.X - ax.A.X, dy = ax.B.Y - ax.A.Y; var len = Math.Sqrt(dx * dx + dy * dy); double nx = -dy / len, ny = dx / len;
+        var c0 = ax.PointAt(pv.Pos - pv.Width / 2.0); var c1 = ax.PointAt(pv.Pos + pv.Width / 2.0); var h = ax.ThicknessMm / 2.0;
+        PointMm Q(PointMm c, double side) => new((int)(c.X + nx * h * side), (int)(c.Y + ny * h * side));
+        var dash = new Pen(Brushes.OrangeRed, 1.6, DashStyle.Dash); var fill = new SolidColorBrush(Color.FromArgb(50, 255, 120, 0));
+        var cut = new StreamGeometry(); using (var cx = cut.Open()) { cx.BeginFigure(ToScreen(Q(c0, 1)), true); cx.LineTo(ToScreen(Q(c1, 1))); cx.LineTo(ToScreen(Q(c1, -1))); cx.LineTo(ToScreen(Q(c0, -1))); cx.EndFigure(true); }
+        ctx.DrawGeometry(fill, dash, cut);
+        if (kind == OpeningKind.Window) { ctx.DrawLine(dash, ToScreen(c0), ToScreen(c1)); return; }
+        var leafEnd = new PointMm((int)(c1.X + nx * pv.Width), (int)(c1.Y + ny * pv.Width));   // default swing: hinge at the far end, leaf towards the left of the wall
+        ctx.DrawLine(dash, ToScreen(c1), ToScreen(leafEnd));
+        var arc = new StreamGeometry(); using (var ac = arc.Open())
+        {
+            ac.BeginFigure(ToScreen(c0), false);
+            for (var k = 1; k <= 12; k++)
+            {
+                var a = Math.PI / 2 * k / 12; var vx = (c0.X - c1.X) * Math.Cos(a) + nx * pv.Width * Math.Sin(a); var vy = (c0.Y - c1.Y) * Math.Cos(a) + ny * pv.Width * Math.Sin(a);
+                ac.LineTo(ToScreen(new PointMm((int)(c1.X + vx), (int)(c1.Y + vy))));
+            }
+            ac.EndFigure(false);
+        }
+        ctx.DrawGeometry(null, dash, arc);
     }
 
     private void DrawOpenings(DrawingContext ctx, Level l, bool dark)
@@ -605,8 +633,34 @@ public class PlanView : Control
                 }
         }
         if (_connect is { } cn) { var c = NetworkQueries.ColorOf(cn.Port.Network); ctx.DrawLine(new Pen(new SolidColorBrush(Color.FromRgb(c.R, c.G, c.B)), 2.5, DashStyle.Dash), ToScreen(new PointMm(cn.At.X, cn.At.Y)), ToScreen(cn.To)); }
+        if ((Vm.IsDoorTool || Vm.IsWindowTool) && Bounds.Contains(ToScreen(_hover))) DrawOpeningPreview(ctx, Vm.IsDoorTool ? OpeningKind.Door : OpeningKind.Window);
         // placement ghost: green when valid, red with a hint when not
-        if ((Vm.IsPlaceTool || Vm.IsRiserTool) && Bounds.Contains(ToScreen(_hover)))
+        if (Vm.IsRiserTool && Bounds.Contains(ToScreen(_hover)))
+            foreach (var (at, type, dia) in Vm.RiserPreview(_hover))
+            {   // dashed ghost of each tube, in its network colour, at its snapped position
+                var c = NetworkQueries.ColorOf(type); var rad = Math.Max(5, dia * Scale); var col = Color.FromRgb(c.R, c.G, c.B);
+                ctx.DrawEllipse(new SolidColorBrush(Color.FromArgb(80, col.R, col.G, col.B)), new Pen(new SolidColorBrush(col), 2, DashStyle.Dash), ToScreen(at), rad, rad);
+            }
+        if (Vm.IsSpaceTool && Bounds.Contains(ToScreen(_hover)))
+        {   // the room outline is only recomputed when the cursor moves
+            if (_spaceFor != _hover) { _spaceFor = _hover; _spaceOutline = Vm.SpacePreview(_hover); }
+            if (_spaceOutline is { Count: > 2 } so)
+            {
+                var g = new StreamGeometry(); using (var cx = g.Open()) { cx.BeginFigure(ToScreen(so[0]), true); foreach (var q in so.Skip(1)) cx.LineTo(ToScreen(q)); cx.EndFigure(true); }
+                ctx.DrawGeometry(new SolidColorBrush(Color.FromArgb(40, 255, 120, 0)), new Pen(Brushes.OrangeRed, 1.6, DashStyle.Dash), g);
+            }
+        }
+        if (Vm.IsPlaceTool && Vm.PalettePreview(_hover) is { } pp && Bounds.Contains(ToScreen(_hover)))
+        {   // dashed symbol of the object at its snapped position
+            var dash = new Pen(Brushes.OrangeRed, 1.6, DashStyle.Dash);
+            foreach (var fig in Symbol.Figures(pp.Entry, pp.At))
+            {
+                if (fig.Centre is { } c) { ctx.DrawEllipse(null, dash, ToScreen(c), fig.Radius * Scale, fig.Radius * Scale); continue; }
+                var g = new StreamGeometry(); using (var cx = g.Open()) { cx.BeginFigure(ToScreen(fig.Points[0]), fig.Closed); foreach (var q in fig.Points.Skip(1)) cx.LineTo(ToScreen(q)); cx.EndFigure(fig.Closed); }
+                ctx.DrawGeometry(null, dash, g);
+            }
+        }
+        else if (Vm.IsPlaceTool && Bounds.Contains(ToScreen(_hover)))
         {
             var hint = Vm.IsPlaceTool ? Vm.PlacementHint(_hover) : null; var ok = hint == null;
             var col = ok ? Colors.LimeGreen : Colors.Red; var p = ToScreen(_hover);

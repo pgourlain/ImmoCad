@@ -13,9 +13,12 @@ public partial class ImportWizard : Window
 
     public ImportWizard() { InitializeComponent(); }
 
-    public ImportWizard(byte[] image) : this()
+    public ImportWizard(byte[] image, IReadOnlyList<WizardReference>? references = null) : this()
     {
-        DataContext = new ImportWizardViewModel(image);
+        DataContext = new ImportWizardViewModel(image, references);
+        RefBox.Items.Add(T("wiz.ref.none")); RefBox.SelectedIndex = 0;
+        foreach (var r in Vm.References) RefBox.Items.Add(r);
+        PRefPick.IsVisible = Vm.References.Count > 0;
         Vm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(ImportWizardViewModel.Angle)) { Canvas.PreviewDeg = -(Vm.Angle - Vm.AppliedAngle); Canvas.InvalidateVisual(); } };
         Canvas.SetImage(Vm.Image); Canvas.PixelClicked += OnPixel; Canvas.OutlineClicked += i => { Vm.Reject(i); Canvas.InvalidateVisual(); UpdateReview(); };
         ShowStep();
@@ -32,10 +35,27 @@ public partial class ImportWizard : Window
             Canvas.InvalidateVisual(); return;
         }
         if (Vm.Step != WizardStep.Calibrate) return;
-        Vm.AddCalibrationPoint(p.X, p.Y); Canvas.Points.Clear(); Canvas.Points.AddRange(Vm.CalibrationPoints); Canvas.InvalidateVisual(); UpdateCal();
+        var wasRef = Vm.ShowingReference; Vm.AddPoint(p.X, p.Y);
+        if (wasRef && !Vm.ShowingReference) Canvas.SetImage(Vm.Image);   // both reference points set: now click the same features on the new plan
+        ShowCalPoints(); UpdateCal();
     }
 
-    private void UpdateCal() { CalText.Text = Vm.IsCalibrated ? T("wiz.cal.ok", Vm.Calibration!.Value.PxPerMmX.ToString("0.####")) : T("wiz.cal.points", Vm.CalibrationPoints.Count); NextBtn.IsEnabled = Vm.Step != WizardStep.Calibrate || Vm.IsCalibrated; }
+    private void ShowCalPoints()
+    {
+        Canvas.Points.Clear(); Canvas.Points.AddRange(Vm.ShowingReference ? Vm.ReferencePx : Vm.CalibrationPoints); Canvas.InvalidateVisual();
+    }
+
+    private void OnReferenceChanged(object? s, SelectionChangedEventArgs e)
+    {
+        if (Vm == null) return;
+        Vm.Reference = RefBox.SelectedItem as WizardReference; PManual.IsVisible = !Vm.UsesReference;
+        ShowCalibrationImage(); ShowCalPoints(); UpdateCal();
+    }
+
+    /// <summary>The picture to click on: the reference level first, then the new plan.</summary>
+    private void ShowCalibrationImage() => Canvas.SetImage(Vm.Step == WizardStep.Calibrate && Vm.ShowingReference ? Vm.Reference!.Image : Vm.Image);
+
+    private void UpdateCal() { CalText.Text = Vm.IsCalibrated ? T("wiz.cal.ok", Vm.Calibration!.Value.PxPerMmX.ToString("0.####")) : Vm.UsesReference ? T(Vm.ShowingReference ? "wiz.ref.onref" : "wiz.ref.onnew", Vm.ShowingReference ? Vm.ReferenceMm.Count : Vm.CalibrationPoints.Count) : T("wiz.cal.points", Vm.CalibrationPoints.Count); NextBtn.IsEnabled = Vm.Step != WizardStep.Calibrate || Vm.IsCalibrated; }
 
     private void ShowStep()
     {
@@ -51,7 +71,8 @@ public partial class ImportWizard : Window
         NextBtn.Content = Vm.Step == WizardStep.Review ? T("wiz.confirm") : T("wiz.next"); BackBtn.IsEnabled = Vm.Step != WizardStep.Straighten;
         Canvas.Fade = Vm.Step == WizardStep.Detect ? 0.35 : 1; Canvas.Outlines = Vm.Step == WizardStep.Review ? Vm.Detected : null; Canvas.Rejected = Vm.Rejected;
         Canvas.RefPoints.Clear(); Canvas.Guides = GuidesBox.IsChecked == true && Vm.Step is WizardStep.Straighten or WizardStep.Calibrate;
-        Canvas.Points.Clear(); if (Vm.Step == WizardStep.Calibrate) Canvas.Points.AddRange(Vm.CalibrationPoints);
+        Canvas.SetImage(Vm.Step == WizardStep.Calibrate && Vm.ShowingReference ? Vm.Reference!.Image : Vm.Image, keepView: true);
+        Canvas.Points.Clear(); if (Vm.Step == WizardStep.Calibrate) Canvas.Points.AddRange(Vm.ShowingReference ? Vm.ReferencePx : Vm.CalibrationPoints);
         if (Vm.Step == WizardStep.Detect) PreviewMask(); else Canvas.ClearMask();
         UpdateCal(); UpdateReview(); Canvas.InvalidateVisual();
     }
@@ -61,6 +82,9 @@ public partial class ImportWizard : Window
 
     private void OnAutoDeskew(object? s, RoutedEventArgs e) { Vm.AutoDeskew(); Canvas.SetImage(Vm.Image, keepView: true); }
     private void OnAngleChanged(object? s, Avalonia.Input.PointerReleasedEventArgs e) { Vm.ApplyRotation(); Canvas.SetImage(Vm.Image, keepView: true); }
+    private void NudgeAngle(double delta) { Vm.Angle = Math.Round(Math.Clamp(Vm.Angle + delta, -45, 45), 1); Vm.ApplyRotation(); Canvas.SetImage(Vm.Image, keepView: true); }
+    private void OnAngleDown(object? s, RoutedEventArgs e) => NudgeAngle(-0.1);
+    private void OnAngleUp(object? s, RoutedEventArgs e) => NudgeAngle(0.1);
     private void OnZoomIn(object? s, RoutedEventArgs e) => Canvas.ZoomBy("in");
     private void OnZoomOut(object? s, RoutedEventArgs e) => Canvas.ZoomBy("out");
     private void OnFit(object? s, RoutedEventArgs e) => Canvas.ZoomBy("fit");

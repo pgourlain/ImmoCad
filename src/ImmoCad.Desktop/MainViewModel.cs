@@ -67,7 +67,7 @@ public partial class MainViewModel : ObservableObject
     public ObservableCollection<PaletteItem> Palette { get; } = new();
     public ObservableCollection<string> Recent { get; } = new();
     public NetworkType[] NetworkTypes { get; } = Enum.GetValues<NetworkType>();
-    public string[] RiserTemplates { get; } = ["tpl.simple", "tpl.dhw", "tpl.heating", "tpl.all"];   // keys: shown translated
+    public string[] RiserTemplates { get; } = ["tpl.simple", "tpl.dhw", "tpl.loop", "tpl.heating", "tpl.all", "tpl.drain"];   // keys: shown translated
     public HashSet<Guid> SelectedWalls { get; } = new();
     /// <summary>Background pictures by name (stored under images/ in the .immeuble file).</summary>
     public Dictionary<string, byte[]> Images => Active.Images;
@@ -120,7 +120,7 @@ public partial class MainViewModel : ObservableObject
 
     public void SelectEquipment(Guid? id)
     {
-        SelectedEquipmentId = id; if (id != null) { SelectedWalls.Clear(); SelectedSegment = null; SelectedOpening = null; }
+        SelectedEquipmentId = id; if (id != null) { SelectedWalls.Clear(); SelectedSegment = null; SelectedOpening = null; SelectedSpaceId = null; }
         if (SelectedEquipment is { } e)
         {
             var cat = EquipmentCatalog.Find(e.CatalogId)?.With(e.Parameters); EqLabel = e.Label ?? ""; EqElevation = e.ElevationMm; EqRotation = e.RotationDeg;
@@ -225,7 +225,7 @@ public partial class MainViewModel : ObservableObject
 
     // ---- Pipe selection (handles) ----
     public (Guid NetworkId, Guid SegmentId)? SelectedSegment { get; private set; }
-    public void SelectSegment(Guid networkId, Guid segmentId) { SelectedOpening = null; SelectedWalls.Clear(); SelectedEquipmentId = null; SelectedSegment = (networkId, segmentId); RefreshExtent(); Status = T("pipe.selected.hint"); OnPropertyChanged(nameof(SelectionText)); Changed?.Invoke(); }
+    public void SelectSegment(Guid networkId, Guid segmentId) { SelectedSpaceId = null; SelectedOpening = null; SelectedWalls.Clear(); SelectedEquipmentId = null; SelectedSegment = (networkId, segmentId); RefreshExtent(); Status = T("pipe.selected.hint"); OnPropertyChanged(nameof(SelectionText)); Changed?.Invoke(); }
     public void ClearSegment() { SelectedSegment = null; }
     public int Snapper_GridMm() => 50;
     /// <summary>Snap to the visible grid (View › Snap to grid, F9).</summary>
@@ -271,7 +271,26 @@ public partial class MainViewModel : ObservableObject
         var all = Building.Levels.SelectMany(l => l.Walls.SelectMany(w => w.Footprint)).ToList();
         PointMm centre = new((int)all.Average(p => p.X), (int)all.Average(p => p.Y));
         var side = new ElevationPlane(pa, pb, 50, +1).Distance(centre) >= 0 ? +1 : -1;
-        Plane = new ElevationPlane(pa, pb, 50, side); Mode = ViewMode.Elevation; Hint = T("elev.hint");
+        Side = null; Plane = new ElevationPlane(pa, pb, 50, side); Mode = ViewMode.Elevation; Hint = T("elev.hint");
+    }
+
+    // whole-building side views (front / right / back / left), reached from the toolbar; the plan stays the top view
+    public ViewSide? Side { get; private set; }
+    [ObservableProperty] private int _elevationDepth = 500;
+    /// <summary>How far from the viewing plane pipes are still drawn: only the ones on the selected wall face, or every pipe for a side view.</summary>
+    public int ElevationReach => Side != null ? int.MaxValue / 4 : 600;
+    partial void OnElevationDepthChanged(int value) { if (Side is { } s) { Plane = ElevationPlane.ForSide(Building, s, value); Changed?.Invoke(); } }
+
+    [RelayCommand] private void ShowSide(string side)
+    {
+        if (side == "Top") { RequestMode(ViewMode.Plan); return; }
+        if (Building.Levels.Count == 0) return;
+        Side = Enum.Parse<ViewSide>(side); Plane = ElevationPlane.ForSide(Building, Side.Value, ElevationDepth); Mode = ViewMode.Elevation; Hint = T("elev.hint"); Changed?.Invoke();
+    }
+    /// <summary>Walks round the building: +1 = the viewer walks counter-clockwise round the building seen from above (front → right → back → left), -1 = clockwise.</summary>
+    [RelayCommand] private void RotateView(int step)
+    {
+        var cur = Side ?? ViewSide.South; ShowSide(((ViewSide)(((int)cur + step + 4) % 4)).ToString());
     }
 
     /// <summary>Vertical pipe on the face; whole building by default, snapped to level lines when dragged.</summary>
@@ -317,6 +336,16 @@ public partial class MainViewModel : ObservableObject
     }
     private static WallAxis? Geometry_Axis(Wall w) => WallGeometry.Axis(w);
 
+    /// <summary>What a click at this point would do with the door/window tool: the wall, position and width of the new opening, or null on a flip / when no wall is under the cursor.</summary>
+    public (Wall Wall, int Pos, int Width)? OpeningPreview(PointMm at, OpeningKind kind)
+    {
+        if (CurrentLevel is not { } l) return null;
+        if (kind == OpeningKind.Door && HitOpening(at) is { } hit && hit.Opening.Kind == OpeningKind.Door) return null;
+        var wall = l.Walls.LastOrDefault(w => WallGeometry.PositionAlong(w, at) != null); if (wall == null) return null;
+        var width = OpeningWidth > 0 ? OpeningWidth : kind == OpeningKind.Door ? (l.Kind == LevelKind.Basement ? 700 : 800) : 1200;
+        return (wall, (int)Math.Round(WallGeometry.PositionAlong(wall, at)!.Value), width);
+    }
+
     /// <summary>Door/window tool: a click on a wall inserts the opening; a click on an existing door flips its swing.</summary>
     public void PlaceOpening(PointMm click, OpeningKind kind)
     {
@@ -329,6 +358,32 @@ public partial class MainViewModel : ObservableObject
         Status = kind == OpeningKind.Door ? T("door.added", o.WidthMm) : T("window.added"); Refresh();
     }
 
+    // ---- Room (space) selection and properties ----
+    private Guid? _selectedSpaceId;
+    public Guid? SelectedSpaceId { get => _selectedSpaceId; private set { _selectedSpaceId = value; OnPropertyChanged(nameof(SelectedSpaceVisible)); OnPropertyChanged(nameof(SelectionText)); } }
+    public bool SelectedSpaceVisible => _selectedSpaceId != null;
+    public Space? SelectedSpaceModel => SelectedSpaceId is { } id ? CurrentLevel?.Spaces.FirstOrDefault(x => x.Id == id) : null;
+    [ObservableProperty] private string _spaceName = ""; [ObservableProperty] private string _spaceNumber = ""; [ObservableProperty] private string _spaceLot = ""; [ObservableProperty] private SpaceKind _spaceKind = SpaceKind.Room;
+
+    /// <summary>The room containing this point (the last drawn one wins), or null.</summary>
+    public Space? SpaceAt(PointMm at) => CurrentLevel?.Spaces.LastOrDefault(x => SpaceFinder.Contains(x.Outline, at));
+
+    public void SelectSpace(Guid id)
+    {
+        SelectedWalls.Clear(); SelectedSegment = null; SelectedEquipmentId = null; SelectedOpening = null; SelectedSpaceId = id;
+        if (SelectedSpaceModel is { } sp) { SpaceName = sp.DisplayName; SpaceNumber = sp.Number ?? ""; SpaceLot = sp.Lot ?? ""; SpaceKind = sp.Kind; }
+        Status = T("space.selected"); Changed?.Invoke();
+    }
+    public void ClearSpace() { if (SelectedSpaceId == null) return; SelectedSpaceId = null; Changed?.Invoke(); }
+
+    [RelayCommand] private void ApplySpace()
+    {
+        if (SelectedSpaceModel is not { } sp || CurrentLevel is not { } l) return;
+        var name = SpaceName.Trim() == sp.DisplayName ? sp.Name : SpaceName.Trim();   // untouched generated names stay tokens (follow the language)
+        Actions.SetSpaceProperties(l.Id, sp.Id, name.Length == 0 ? sp.Name : name, SpaceKind, SpaceNumber.Length == 0 ? null : SpaceNumber, SpaceLot.Length == 0 ? null : SpaceLot);
+        Refresh(); SelectSpace(sp.Id); Status = T("space.modified");
+    }
+
     // ---- Door / window selection and properties ----
     private (Guid WallId, Guid OpeningId)? _selectedOpening;
     public (Guid WallId, Guid OpeningId)? SelectedOpening { get => _selectedOpening; private set { _selectedOpening = value; OnPropertyChanged(nameof(SelectedOpeningVisible)); } }
@@ -338,7 +393,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _opSwingLeft; [ObservableProperty] private bool _opSwingOut;
     public void SelectOpening(Guid wallId, Guid openingId)
     {
-        SelectedWalls.Clear(); SelectedSegment = null; SelectedEquipmentId = null; SelectedOpening = (wallId, openingId);
+        SelectedSpaceId = null; SelectedWalls.Clear(); SelectedSegment = null; SelectedEquipmentId = null; SelectedOpening = (wallId, openingId);
         if (SelectedOpeningModel is { } o) { OpWidth = o.WidthMm; OpHeight = o.HeightMm; OpSill = o.SillMm; OpLabel = o.Label ?? ""; OpSwingLeft = o.SwingLeft; OpSwingOut = o.SwingOut; }
         Status = T("opening.selected"); OnPropertyChanged(nameof(SelectionText)); Changed?.Invoke();
     }
@@ -363,7 +418,7 @@ public partial class MainViewModel : ObservableObject
         var outline = SpaceFinder.Find(l, click);
         if (outline == null) { Status = T("space.open"); return; }
         var n = l.Spaces.Count + 1; var sp = Actions.AddSpace(l.Id, outline, Token("space.default.name", n), NewSpaceKind);
-        Status = T("space.added", SpaceFinder.AreaMm2(sp.Outline) / 1e6); Refresh();
+        Refresh(); SelectSpace(sp.Id); Status = T("space.added", SpaceFinder.AreaMm2(sp.Outline) / 1e6);
     }
 
     public void NumberClick(PointMm click)
@@ -415,6 +470,25 @@ public partial class MainViewModel : ObservableObject
     }
 
     // ---- Risers ----
+    private (List<NetworkType> Types, int Spacing) RiserTypes() => RiserTemplate switch
+    {
+        "tpl.dhw" => ([NetworkType.ColdWater, NetworkType.DomesticHotWater], RiserSpacing),
+        "tpl.loop" => ([NetworkType.ColdWater, NetworkType.DomesticHotWater, NetworkType.DhwReturn], RiserSpacing),
+        "tpl.drain" => ([NetworkType.Drainage], 0),
+        "tpl.heating" => ([NetworkType.HeatingSupply, NetworkType.HeatingReturn], RiserSpacing),
+        "tpl.all" => ([NetworkType.ColdWater, NetworkType.DomesticHotWater, NetworkType.Drainage], RiserSpacing),
+        _ => (new List<NetworkType> { RiserType }, 0),
+    };
+
+    /// <summary>The tubes a click would place at this point (snapped like the real placement): position, type and diameter of each.</summary>
+    public List<(PointMm At, NetworkType Type, int DiameterMm)> RiserPreview(PointMm at)
+    {
+        if (Building.Levels.Count == 0) return [];
+        var p = RiserSnap.Snap(at, CurrentLevel?.Walls.Select(w => (IReadOnlyList<PointMm>)w.Footprint) ?? []);
+        var (types, spacing) = RiserTypes();
+        return types.Select((t, i) => (new PointMm(p.X + i * spacing, p.Y), t, RiserTemplate == "tpl.drain" ? Math.Max(RiserDiameter, 100) : RiserDiameter)).ToList();
+    }
+
     /// <summary>Places a riser (or a template of several) at the point, snapped 50 mm from wall faces. One history step.</summary>
     public void PlaceRiser(PointMm at)
     {
@@ -424,14 +498,8 @@ public partial class MainViewModel : ObservableObject
         var lo = Math.Clamp(RiserFromIndex, 0, Building.Levels.Count - 1); var hi = Math.Clamp(RiserToIndex, 0, Building.Levels.Count - 1);
         var from = RiserWholeBuilding ? Building.Levels[0].AltitudeMm : Building.Levels[Math.Min(lo, hi)].AltitudeMm;
         var to = RiserWholeBuilding ? Building.Levels[^1].AltitudeMm + Building.Levels[^1].HeightMm : Building.Levels[Math.Max(lo, hi)].AltitudeMm + Building.Levels[Math.Max(lo, hi)].HeightMm;
-        var (types, spacing) = RiserTemplate switch
-        {
-            "tpl.dhw" => ([NetworkType.ColdWater, NetworkType.DomesticHotWater], RiserSpacing),
-            "tpl.heating" => ([NetworkType.HeatingSupply, NetworkType.HeatingReturn], RiserSpacing),
-            "tpl.all" => ([NetworkType.ColdWater, NetworkType.DomesticHotWater, NetworkType.Drainage], RiserSpacing),
-            _ => (new List<NetworkType> { RiserType }, 0),
-        };
-        Actions.AddRiserTemplate(p, spacing, types, from, to, RiserDiameter);
+        var (types, spacing) = RiserTypes();
+        Actions.AddRiserTemplate(p, spacing, types, from, to, RiserTemplate == "tpl.drain" ? Math.Max(RiserDiameter, 100) : RiserDiameter);
         Status = T("riser.placed", types.Count); Refresh();
     }
 
@@ -452,6 +520,16 @@ public partial class MainViewModel : ObservableObject
         if (!e.Inline) return null;
         return FindPipeFor(at, l, e) is null ? T("valve.onpipe") : null;
     }
+
+    /// <summary>Where the palette object would land at this point (same snapping as the real placement); null for an inline part or no palette pick.</summary>
+    public (CatalogEntry Entry, PointMm At)? PalettePreview(PointMm at)
+    {
+        var e = PaletteId == null ? null : EquipmentCatalog.Find(PaletteId); if (e == null || e.Inline || CurrentLevel is not { } l) return null;
+        return (e, RiserSnap.Snap(at, l.Walls.Select(w => (IReadOnlyList<PointMm>)w.Footprint), offsetMm: e.DepthMm / 2, reachMm: 400));
+    }
+
+    /// <summary>Outline of the room a click would create with the space tool (null when the walls are not closed there).</summary>
+    public List<PointMm>? SpacePreview(PointMm at) => CurrentLevel is { } l ? SpaceFinder.Find(l, at) : null;
 
     private (SegmentRef Seg, PointMm3 P)? FindPipeFor(PointMm at, Level l, CatalogEntry e)
     {
@@ -550,7 +628,7 @@ public partial class MainViewModel : ObservableObject
     public bool IsNumberTool => Tool == ToolKind.NumberCellars;
     public bool IsStraightenTool => Tool == ToolKind.Straighten;
     public bool IsStretchTool => Tool == ToolKind.Stretch;
-    public string SelectionText => SelectedOpening != null ? T("opening.selected") : SelectedSegment != null ? T("pipe.selected") : SelectedWalls.Count == 0 ? T("no.selection") : T("walls.selected", SelectedWalls.Count);
+    public string SelectionText => SelectedSpaceId != null ? T("space.selected") : SelectedOpening != null ? T("opening.selected") : SelectedSegment != null ? T("pipe.selected") : SelectedWalls.Count == 0 ? T("no.selection") : T("walls.selected", SelectedWalls.Count);
 
     public MainViewModel() : this(startWithSample: true) { }
 
@@ -622,7 +700,7 @@ public partial class MainViewModel : ObservableObject
 
     public void SelectWalls(IEnumerable<Guid> ids, bool add)
     {
-        if (ids.Any()) { SelectedSegment = null; SelectedEquipmentId = null; SelectedOpening = null; }
+        if (ids.Any()) { SelectedSegment = null; SelectedEquipmentId = null; SelectedOpening = null; SelectedSpaceId = null; }
         if (!add) SelectedWalls.Clear();
         foreach (var id in ids) SelectedWalls.Add(id);
         Status = SelectionText; OnPropertyChanged(nameof(SelectionText)); Changed?.Invoke();
@@ -673,6 +751,9 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand] private void DeleteSelection()
     {
         if (SelectedOpening is { } so && CurrentLevel is { } ol) { Actions.DeleteOpening(ol.Id, so.WallId, so.OpeningId); SelectedOpening = null; Status = T("deleted"); Refresh(); return; }
+        if (SelectedSegment is { } sg) { Actions.DeleteSegment(sg.NetworkId, sg.SegmentId); SelectedSegment = null; Status = T("deleted"); Refresh(); OnPropertyChanged(nameof(SelectionText)); return; }
+        if (SelectedEquipmentId is { } eq) { Actions.DeleteEquipment(eq); SelectEquipment(null); Status = T("deleted"); Refresh(); return; }
+        if (SelectedSpaceId is { } sp && CurrentLevel is { } sl) { Actions.DeleteSpace(sl.Id, sp); SelectedSpaceId = null; Status = T("deleted"); Refresh(); return; }
         if (CurrentLevel is not { } l || SelectedWalls.Count == 0) return;
         Actions.DeleteWalls(l.Id, SelectedWalls.ToList()); SelectedWalls.Clear(); Status = T("deleted"); Refresh();
     }
@@ -880,11 +961,16 @@ public partial class MainViewModel : ObservableObject
         {
             if (await Dialogs.PickOpenAsync("Plan", "image") is not { } path) return;
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            if (await Dialogs.RunImportWizardAsync(File.ReadAllBytes(path)) is { } wiz) { var n = ApplyWizard(wiz); OnLog?.Invoke($"Import plan {Path.GetFileName(path)}: {n} shapes in {sw.ElapsedMilliseconds} ms"); }
+            if (await Dialogs.RunImportWizardAsync(File.ReadAllBytes(path), WizardReferences()) is { } wiz) { var n = ApplyWizard(wiz); OnLog?.Invoke($"Import plan {Path.GetFileName(path)}: {n} shapes in {sw.ElapsedMilliseconds} ms"); }
         }
         catch (Exception ex) { await Fail(T("fail.import"), ex); }
     }
     /// <summary>"ask" opens the export dialog (format, levels, networks, units); any other value exports that format directly with everything included.</summary>
+    /// <summary>The other levels that already have a calibrated picture: they can serve as scale reference for a new plan.</summary>
+    private List<WizardReference> WizardReferences() => Building.Levels
+        .Where(l => l.Id != CurrentLevelId && l.BackgroundImage is { } n && l.ImageTransform is { Length: 6 } && Images.ContainsKey(n))
+        .Select(l => new WizardReference(l.DisplayName, Images[l.BackgroundImage!], l.ImageTransform!)).ToList();
+
     [RelayCommand] private async Task ImportIfcAsync()
     {
         try

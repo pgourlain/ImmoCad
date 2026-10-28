@@ -209,6 +209,15 @@
             <NumericUpDown Value="{Binding PropThickness}" Minimum="0" Maximum="1000" Increment="10" vm:L.Format="fmt.thickness" />
             <Button vm:L.Content="prop.apply.thickness" Command="{Binding ApplyThicknessCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
             <Separator />
+            <StackPanel Spacing="6" IsVisible="{Binding SelectedSpaceVisible}">
+              <TextBlock vm:L.Text="space.title" Classes="caption" />
+              <TextBox vm:L.Watermark="wm.space.name" Text="{Binding SpaceName}" />
+              <ComboBox ItemsSource="{Binding SpaceKinds}" SelectedItem="{Binding SpaceKind}" HorizontalAlignment="Stretch"><ComboBox.ItemTemplate><DataTemplate x:DataType="x:Object"><TextBlock Text="{Binding, Converter={x:Static vm:Converters.EnumName}}" /></DataTemplate></ComboBox.ItemTemplate></ComboBox>
+              <TextBox vm:L.Watermark="wm.space.number" Text="{Binding SpaceNumber}" />
+              <TextBox vm:L.Watermark="wm.space.lot" Text="{Binding SpaceLot}" />
+              <Button vm:L.Content="btn.apply" Command="{Binding ApplySpaceCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+            </StackPanel>
+            <Separator IsVisible="{Binding SelectedSpaceVisible}" />
             <StackPanel Spacing="6" IsVisible="{Binding SelectedOpeningVisible}">
               <TextBlock vm:L.Text="opening.title" Classes="caption" />
               <TextBox vm:L.Watermark="wm.label" Text="{Binding OpLabel}" />
@@ -298,6 +307,13 @@
           <Button vm:L.Content="view.2d" Command="{Binding SetModeCommand}" CommandParameter="Plan" />
           <ToggleButton Content="⫴" vm:L.Tip="tip.sidebyside" IsChecked="{Binding SideBySide}" />
           <Button vm:L.Content="view.elevation" Command="{Binding ShowElevationCommand}" vm:L.Tip="tip.elevation" />
+          <Button vm:L.Content="view.front" Command="{Binding ShowSideCommand}" CommandParameter="South" vm:L.Tip="tip.side" />
+          <Button vm:L.Content="view.right" Command="{Binding ShowSideCommand}" CommandParameter="East" vm:L.Tip="tip.side" />
+          <Button vm:L.Content="view.back" Command="{Binding ShowSideCommand}" CommandParameter="North" vm:L.Tip="tip.side" />
+          <Button vm:L.Content="view.left" Command="{Binding ShowSideCommand}" CommandParameter="West" vm:L.Tip="tip.side" />
+          <Button Content="↺" Command="{Binding RotateViewCommand}" CommandParameter="1" vm:L.Tip="tip.rotate.view" IsVisible="{Binding IsElevation}" />
+          <Button Content="↻" Command="{Binding RotateViewCommand}" CommandParameter="-1" vm:L.Tip="tip.rotate.view" IsVisible="{Binding IsElevation}" />
+          <NumericUpDown Value="{Binding ElevationDepth}" Minimum="0" Maximum="50000" Increment="100" Width="150" vm:L.Format="fmt.depth.pipes" IsVisible="{Binding IsElevation}" />
           <Button vm:L.Content="view.3d" Command="{Binding SetModeCommand}" CommandParameter="Solid" />
           <Button vm:L.Content="view.wire" Command="{Binding SetModeCommand}" CommandParameter="Wireframe" />
           <ToggleButton vm:L.Content="view.xray" IsChecked="{Binding XRay, Mode=OneWay}" Command="{Binding ToggleXRayCommand}" IsVisible="{Binding Is3D}" />

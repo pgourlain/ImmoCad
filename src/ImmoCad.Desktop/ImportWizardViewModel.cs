@@ -9,6 +9,12 @@ namespace ImmoCad.Desktop;
 
 public enum WizardStep { Straighten, Calibrate, Detect, Review }
 
+/// <summary>An already imported level whose picture and scale can calibrate the new plan.</summary>
+public sealed record WizardReference(string Name, byte[] Image, double[] Transform)
+{
+    public override string ToString() => Name;
+}
+
 /// <summary>State and logic of the import wizard (one level at a time). UI-free so it can be unit-tested.</summary>
 public partial class ImportWizardViewModel : ObservableObject
 {
@@ -32,7 +38,51 @@ public partial class ImportWizardViewModel : ObservableObject
     public GrayImage? Gray { get; private set; }
     public Calibration? Calibration { get; private set; }
 
-    public ImportWizardViewModel(byte[] data) { Original = data; _image = data; Gray = PlanImport.Decode(data); }
+    public ImportWizardViewModel(byte[] data, IReadOnlyList<WizardReference>? references = null) { Original = data; _image = data; Gray = PlanImport.Decode(data); References = references ?? []; }
+
+    // ---- calibration against an imported level: two points on the reference, the same two features on the new plan
+    public IReadOnlyList<WizardReference> References { get; }
+    private WizardReference? _reference;
+    public WizardReference? Reference
+    {
+        get => _reference;
+        set { _reference = value; ReferencePx.Clear(); ReferenceMm.Clear(); CalibrationPoints.Clear(); Calibration = null; Offset = (0, 0); OnPropertyChanged(); OnPropertyChanged(nameof(UsesReference)); }
+    }
+    public bool UsesReference => Reference != null;
+    public List<(double X, double Y)> ReferencePx { get; } = new();   // clicks on the reference picture
+    public List<(double X, double Y)> ReferenceMm { get; } = new();   // the same points in plan millimetres
+    /// <summary>True while the reference picture (not the new plan) is the one to click on.</summary>
+    public bool ShowingReference => UsesReference && ReferenceMm.Count < 2;
+    /// <summary>Millimetres added to the converted plan so that it lands on the reference.</summary>
+    public (double X, double Y) Offset { get; private set; }
+
+    /// <summary>Calibration click: on the reference first (2 points), then on the new plan (2 points).</summary>
+    public void AddPoint(double x, double y)
+    {
+        if (!UsesReference) { AddCalibrationPoint(x, y); return; }
+        if (ReferenceMm.Count < 2)
+        {
+            var t = Reference!.Transform; ReferencePx.Add((x, y));
+            ReferenceMm.Add((t[0] * x + t[1] * y + t[2], t[3] * x + t[4] * y + t[5])); return;
+        }
+        if (CalibrationPoints.Count >= 2) CalibrationPoints.Clear();
+        CalibrationPoints.Add((x, y)); Calibration = null;
+        if (CalibrationPoints.Count == 2) ComputeReferenceCalibration();
+    }
+
+    private void ComputeReferenceCalibration()
+    {
+        var (a, b) = (CalibrationPoints[0], CalibrationPoints[1]); var (ma, mb) = (ReferenceMm[0], ReferenceMm[1]);
+        var mm = Math.Sqrt((ma.X - mb.X) * (ma.X - mb.X) + (ma.Y - mb.Y) * (ma.Y - mb.Y));
+        var px = Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));
+        if (mm < 1 || px < 1) { Message = ""; return; }
+        var sc = px / mm; Calibration = new(sc, sc);
+        Offset = (ma.X - a.X / sc, ma.Y - (Height - a.Y) / sc);   // the first new point lands on the first reference point
+        Message = $"{sc:0.####} px/mm";
+    }
+
+    /// <summary>Forgets the clicks of the current calibration (back to the reference picture when one is used).</summary>
+    public void ResetCalibration() { ReferencePx.Clear(); ReferenceMm.Clear(); CalibrationPoints.Clear(); Calibration = null; Offset = (0, 0); }
 
     public int Width => PlanImport.Size(Image).Width;
     public int Height => PlanImport.Size(Image).Height;
@@ -112,10 +162,12 @@ public partial class ImportWizardViewModel : ObservableObject
         var cal = Calibration ?? throw new InvalidOperationException("Not calibrated");
         var keep = Detected.Where((_, i) => !Rejected.Contains(i)).ToList();
         List<PointPx> S(List<PointPx> o) => StraightenWalls ? WallStraightener.Straighten(o, 3) : o;
-        var shapes = keep.Select(w => ((IEnumerable<PointMm>)PlanImport.ToMm(S(w.Outline), cal, Height),
-            (IEnumerable<IEnumerable<PointMm>>)w.Holes.Select(h => (IEnumerable<PointMm>)PlanImport.ToMm(S(h), cal, Height)).ToList())).ToList();
+        var shapes = keep.Select(w => ((IEnumerable<PointMm>)Move(PlanImport.ToMm(S(w.Outline), cal, Height)),
+            (IEnumerable<IEnumerable<PointMm>>)w.Holes.Select(h => (IEnumerable<PointMm>)Move(PlanImport.ToMm(S(h), cal, Height))).ToList())).ToList();
+        List<PointMm> Move(List<PointMm> o) => Offset == (0, 0) ? o : o.Select(p => new PointMm((int)Math.Round(p.X + Offset.X), (int)Math.Round(p.Y + Offset.Y))).ToList();
         var name = $"{level.Id:N}.png"; images[name] = Image;
-        actions.SetBackground(level.Id, name, PlanImport.TransformFor(cal, Height));
+        var m = PlanImport.TransformFor(cal, Height); m[2] += Offset.X; m[5] += Offset.Y;
+        actions.SetBackground(level.Id, name, m);
         actions.ImportWallShapes(level.Id, shapes);
         return shapes.Count;
     }
