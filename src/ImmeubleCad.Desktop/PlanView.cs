@@ -50,8 +50,37 @@ public class PlanView : Control
     }
     private readonly List<(Rect Rect, Guid LevelId, PointMm Center)> _arrows = new();
     private PointMm _hover;
+    private PipeHandleTool? _handleTool;
+    private string _typed = "";
+
+    private (SegmentRef Seg, PipeHandle Handle)? HitHandle(Point p)
+    {
+        if (Vm?.SelectedSegment is not { } sel || Vm.CurrentLevel is not { } l) return null;
+        var seg = NetworkQueries.HorizontalAt(Vm.Building, l).FirstOrDefault(s => s.Network.Id == sel.NetworkId && s.Segment.Id == sel.SegmentId);
+        if (seg == null) return null;
+        var a = ToScreen(new PointMm(seg.A.X, seg.A.Y)); var b = ToScreen(new PointMm(seg.B.X, seg.B.Y)); var mid = new Point((a.X + b.X) / 2, (a.Y + b.Y) / 2);
+        double D(Point q) => Math.Sqrt((p.X - q.X) * (p.X - q.X) + (p.Y - q.Y) * (p.Y - q.Y));
+        if (D(a) <= 9) return (seg, PipeHandle.EndA); if (D(b) <= 9) return (seg, PipeHandle.EndB); if (D(mid) <= 9) return (seg, PipeHandle.Mid);
+        return null;
+    }
+
+    private SegmentRef? HitPipe(Point p)
+    {
+        if (Vm?.CurrentLevel is not { } l) return null;
+        foreach (var s in NetworkQueries.HorizontalAt(Vm.Building, l).Where(x => x.Network.Visible && !x.Network.Locked))
+        {
+            var a = ToScreen(new PointMm(s.A.X, s.A.Y)); var b = ToScreen(new PointMm(s.B.X, s.B.Y));
+            double dx = b.X - a.X, dy = b.Y - a.Y; var l2 = dx * dx + dy * dy; if (l2 < 1e-6) continue;
+            var t = Math.Clamp(((p.X - a.X) * dx + (p.Y - a.Y) * dy) / l2, 0, 1); var q = new Point(a.X + t * dx, a.Y + t * dy);
+            if (Math.Sqrt((p.X - q.X) * (p.X - q.X) + (p.Y - q.Y) * (p.Y - q.Y)) <= 6) return s;
+        }
+        return null;
+    }
+
+    private ToolPointer HandlePointer(PointerEventArgs e) { var p = e.GetPosition(this); return new ToolPointer(ToMm(p), p.X, p.Y); }
 
     public PointMm ToMm(Point p) => new((int)Math.Round((p.X - Offset.X) / Scale), (int)Math.Round((Bounds.Height - p.Y - Offset.Y) / Scale));
+    internal Point ToScreenForTest(PointMm p) => ToScreen(p);
     private Point ToScreen(PointMm p) => new(Offset.X + p.X * Scale, Bounds.Height - Offset.Y - p.Y * Scale);
 
     public void FitAll()
@@ -89,6 +118,15 @@ public class PlanView : Control
         foreach (var (rect, lvl, c) in _arrows)
             if (rect.Contains(p)) { vm.SelectLevelCommand.Execute(lvl); CenterOn(c); return; }
 
+        // pipe handles and pipe bodies come before walls
+        if (_handleTool != null && _handleTool.State == ToolState.Placing) { _handleTool.ForceElbow = e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Alt); _handleTool.Down(HandlePointer(e)); FinishHandle(vm); return; }
+        if (HitHandle(p) is { } h) { _handleTool = new PipeHandleTool(vm.Actions, h.Seg.Network.Id, h.Seg.Segment.Id, h.Handle, vm.Snapper_GridMm()) { ForceElbow = e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Alt) }; _typed = ""; _handleTool.Down(HandlePointer(e)); e.Pointer.Capture(this); InvalidateVisual(); return; }
+        if (HitPipe(p) is { } pipe)
+        {
+            vm.SelectSegment(pipe.Network.Id, pipe.Segment.Id);
+            _handleTool = new PipeHandleTool(vm.Actions, pipe.Network.Id, pipe.Segment.Id, PipeHandle.Body, vm.Snapper_GridMm()); _typed = ""; _handleTool.Down(HandlePointer(e)); e.Pointer.Capture(this); InvalidateVisual(); return;
+        }
+        vm.ClearSegment();
         _start = _now = p; _startMm = ToMm(p); _delta = (0, 0); _addToSelection = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
         var hit = HitWall(_startMm);
         if (hit != null && vm.SelectedWalls.Contains(hit.Id) && !_addToSelection) _gesture = Gesture.Move;       // drag the group
@@ -104,6 +142,7 @@ public class PlanView : Control
         CursorMoved?.Invoke(ToMm(p));
         if (Vm is not { } vm) return;
         _hover = ToMm(p);
+        if (_handleTool != null) { _handleTool.ForceElbow = e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Alt); _handleTool.Move(HandlePointer(e)); InvalidateVisual(); return; }
         if (IsChain) { DrawTool?.Move(TP(e)); InvalidateVisual(); return; }
         if (vm.IsPlaceTool || vm.IsRiserTool) { InvalidateVisual(); return; }
         if (_gesture == Gesture.None) return;
@@ -116,6 +155,12 @@ public class PlanView : Control
         InvalidateVisual();
     }
 
+    private void FinishHandle(MainViewModel vm)
+    {
+        var t = _handleTool!; _handleTool = null; _typed = "";
+        vm.AfterEdit(t.Committed ? "Tuyau modifié" : t.Refused ?? "Aucun changement"); InvalidateVisual();
+    }
+
     private static int Snap(int v, int g) => g <= 0 ? v : (int)Math.Round((double)v / g) * g;
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
@@ -123,6 +168,7 @@ public class PlanView : Control
         _pan = null; e.Pointer.Capture(null);
         if (Vm is not { } vm) return;
         if (IsChain) { DrawTool?.Up(TP(e)); InvalidateVisual(); return; }
+        if (_handleTool != null) { _handleTool.Up(HandlePointer(e)); if (_handleTool.State == ToolState.Committed) FinishHandle(vm); else if (_handleTool.State == ToolState.Placing && _handleTool.Handle == PipeHandle.Body) { _handleTool.Cancel(); _handleTool = null; vm.AfterEdit(); } /* a plain click on the body only selects */ InvalidateVisual(); return; }
         if (vm.IsRiserTool || vm.IsPlaceTool || vm.IsAlignTool) return;
         if (_gesture == Gesture.Move && Math.Abs(_now.X - _start.X) + Math.Abs(_now.Y - _start.Y) > 3) vm.MoveSelection(_delta.X, _delta.Y);
         else if (_gesture == Gesture.Box)
@@ -154,6 +200,14 @@ public class PlanView : Control
             if (e.Key == Key.Enter) DrawTool.Finish(); else if (e.Key == Key.Back) DrawTool.Backspace(); else if (e.Key == Key.Escape) { DrawTool.Cancel(); vm.SetToolCommand.Execute("Select"); }
             InvalidateVisual(); return;
         }
+        if (_handleTool != null && _handleTool.State is ToolState.Dragging or ToolState.Placing)
+        {   // typed length while a handle gesture is running: digits, comma/point, Enter applies, Esc cancels
+            if (e.Key == Key.Escape) { _handleTool.Cancel(); _handleTool = null; _typed = ""; InvalidateVisual(); e.Handled = true; return; }
+            var ch = e.Key >= Key.D0 && e.Key <= Key.D9 ? (char)('0' + (e.Key - Key.D0)) : e.Key >= Key.NumPad0 && e.Key <= Key.NumPad9 ? (char)('0' + (e.Key - Key.NumPad0)) : e.Key is Key.OemPeriod or Key.OemComma or Key.Decimal ? '.' : '\0';
+            if (ch != '\0') { _typed += ch; if (DrawChainTool.TryParseLength(_typed, out var mm)) _handleTool.TypedLengthMm = mm; InvalidateVisual(); e.Handled = true; return; }
+            if (e.Key == Key.Back && _typed.Length > 0) { _typed = _typed[..^1]; _handleTool.TypedLengthMm = DrawChainTool.TryParseLength(_typed, out var m2) ? m2 : null; InvalidateVisual(); e.Handled = true; return; }
+            if (e.Key == Key.Enter) { if (_handleTool.State == ToolState.Placing) _handleTool.Finish(); FinishHandle(vm); e.Handled = true; return; }
+        }
         var step = e.KeyModifiers.HasFlag(KeyModifiers.Shift) ? 100 : 10;
         switch (e.Key)
         {
@@ -172,6 +226,24 @@ public class PlanView : Control
     }
 
         public void CenterOn(PointMm c) => Offset = (Bounds.Width / 2 - c.X * Scale, Bounds.Height / 2 - c.Y * Scale);
+
+    private void DrawHandles(DrawingContext ctx, Level l)
+    {
+        if (Vm?.SelectedSegment is not { } sel) return;
+        var seg = NetworkQueries.HorizontalAt(Vm.Building, l).FirstOrDefault(s => s.Network.Id == sel.NetworkId && s.Segment.Id == sel.SegmentId);
+        if (seg == null) return;
+        var a = ToScreen(new PointMm(seg.A.X, seg.A.Y)); var b = ToScreen(new PointMm(seg.B.X, seg.B.Y));
+        ctx.DrawLine(new Pen(Brushes.OrangeRed, 3, DashStyle.Dash), a, b);
+        foreach (var q in new[] { a, b }) ctx.DrawRectangle(Brushes.White, new Pen(Brushes.OrangeRed, 2), new Rect(q.X - 6, q.Y - 6, 12, 12));
+        ctx.DrawEllipse(Brushes.White, new Pen(Brushes.OrangeRed, 2), new Point((a.X + b.X) / 2, (a.Y + b.Y) / 2), 6, 6);
+        if (_handleTool?.Proposal is { } pr)
+        {
+            var f = ToScreen(new PointMm(pr.From.X, pr.From.Y)); var t = ToScreen(new PointMm(pr.To.X, pr.To.Y));
+            ctx.DrawLine(new Pen(Brushes.DodgerBlue, 3), f, t);
+            var text = _typed.Length > 0 ? $"{_typed} m ⏎" : $"{pr.LengthMm / 1000.0:0.00} m";
+            ctx.DrawText(new FormattedText(text, System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 13, Brushes.DodgerBlue), t + new Point(10, -18));
+        }
+    }
 
     private void DrawNetworks(DrawingContext ctx, Level l, bool dark)
     {
@@ -239,6 +311,7 @@ public class PlanView : Control
         var sel = new SolidColorBrush(Color.FromRgb(255, 140, 0));
         DrawWalls(ctx, l, wallFill, new Pen(new SolidColorBrush(dark ? Colors.Black : Colors.Black), 0.8), null, Vm.SelectedWalls, sel);
         DrawNetworks(ctx, l, dark);
+        DrawHandles(ctx, l);
         if (_gesture == Gesture.Move && (_delta.X != 0 || _delta.Y != 0))   // ghost of the move
             DrawWalls(ctx, l, new SolidColorBrush(Color.FromArgb(110, 255, 140, 0)), new Pen(Brushes.OrangeRed, 1.2, DashStyle.Dash), _delta, Vm.SelectedWalls, null, onlySelected: true);
         if (_gesture == Gesture.Box)

@@ -256,3 +256,48 @@ public class ElevationUiTests
         vm.SetModeCommand.Execute("Plan"); Assert.True(vm.IsPlan); w.Close();
     }, CancellationToken.None);
 }
+
+public class HandleUiTests
+{
+    private readonly HeadlessFixture f = new();
+
+    [Fact] public Task Mouse_selects_pipe_drags_end_handle_and_makes_elbow_with_one_undo_each() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(); var w = new MainWindow { DataContext = vm, Width = 1280, Height = 820 }; w.Show();
+        vm.SetToolCommand.Execute("DrawPipe"); vm.PipeType = ImmeubleCad.Core.Model.NetworkType.ColdWater; vm.PipeElevation = 2400;
+        vm.CommitPipe([new(1000, 3000), new(3000, 3000)]); vm.SetToolCommand.Execute("Select");
+        w.UpdateLayout(); w.CaptureRenderedFrame();   // layout + first render so the view fits itself
+        var plan = w.FindControl<PlanView>("Plan")!;
+        Avalonia.Point At(int x, int y) => plan.TranslatePoint(plan.ToScreenForTest(new(x, y)), w)!.Value;
+        var net = vm.Building.Networks[^1]; var steps = vm.History.Items.Count;
+
+        // click the pipe body → selected, handles appear (no model change)
+        w.MouseDown(At(2000, 3000), Avalonia.Input.MouseButton.Left); w.MouseUp(At(2000, 3000), Avalonia.Input.MouseButton.Left);
+        Assert.NotNull(vm.SelectedSegment); Assert.Equal(steps, vm.History.Items.Count);
+
+        // drag the right end handle 1 m further → extended
+        w.MouseDown(At(3000, 3000), Avalonia.Input.MouseButton.Left); w.MouseMove(At(3500, 3000)); w.MouseMove(At(4000, 3000)); w.MouseUp(At(4000, 3000), Avalonia.Input.MouseButton.Left);
+        Assert.Equal(4000, vm.Building.Networks[^1].Nodes.Max(n => n.Position.X)); Assert.Equal(steps + 1, vm.History.Items.Count);
+
+        // drag the same handle straight up → elbow
+        w.MouseDown(At(4000, 3000), Avalonia.Input.MouseButton.Left); w.MouseMove(At(4000, 3600)); w.MouseMove(At(4000, 4500)); w.MouseUp(At(4000, 4500), Avalonia.Input.MouseButton.Left);
+        Assert.Equal(2, vm.Building.Networks[^1].Segments.Count); Assert.Equal(steps + 2, vm.History.Items.Count);
+        w.CaptureRenderedFrame()!.Save(Path.Combine(AppContext.BaseDirectory, "screenshots", "handles.png"));
+        vm.UndoCommand.Execute(null); vm.UndoCommand.Execute(null); Assert.Equal(2000, vm.Building.Networks[^1].Nodes.Max(n => n.Position.X) - 1000);
+        w.Close();
+    }, CancellationToken.None);
+
+    [Fact] public Task Box_select_and_drag_walls_with_mouse_moves_group_in_one_step() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(); var w = new MainWindow { DataContext = vm, Width = 1280, Height = 820 }; w.Show();
+        w.UpdateLayout(); w.CaptureRenderedFrame();
+        var plan = w.FindControl<PlanView>("Plan")!; Avalonia.Point At(int x, int y) => plan.TranslatePoint(plan.ToScreenForTest(new(x, y)), w)!.Value;
+        var steps = vm.History.Items.Count; var first = vm.CurrentLevel!.Walls[0].Footprint[0];
+        w.MouseDown(At(-300, -300), Avalonia.Input.MouseButton.Left); w.MouseMove(At(4000, 1500)); w.MouseMove(At(9000, 7000)); w.MouseUp(At(9000, 7000), Avalonia.Input.MouseButton.Left);
+        Assert.Equal(4, vm.SelectedWalls.Count);
+        w.MouseDown(At(4000, 100), Avalonia.Input.MouseButton.Left); w.MouseMove(At(4000, 400)); w.MouseMove(At(4000, 600)); w.MouseUp(At(4000, 600), Avalonia.Input.MouseButton.Left);
+        Assert.Equal(steps + 1, vm.History.Items.Count);
+        Assert.Equal(new(first.X, first.Y + 500), vm.CurrentLevel!.Walls[0].Footprint[0]);
+        w.Close();
+    }, CancellationToken.None);
+}

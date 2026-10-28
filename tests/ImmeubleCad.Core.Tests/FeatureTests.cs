@@ -542,3 +542,109 @@ public class ElevationTests
         h.Undo(b); h.Undo(b); Assert.Equal(nets, b.Networks.Count);
     }
 }
+
+public class PipeEditTests
+{
+    private static (Building, BuildingActions, BuildingHistory, Network) Pipe(params PointMm3[] pts)
+    { var b = new Building(); var h = new BuildingHistory(); var a = new BuildingActions(b, h, new BuildingEventsService()); var n = a.AddNetwork("N", NetworkType.HeatingSupply); a.AddPipeRun(n.Id, pts, 22); return (b, a, h, n); }
+
+    [Fact] public void Extend_end_along_axis_only_and_undo()
+    {
+        var (b, a, h, n) = Pipe(new(0, 0, 0), new(1000, 0, 0)); var end = n.Nodes[1]; var before = BuildingJson.Serialize(b);
+        Assert.True(a.ExtendEnd(n.Id, end.Id, new(2500, 0, 0))); Assert.Equal(2500, b.Networks[0].Nodes[1].Position.X);
+        Assert.False(a.ExtendEnd(n.Id, end.Id, new(2500, 300, 0)));                  // off-axis refused
+        h.Undo(b); Assert.Equal(before, BuildingJson.Serialize(b));
+        Assert.False(a.ExtendEnd(n.Id, n.Nodes[0].Id, n.Nodes[0].Position));          // no-op refused
+    }
+
+    [Fact] public void Elbow_chain_and_tee_branch_are_one_step_each()
+    {
+        var (b, a, h, n) = Pipe(new(0, 0, 0), new(2000, 0, 0)); var steps = h.Items.Count;
+        var e1 = a.AddElbow(n.Id, n.Nodes[1].Id, new(2000, 1500, 0))!; var e2 = a.AddElbow(n.Id, e1.Id, new(2000, 1500, 2400))!;     // → Y then Z
+        Assert.Equal(steps + 2, h.Items.Count); Assert.Equal(3, n.Segments.Count);
+        Assert.Null(a.AddElbow(n.Id, e2.Id, new(2500, 1800, 2400)));                       // diagonal refused
+        var tee = a.AddTeeBranch(n.Id, n.Segments[0].Id, new(1000, 0, 0), new(1000, 0, 2400))!;
+        Assert.Equal(5, n.Segments.Count); Assert.Equal(FittingKind.Tee, FittingResolver.Resolve(n).First(f => f.Position == new PointMm3(1000, 0, 0)).Kind);
+        Assert.Empty(FittingResolver.Validate(n).Where(w => w.Contains("axis")));
+        h.Undo(b); Assert.Equal(3, b.Networks[0].Segments.Count);
+    }
+
+    [Fact] public void Move_run_stretches_connected_segments_and_refuses_diagonals()
+    {
+        // U shape: up 0→2400 on x=0, across to x=3000, down. Moving the top run up (Z) stretches both risers.
+        var (b, a, h, n) = Pipe(new(0, 0, 0), new(0, 0, 2400), new(3000, 0, 2400), new(3000, 0, 0));
+        Assert.True(a.MoveRun(n.Id, n.Segments[1].Id, 0, 0, 300));
+        Assert.Equal(2700, b.Networks[0].Nodes[1].Position.Z); Assert.Equal(2700, b.Networks[0].Nodes[2].Position.Z); Assert.Equal(0, b.Networks[0].Nodes[0].Position.Z);
+        Assert.Empty(FittingResolver.Validate(b.Networks[0]).Where(w => w.Contains("axis")));
+        // moving the same run sideways (Y) would turn the risers diagonal → refused, nothing changes
+        var s = BuildingJson.Serialize(b); var steps = h.Items.Count;
+        Assert.False(a.MoveRun(n.Id, n.Segments[1].Id, 0, 400, 0)); Assert.Equal(s, BuildingJson.Serialize(b)); Assert.Equal(steps, h.Items.Count);
+    }
+
+    [Fact] public void Move_run_includes_collinear_chained_segments()
+    {
+        var (b, a, h, n) = Pipe(new(0, 0, 0), new(1000, 0, 0)); a.AddElbow(n.Id, n.Nodes[1].Id, new(2000, 0, 0));    // two collinear segments
+        Assert.True(a.MoveRun(n.Id, n.Segments[0].Id, 0, 500, 0)); Assert.All(b.Networks[0].Nodes, nd => Assert.Equal(500, nd.Position.Y));
+    }
+}
+
+public class PipeHandleToolTests
+{
+    private static ToolPointer P(int x, int y) => new(new(x, y), x, y);
+    private static (Building, BuildingActions, BuildingHistory, Network) Pipe()
+    { var b = new Building(); var h = new BuildingHistory(); var a = new BuildingActions(b, h, new BuildingEventsService()); var n = a.AddNetwork("N", NetworkType.HeatingSupply); a.AddPipeRun(n.Id, [new(0, 0, 2400), new(2000, 0, 2400)], 22); return (b, a, h, n); }
+
+    [Fact] public void Drag_end_handle_extends_with_live_length_in_one_step()
+    {
+        var (b, a, h, n) = Pipe(); var steps = h.Items.Count; var t = new PipeHandleTool(a, n.Id, n.Segments[0].Id, PipeHandle.EndB);
+        t.Down(P(2000, 0)); t.Move(P(2600, 40)); t.Move(P(3010, 30));
+        Assert.Equal(ToolState.Dragging, t.State); Assert.Equal(3000, t.Proposal!.Value.LengthMm); Assert.Equal(steps, h.Items.Count);   // preview does not touch the model
+        t.Up(P(3010, 30));
+        Assert.True(t.Committed); Assert.Equal(steps + 1, h.Items.Count); Assert.Equal(new PointMm3(3000, 0, 2400), n.Nodes[1].Position);
+    }
+
+    [Fact] public void Click_then_click_destination_works_too()
+    {
+        var (b, a, h, n) = Pipe(); var t = new PipeHandleTool(a, n.Id, n.Segments[0].Id, PipeHandle.EndB);
+        t.Down(P(2000, 0)); t.Up(P(2000, 0)); Assert.Equal(ToolState.Placing, t.State);
+        t.Move(P(2500, 0)); t.Down(P(2500, 0));
+        Assert.True(t.Committed); Assert.Equal(2500, n.Nodes[1].Position.X);
+    }
+
+    [Fact] public void Dragging_perpendicular_makes_an_elbow_and_modifier_forces_it()
+    {
+        var (b, a, h, n) = Pipe(); var t = new PipeHandleTool(a, n.Id, n.Segments[0].Id, PipeHandle.EndB);
+        t.Down(P(2000, 0)); t.Move(P(2050, 1200)); t.Up(P(2050, 1200));
+        Assert.True(t.Committed); Assert.Equal(2, n.Segments.Count); Assert.Equal(new PointMm3(2000, 1200, 2400), n.Nodes[^1].Position);
+        Assert.Equal(FittingKind.Elbow90, FittingResolver.Resolve(n).First(f => f.Position == new PointMm3(2000, 0, 2400)).Kind);
+        var (_, a2, _, n2) = Pipe(); var t2 = new PipeHandleTool(a2, n2.Id, n2.Segments[0].Id, PipeHandle.EndB) { ForceElbow = true };
+        t2.Down(P(2000, 0)); t2.Move(P(2000, 100)); t2.Up(P(2000, 100)); Assert.Equal(2, n2.Segments.Count);
+    }
+
+    [Fact] public void Mid_handle_makes_a_tee_and_body_drag_moves_the_run()
+    {
+        var (b, a, h, n) = Pipe(); var t = new PipeHandleTool(a, n.Id, n.Segments[0].Id, PipeHandle.Mid);
+        t.Down(P(1000, 0)); t.Move(P(1000, 1500)); t.Up(P(1000, 1500));
+        Assert.True(t.Committed); Assert.Equal(3, n.Segments.Count); Assert.Equal(FittingKind.Tee, FittingResolver.Resolve(n).First(f => f.Position == new PointMm3(1000, 0, 2400)).Kind);
+        var (b2, a2, h2, n2) = Pipe(); var steps = h2.Items.Count; var t2 = new PipeHandleTool(a2, n2.Id, n2.Segments[0].Id, PipeHandle.Body);
+        t2.Down(P(1000, 0)); t2.Move(P(1000, 400)); t2.Up(P(1000, 400));
+        Assert.True(t2.Committed); Assert.All(n2.Nodes, nd => Assert.Equal(400, nd.Position.Y)); Assert.Equal(steps + 1, h2.Items.Count);
+    }
+
+    [Fact] public void Typed_length_overrides_and_cancel_leaves_model_untouched()
+    {
+        var (b, a, h, n) = Pipe(); var t = new PipeHandleTool(a, n.Id, n.Segments[0].Id, PipeHandle.EndB) { TypedLengthMm = 1250 };
+        t.Down(P(2000, 0)); t.Move(P(2400, 0)); Assert.Equal(1250, t.Proposal!.Value.LengthMm); t.Up(P(2400, 0)); Assert.Equal(1250, n.Nodes[1].Position.X);
+        var (b2, a2, h2, n2) = Pipe(); var before = BuildingJson.Serialize(b2); var steps = h2.Items.Count;
+        var t2 = new PipeHandleTool(a2, n2.Id, n2.Segments[0].Id, PipeHandle.EndB); t2.Down(P(2000, 0)); t2.Move(P(3000, 0)); t2.Cancel();
+        Assert.Equal(before, BuildingJson.Serialize(b2)); Assert.Equal(steps, h2.Items.Count); Assert.Equal(ToolState.Idle, t2.State);
+    }
+
+    [Fact] public void Refused_move_reports_and_changes_nothing()
+    {
+        var (b, a, h, n) = Pipe(); a.AddElbow(n.Id, n.Nodes[1].Id, new(2000, 0, 0));    // end goes down: moving the horizontal run sideways makes the drop diagonal
+        var steps = h.Items.Count; var t = new PipeHandleTool(a, n.Id, n.Segments[0].Id, PipeHandle.Body);
+        t.Down(P(1000, 0)); t.Move(P(1000, 500)); t.Up(P(1000, 500));
+        Assert.False(t.Committed); Assert.NotNull(t.Refused); Assert.Equal(steps, h.Items.Count);
+    }
+}

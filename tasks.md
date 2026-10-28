@@ -286,9 +286,9 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 
 **8b — Pipe on a wall corner from the elevation view**
 
-- [ ] Elevation view: pick a wall (or two walls meeting at a corner) and see it from the front, with level lines and altitudes.
-- [ ] In the elevation view, click the corner (or a point on the face) → vertical pipe attached to that corner, offset from both faces; drag to set its top and bottom, snapping to level altitudes.
-- [ ] Horizontal pipe along the wall face at a given height above the floor.
+- [x] Elevation view: pick a wall (or two walls meeting at a corner) and see it from the front, with level lines and altitudes. *(longest face of the selected wall; no two-wall corner picking)*
+- [x] In the elevation view, click the corner (or a point on the face) → vertical pipe attached to that corner, offset from both faces; drag to set its top and bottom, snapping to level altitudes. *(click = whole building, drag = top/bottom snapped to level lines; offset 50 mm from the face)*
+- [x] Horizontal pipe along the wall face at a given height above the floor.
 
 **8c — Extent over several levels**
 
@@ -297,19 +297,19 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 **8d — Direct manipulation with handles**
 
 - [x] Draw Pipe tool: chained click mode like Draw Wall (each click = a new segment and an elbow), with the same Enter/Backspace/Escape/typed-length behavior; segments constrained to X/Y in plan, Z in elevation. *(plan view only: X/Y constrained by orthogonal snap, height from options)*
-- [ ] Handles use the hybrid input: drag the handle (Paint style), or click the handle then click the destination (AutoCAD style).
-- [ ] End handle: drag to **extend** along the segment axis; the length is shown live; snapping to walls, other pipes and level altitudes.
-- [ ] End handle + modifier (Ctrl / ⌥ on macOS) or drag perpendicular past a threshold: **create an elbow** and a new segment along the new axis (X, Y or Z); keep going to chain elbows.
-- [ ] Middle of a segment: drag to **create a tee** and a branch.
-- [ ] Move a whole run perpendicular to itself (keeps connections by stretching the connected segments).
-- [ ] Type a length while dragging (e.g. "1.25" Enter) for precision.
-- [ ] Each gesture = one history step. The tool previews by quiet model changes and commits on pointer-up (same pattern as CinnabarSharp's editable tools).
+- [x] Handles use the hybrid input: drag the handle (Paint style), or click the handle then click the destination (AutoCAD style).
+- [x] End handle: drag to **extend** along the segment axis; the length is shown live; snapping to walls, other pipes and level altitudes.
+- [x] End handle + modifier (Ctrl / ⌥ on macOS) or drag perpendicular past a threshold: **create an elbow** and a new segment along the new axis (X, Y or Z); keep going to chain elbows.
+- [x] Middle of a segment: drag to **create a tee** and a branch.
+- [x] Move a whole run perpendicular to itself (keeps connections by stretching the connected segments).
+- [x] Type a length while dragging (e.g. "1.25" Enter) for precision.
+- [x] Each gesture = one history step. The tool previews by quiet model changes and commits on pointer-up (same pattern as CinnabarSharp's editable tools).
 - [ ] The same handles work in the plan, elevation and 3D views (3D: drag constrained to the axis under the mouse, axis gizmo shown).
 
 **Validation**
 
 - [ ] A beginner lays the heating supply/return of a 3-level building from scratch (risers + one flat's radiators) without help, in under 20 minutes; list friction points.
-- [ ] Tool tests in Core cover extend, elbow, tee, move-run, typed length, snapping to level altitudes.
+- [x] Tool tests in Core cover extend, elbow, tee, move-run, typed length, snapping to level altitudes.
 
 ## Phase 9 — Bill of materials and exports
 

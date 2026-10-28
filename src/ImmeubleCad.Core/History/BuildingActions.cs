@@ -286,6 +286,84 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
             return net;
         }, n => n.Id);
 
+    // ---- Direct manipulation of pipes (handles). Each is one history step; segments stay axis-aligned. ----
+
+    private static bool AxisAligned(PointMm3 a, PointMm3 b) => ((a.X != b.X ? 1 : 0) + (a.Y != b.Y ? 1 : 0) + (a.Z != b.Z ? 1 : 0)) <= 1;
+
+    /// <summary>Extends/shortens a free end along its segment axis to a new point. Returns false (no change) when the move would not stay on the axis.</summary>
+    public bool ExtendEnd(Guid networkId, Guid nodeId, PointMm3 to)
+    {
+        var net = Net(networkId); var seg = net.Segments.Where(s => s.A == nodeId || s.B == nodeId).ToList();
+        if (seg.Count != 1) return false;
+        var other = net.Nodes.First(n => n.Id == (seg[0].A == nodeId ? seg[0].B : seg[0].A)).Position;
+        if (!AxisAligned(other, to) || other == to || net.Nodes.First(n => n.Id == nodeId).Position == to) return false;
+        Edit("Extend pipe", BuildingEventKind.NetworkChanged, () => { net.Nodes.First(n => n.Id == nodeId).Position = to; return nodeId; }, i => i);
+        return true;
+    }
+
+    /// <summary>Creates an elbow at a free end: a new segment along another axis (X, Y or Z) to the given point.</summary>
+    public Node? AddElbow(Guid networkId, Guid endNodeId, PointMm3 to, int? diameterMm = null)
+    {
+        var net = Net(networkId); var end = net.Nodes.First(n => n.Id == endNodeId);
+        if (!AxisAligned(end.Position, to) || end.Position == to) return null;
+        var d = diameterMm ?? net.Segments.First(s => s.A == endNodeId || s.B == endNodeId).DiameterMm;
+        return Edit("Add elbow", BuildingEventKind.NetworkChanged, () =>
+        {
+            var n = new Node { Position = to }; net.Nodes.Add(n); net.Segments.Add(new Segment { A = endNodeId, B = n.Id, DiameterMm = d, Material = net.Segments.First(s => s.A == endNodeId || s.B == endNodeId).Material }); return n;
+        }, n => n.Id);
+    }
+
+    /// <summary>Tee: splits the segment at <paramref name="at"/> and starts a branch to <paramref name="branchEnd"/> (axis-aligned with the tee point).</summary>
+    public Node? AddTeeBranch(Guid networkId, Guid segmentId, PointMm3 at, PointMm3 branchEnd, int? diameterMm = null)
+    {
+        var net = Net(networkId); var seg = net.Segments.First(s => s.Id == segmentId);
+        if (!AxisAligned(at, branchEnd) || at == branchEnd) return null;
+        return Edit("Add tee", BuildingEventKind.NetworkChanged, () =>
+        {
+            var tee = new Node { Position = at }; var end = new Node { Position = branchEnd }; net.Nodes.Add(tee); net.Nodes.Add(end);
+            var b = seg.B; seg.B = tee.Id;
+            net.Segments.Add(new Segment { A = tee.Id, B = b, DiameterMm = seg.DiameterMm, Material = seg.Material });
+            net.Segments.Add(new Segment { A = tee.Id, B = end.Id, DiameterMm = diameterMm ?? seg.DiameterMm, Material = seg.Material });
+            return end;
+        }, n => n.Id);
+    }
+
+    /// <summary>Moves a whole run (the segment and the collinear segments chained to it) perpendicular to itself by <paramref name="delta"/>; connected segments along the move axis are stretched. Refuses (false, no change) when a connection would become diagonal.</summary>
+    public bool MoveRun(Guid networkId, Guid segmentId, int dx, int dy, int dz)
+    {
+        var net = Net(networkId); var seg = net.Segments.First(s => s.Id == segmentId);
+        var a = net.Nodes.First(n => n.Id == seg.A).Position; var b = net.Nodes.First(n => n.Id == seg.B).Position;
+        // the run: follow collinear neighbours at both ends
+        var run = new HashSet<Guid> { seg.A, seg.B }; var queue = new Queue<Guid>(run);
+        while (queue.Count > 0)
+        {
+            var nid = queue.Dequeue(); var np = net.Nodes.First(n => n.Id == nid).Position;
+            var attached = net.Segments.Where(s => s.A == nid || s.B == nid).ToList();
+            if (attached.Count != 2) continue;
+            foreach (var s in attached) { var o = s.A == nid ? s.B : s.A; var op = net.Nodes.First(n => n.Id == o).Position;
+                if (SameAxis(a, b, np, op) && run.Add(o)) queue.Enqueue(o); }
+        }
+        // would any segment attached to the run (but not in it) stop being axis-aligned?
+        PointMm3 Shift(PointMm3 p) => new(p.X + dx, p.Y + dy, p.Z + dz);
+        foreach (var s in net.Segments)
+        {
+            var inA = run.Contains(s.A); var inB = run.Contains(s.B); if (inA == inB) continue;
+            var pa = net.Nodes.First(n => n.Id == s.A).Position; var pb = net.Nodes.First(n => n.Id == s.B).Position;
+            if (!AxisAligned(inA ? Shift(pa) : pa, inB ? Shift(pb) : pb)) return false;
+        }
+        Edit("Move pipe run", BuildingEventKind.NetworkChanged, () =>
+        { foreach (var n in net.Nodes.Where(n => run.Contains(n.Id))) n.Position = Shift(n.Position); return networkId; }, i => i);
+        return true;
+    }
+
+    private static bool SameAxis(PointMm3 a, PointMm3 b, PointMm3 c, PointMm3 d)
+    {
+        var ax = (a.X != b.X ? 1 : 0, a.Y != b.Y ? 1 : 0, a.Z != b.Z ? 1 : 0); var bx = (c.X != d.X ? 1 : 0, c.Y != d.Y ? 1 : 0, c.Z != d.Z ? 1 : 0);
+        if (ax != bx) return false;
+        // same line, not just same direction
+        return (ax.Item1 == 1 || (a.X == c.X)) && (ax.Item2 == 1 || (a.Y == c.Y)) && (ax.Item3 == 1 || (a.Z == c.Z));
+    }
+
     public void MoveNode(Guid networkId, Guid nodeId, PointMm3 p) =>
         Edit("Move node", BuildingEventKind.NetworkChanged, () => { Net(networkId).Nodes.First(n => n.Id == nodeId).Position = p; return nodeId; }, i => i);
 

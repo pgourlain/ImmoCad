@@ -43,6 +43,13 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _hint = "Cliquez un mur pour le sélectionner, glissez pour déplacer.";
     public int WallThicknessMm { get; set; } = 200;
 
+    // ---- Pipe selection (handles) ----
+    public (Guid NetworkId, Guid SegmentId)? SelectedSegment { get; private set; }
+    public void SelectSegment(Guid networkId, Guid segmentId) { SelectedWalls.Clear(); SelectedSegment = (networkId, segmentId); Status = "Tuyau sélectionné — poignées : prolonger, coude (Ctrl), té (milieu)"; OnPropertyChanged(nameof(SelectionText)); Changed?.Invoke(); }
+    public void ClearSegment() { SelectedSegment = null; }
+    public int Snapper_GridMm() => 50;
+    public void AfterEdit(string? message = null) { if (message != null) Status = message; Refresh(); }
+
     // ---- Network tool options ----
     [ObservableProperty] private NetworkType _riserType = NetworkType.ColdWater;
     [ObservableProperty] private int _riserDiameter = 16;
@@ -221,7 +228,7 @@ public partial class MainViewModel : ObservableObject
     public bool IsRiserTool => Tool == ToolKind.Riser;
     public bool IsPipeTool => Tool == ToolKind.DrawPipe;
     public bool IsPlaceTool => Tool == ToolKind.Place;
-    public string SelectionText => SelectedWalls.Count == 0 ? "Aucune sélection" : $"{SelectedWalls.Count} mur(s) sélectionné(s)";
+    public string SelectionText => SelectedSegment != null ? "1 tuyau sélectionné" : SelectedWalls.Count == 0 ? "Aucune sélection" : $"{SelectedWalls.Count} mur(s) sélectionné(s)";
 
     public MainViewModel() { Actions = null!; RebuildPalette(); Load(SampleBuilding.Create()); }
 
@@ -257,6 +264,7 @@ public partial class MainViewModel : ObservableObject
 
     public void SelectWalls(IEnumerable<Guid> ids, bool add)
     {
+        if (ids.Any()) SelectedSegment = null;
         if (!add) SelectedWalls.Clear();
         foreach (var id in ids) SelectedWalls.Add(id);
         Status = SelectionText; OnPropertyChanged(nameof(SelectionText)); Changed?.Invoke();
@@ -269,7 +277,7 @@ public partial class MainViewModel : ObservableObject
         Actions.MoveWalls(l.Id, SelectedWalls.ToList(), dx, dy); Status = $"Déplacé de {dx / 1000.0:0.00} m, {dy / 1000.0:0.00} m"; Refresh();
     }
 
-    [RelayCommand] private void SelectLevel(Guid id) { CurrentLevelId = id; SelectedWalls.Clear(); Status = $"{CurrentLevel?.Name}"; Refresh(); }
+    [RelayCommand] private void SelectLevel(Guid id) { CurrentLevelId = id; SelectedWalls.Clear(); SelectedSegment = null; Status = $"{CurrentLevel?.Name}"; Refresh(); }
     [RelayCommand] private void LevelUp() => StepLevel(+1);
     [RelayCommand] private void LevelDown() => StepLevel(-1);
     private void StepLevel(int d)
