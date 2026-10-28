@@ -170,6 +170,7 @@
         <TextBlock Grid.Column="1" Text="{Binding SelectionText}" HorizontalAlignment="Center" VerticalAlignment="Center" Classes="caption" />
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
           <Button Content="2D" Command="{Binding SetModeCommand}" CommandParameter="Plan" />
+          <Button Content="Élévation" Command="{Binding ShowElevationCommand}" ToolTip.Tip="Vue de face du mur sélectionné" />
           <Button Content="3D" Command="{Binding SetModeCommand}" CommandParameter="Solid" />
           <Button Content="Filaire" Command="{Binding SetModeCommand}" CommandParameter="Wireframe" />
         </StackPanel>
@@ -177,7 +178,8 @@
     </Border>
 
     <Grid>
-      <vm:PlanView x:Name="Plan" IsVisible="{Binding !Is3D}" />
+      <vm:PlanView x:Name="Plan" IsVisible="{Binding IsPlan}" />
+      <vm:ElevationView x:Name="Elev" IsVisible="{Binding IsElevation}" Focusable="True" />
       <vm:Viewport3D x:Name="View3D" IsVisible="{Binding Is3D}" />
     </Grid>
   </DockPanel>

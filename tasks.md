@@ -292,7 +292,7 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 
 **8c — Extent over several levels**
 
-- [x] Every vertical run has an editable extent "from level X to level Y" (Properties panel) and top/bottom handles in elevation and 3D views that snap to level altitudes; slab crossings are added automatically. *(Core `SetRiserExtent`; no Properties/handle UI yet)*
+- [ ] Every vertical run has an editable extent "from level X to level Y" (Properties panel) and top/bottom handles in elevation and 3D views that snap to level altitudes; slab crossings are added automatically. *(Core `SetRiserExtent`; no Properties/handle UI yet)*
 
 **8d — Direct manipulation with handles**
 

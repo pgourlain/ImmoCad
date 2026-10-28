@@ -233,3 +233,26 @@ public class NetworkUiTests
         w.CaptureRenderedFrame()!.Save(Path.Combine(dir, "networks.png")); w.Close();
     }, CancellationToken.None);
 }
+
+public class ElevationUiTests
+{
+    private readonly HeadlessFixture f = new();
+
+    [Fact] public Task Elevation_of_selected_wall_vertical_horizontal_pipes_and_level_snap() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(); var w = new MainWindow { DataContext = vm }; w.Show();
+        vm.ShowElevationCommand.Execute(null); Assert.False(vm.IsElevation); Assert.Contains("Sélectionnez", vm.Status);   // nothing selected
+        vm.SelectWalls([vm.CurrentLevel!.Walls[0].Id], false); vm.ShowElevationCommand.Execute(null);
+        Assert.True(vm.IsElevation); Assert.NotNull(vm.Plane);
+        var nets = vm.Building.Networks.Count; vm.RiserType = ImmeubleCad.Core.Model.NetworkType.ColdWater;
+        vm.PlaceVerticalPipe(300, null, null);                                   // whole building
+        var n = vm.Building.Networks[^1]; Assert.Equal(nets + 1, vm.Building.Networks.Count);
+        Assert.Equal(0, n.Nodes.Min(x => x.Position.Z)); Assert.Equal(8100, n.Nodes.Max(x => x.Position.Z));
+        vm.PlaceVerticalPipe(1500, 2700, 5400); Assert.Equal(2700, vm.Building.Networks[^1].Nodes.Min(x => x.Position.Z));
+        var segs = vm.Building.Networks.Sum(x => x.Segments.Count); vm.PlaceHorizontalPipe(300, 3000, 2400); Assert.Equal(segs + 1, vm.Building.Networks.Sum(x => x.Segments.Count));
+        vm.PlaceHorizontalPipe(300, 305, 2400); Assert.Equal(segs + 1, vm.Building.Networks.Sum(x => x.Segments.Count));    // too short: ignored
+        var dir = Path.Combine(AppContext.BaseDirectory, "screenshots"); Directory.CreateDirectory(dir);
+        w.CaptureRenderedFrame()!.Save(Path.Combine(dir, "elevation.png"));
+        vm.SetModeCommand.Execute("Plan"); Assert.True(vm.IsPlan); w.Close();
+    }, CancellationToken.None);
+}

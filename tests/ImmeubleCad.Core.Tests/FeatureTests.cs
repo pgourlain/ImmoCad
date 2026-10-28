@@ -513,3 +513,32 @@ public class NetworkQueryTests
         h.Undo(b); Assert.Equal("Radiateur séjour", b.Equipment[0].Label); h.Undo(b); h.Undo(b); Assert.Equal(before, BuildingJson.Serialize(b));
     }
 }
+
+public class ElevationTests
+{
+    [Fact] public void Plane_maps_u_to_plan_with_offset_and_back()
+    {
+        var p = new ImmeubleCad.Core.Geometry.ElevationPlane(new(0, 200), new(4000, 200), 50, +1);   // north face of a south wall, viewer to the north
+        Assert.Equal(new PointMm(1000, 250), p.ToPlan(1000));
+        Assert.Equal(1000, p.ProjectU(new(1000, 250)), 6); Assert.Equal(50, p.Distance(new(1000, 250)), 6);
+        var q = new ImmeubleCad.Core.Geometry.ElevationPlane(new(0, 200), new(4000, 200), 50, -1);
+        Assert.Equal(new PointMm(1000, 150), q.ToPlan(1000));
+        var diag = new ImmeubleCad.Core.Geometry.ElevationPlane(new(0, 0), new(3000, 4000), 0);
+        Assert.Equal(new PointMm(1500, 2000), diag.ToPlan(2500)); Assert.Equal(5000, diag.Length);
+    }
+
+    [Fact] public void Snap_to_level_lines_and_vertical_pipe_at_corner()
+    {
+        var (b, h) = SampleBuilding.Create(); var a = new BuildingActions(b, h, new BuildingEventsService());
+        Assert.Equal(2700, ImmeubleCad.Core.Geometry.ElevationPlane.SnapZ(b, 2640)); Assert.Equal(2400, ImmeubleCad.Core.Geometry.ElevationPlane.SnapZ(b, 2400));
+        var plane = new ImmeubleCad.Core.Geometry.ElevationPlane(new(200, 200), new(7800, 200), 50, +1);
+        var steps = h.Items.Count; var nets = b.Networks.Count;
+        var n = a.AddVerticalPipe(plane, 0, NetworkType.ColdWater, 0, ImmeubleCad.Core.Geometry.ElevationPlane.SnapZ(b, 8050), 20);
+        Assert.Equal(steps + 1, h.Items.Count); Assert.Equal(nets + 1, b.Networks.Count);
+        Assert.Equal(new PointMm3(200, 250, 8100), n.Nodes.OrderBy(x => x.Position.Z).Last().Position);
+        a.AddHorizontalAlong(plane, 0, 3000, NetworkType.ColdWater, 2400, 20, n.Id);
+        Assert.Equal(2, n.Segments.Count); Assert.Equal(4, n.Nodes.Count);
+        Assert.Contains(plane.Visible(b), v => v.Seg.Network.Id == n.Id);
+        h.Undo(b); h.Undo(b); Assert.Equal(nets, b.Networks.Count);
+    }
+}

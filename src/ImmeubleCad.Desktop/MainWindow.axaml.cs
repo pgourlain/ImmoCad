@@ -15,7 +15,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         DataContextChanged += (_, _) =>
         {
-            Vm.Changed += () => { Plan.Invalidate(); View3D.InvalidateVisual(); };
+            Vm.Changed += () => { Plan.Invalidate(); View3D.InvalidateVisual(); Elev.InvalidateVisual(); };
             Plan.CursorMoved += p => Vm.Status = $"X {p.X / 1000.0:0.00} m   Y {p.Y / 1000.0:0.00} m";
             Plan.Invalidate();
         };

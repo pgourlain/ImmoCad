@@ -262,6 +262,30 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
             low.Position = low.Position with { Z = Math.Min(fromZ, toZ) }; high.Position = high.Position with { Z = Math.Max(fromZ, toZ) }; return networkId;
         }, i => i);
 
+    /// <summary>Vertical pipe on a wall face (elevation view): offset from the face, from zFrom to zTo (snap level lines before calling).</summary>
+    public Network AddVerticalPipe(Geometry.ElevationPlane plane, double u, NetworkType type, int zFromMm, int zToMm, int diameterMm, Guid? networkId = null) =>
+        Edit("Add vertical pipe", BuildingEventKind.NetworkChanged, () =>
+        {
+            var net = networkId is { } id ? Net(id) : new Network { Name = type.ToString(), Type = type };
+            if (networkId == null) building.Networks.Add(net);
+            var p = plane.ToPlan(u);
+            var a = new Node { Position = new(p.X, p.Y, Math.Min(zFromMm, zToMm)) }; var b2 = new Node { Position = new(p.X, p.Y, Math.Max(zFromMm, zToMm)) };
+            net.Nodes.Add(a); net.Nodes.Add(b2); net.Segments.Add(new Segment { A = a.Id, B = b2.Id, DiameterMm = diameterMm, Material = Networks.NetworkQueries.DefaultMaterial(type) });
+            return net;
+        }, n => n.Id);
+
+    /// <summary>Horizontal pipe along the wall face at a given altitude, from u0 to u1.</summary>
+    public Network AddHorizontalAlong(Geometry.ElevationPlane plane, double u0, double u1, NetworkType type, int zMm, int diameterMm, Guid? networkId = null) =>
+        Edit("Add horizontal pipe", BuildingEventKind.NetworkChanged, () =>
+        {
+            var net = networkId is { } id ? Net(id) : new Network { Name = type.ToString(), Type = type };
+            if (networkId == null) building.Networks.Add(net);
+            var p0 = plane.ToPlan(u0); var p1 = plane.ToPlan(u1);
+            var a = new Node { Position = new(p0.X, p0.Y, zMm) }; var b2 = new Node { Position = new(p1.X, p1.Y, zMm) };
+            net.Nodes.Add(a); net.Nodes.Add(b2); net.Segments.Add(new Segment { A = a.Id, B = b2.Id, DiameterMm = diameterMm, Material = Networks.NetworkQueries.DefaultMaterial(type) });
+            return net;
+        }, n => n.Id);
+
     public void MoveNode(Guid networkId, Guid nodeId, PointMm3 p) =>
         Edit("Move node", BuildingEventKind.NetworkChanged, () => { Net(networkId).Nodes.First(n => n.Id == nodeId).Position = p; return nodeId; }, i => i);
 

@@ -6,13 +6,14 @@ using ImmeubleCad.Core.History;
 using ImmeubleCad.Core.Import;
 using ImmeubleCad.Core.IO;
 using ImmeubleCad.Core.Model;
+using ImmeubleCad.Core.Geometry;
 using ImmeubleCad.Core.Catalog;
 using ImmeubleCad.Core.Networks;
 using ImmeubleCad.Core.Tools;
 
 namespace ImmeubleCad.Desktop;
 
-public enum ViewMode { Plan, Solid, Wireframe }
+public enum ViewMode { Plan, Solid, Wireframe, Elevation }
 public enum ToolKind { Select, DrawWall, Align, Riser, DrawPipe, Place }
 
 /// <summary>One button of the level bar.</summary>
@@ -66,6 +67,37 @@ public partial class MainViewModel : ObservableObject
         Palette.Clear();
         foreach (var e in EquipmentCatalog.Default.Where(e => Search.Length == 0 || e.Name.Contains(Search, StringComparison.OrdinalIgnoreCase) || e.Category.Contains(Search, StringComparison.OrdinalIgnoreCase)))
             Palette.Add(new PaletteItem(e.Id, e.Category, e.Name, e.Inline ? "⊗" : e.Category == "Sanitary" ? "◍" : "▤"));
+    }
+
+    // ---- Elevation view ----
+    /// <summary>Shows the front view of the longest face of the selected wall, seen from the side facing the building's centre.</summary>
+    [RelayCommand] private void ShowElevation()
+    {
+        var wall = CurrentLevel?.Walls.FirstOrDefault(w => SelectedWalls.Contains(w.Id));
+        if (wall == null || wall.Footprint.Count < 2) { Status = "Sélectionnez un mur pour voir son élévation"; return; }
+        var fp = wall.Footprint; var best = 0; double bestLen = -1;
+        for (var i = 0; i < fp.Count; i++) { var a = fp[i]; var b = fp[(i + 1) % fp.Count]; var len = Math.Sqrt(Math.Pow(a.X - b.X, 2) + Math.Pow(a.Y - b.Y, 2)); if (len > bestLen) { bestLen = len; best = i; } }
+        var pa = fp[best]; var pb = fp[(best + 1) % fp.Count];
+        var all = Building.Levels.SelectMany(l => l.Walls.SelectMany(w => w.Footprint)).ToList();
+        PointMm centre = new((int)all.Average(p => p.X), (int)all.Average(p => p.Y));
+        var side = new ElevationPlane(pa, pb, 50, +1).Distance(centre) >= 0 ? +1 : -1;
+        Plane = new ElevationPlane(pa, pb, 50, side); Mode = ViewMode.Elevation; Hint = "Colonne : cliquez (ou glissez pour fixer haut/bas). Tuyau : glissez à l'horizontale.";
+    }
+
+    /// <summary>Vertical pipe on the face; whole building by default, snapped to level lines when dragged.</summary>
+    public void PlaceVerticalPipe(double u, double? zFrom, double? zTo)
+    {
+        if (Plane == null || Building.Levels.Count == 0) return;
+        var lo = (int)(zFrom ?? Building.Levels[0].AltitudeMm); var hi = (int)(zTo ?? Building.Levels[^1].AltitudeMm + Building.Levels[^1].HeightMm);
+        Actions.AddVerticalPipe(Plane, Math.Clamp(u, 0, Plane.Length), RiserType, Math.Min(lo, hi), Math.Max(lo, hi), RiserDiameter);
+        Status = "Tuyau vertical posé sur le mur"; Refresh();
+    }
+
+    public void PlaceHorizontalPipe(double u0, double u1, double z)
+    {
+        if (Plane == null || Math.Abs(u1 - u0) < 20) return;
+        Actions.AddHorizontalAlong(Plane, Math.Clamp(u0, 0, Plane.Length), Math.Clamp(u1, 0, Plane.Length), PipeType, (int)z, PipeDiameter);
+        Status = "Tuyau horizontal posé le long du mur"; Refresh();
     }
 
     // ---- Risers ----
@@ -179,7 +211,10 @@ public partial class MainViewModel : ObservableObject
 
     /// <summary>Always resolved by id: undo/redo rebuilds the whole object graph, so references go stale.</summary>
     public Level? CurrentLevel => Building.Levels.FirstOrDefault(l => l.Id == CurrentLevelId) ?? Building.Levels.FirstOrDefault();
-    public bool Is3D => Mode != ViewMode.Plan;
+    public bool Is3D => Mode is ViewMode.Solid or ViewMode.Wireframe;
+    public bool IsElevation => Mode == ViewMode.Elevation;
+    public bool IsPlan => Mode == ViewMode.Plan;
+    public ElevationPlane? Plane { get; private set; }
     public bool IsSelectTool => Tool == ToolKind.Select;
     public bool IsDrawTool => Tool == ToolKind.DrawWall;
     public bool IsAlignTool => Tool == ToolKind.Align;
@@ -196,7 +231,7 @@ public partial class MainViewModel : ObservableObject
         SelectedWalls.Clear(); CurrentLevelId = Building.Levels.FirstOrDefault()?.Id ?? Guid.Empty; Refresh();
     }
 
-    partial void OnModeChanged(ViewMode value) => OnPropertyChanged(nameof(Is3D));
+    partial void OnModeChanged(ViewMode value) { OnPropertyChanged(nameof(Is3D)); OnPropertyChanged(nameof(IsElevation)); OnPropertyChanged(nameof(IsPlan)); Changed?.Invoke(); }
     partial void OnToolChanged(ToolKind value)
     {
         OnPropertyChanged(nameof(IsSelectTool)); OnPropertyChanged(nameof(IsDrawTool)); OnPropertyChanged(nameof(IsAlignTool)); OnPropertyChanged(nameof(IsRiserTool)); OnPropertyChanged(nameof(IsPipeTool)); OnPropertyChanged(nameof(IsPlaceTool));
