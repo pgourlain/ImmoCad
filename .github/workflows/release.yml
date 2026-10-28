@@ -1,23 +1,29 @@
 name: Release
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - 'v*'
 
 jobs:
   package:
+    name: Package (${{ matrix.rid }})
     runs-on: ${{ matrix.os }}
 
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
             rid: win-x64
+
           - os: ubuntu-latest
             rid: linux-x64
+
           - os: macos-latest
             rid: osx-arm64
+
           - os: macos-13
             rid: osx-x64
 
@@ -30,14 +36,47 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Package
+      - name: Build package
         shell: bash
         run: |
-          packaging/package.sh "${{ matrix.rid }}" "${GITHUB_REF_NAME#v}"
+          VERSION="${GITHUB_REF_NAME#v}"
+
+          if [ "$VERSION" = "$GITHUB_REF_NAME" ]; then
+            VERSION="dev-${GITHUB_RUN_NUMBER}"
+          fi
+
+          packaging/package.sh "${{ matrix.rid }}" "$VERSION"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.rid }}
-          path: artifacts/${{ matrix.rid }}/ImmoCad-*
+          path: artifacts/${{ matrix.rid }}/
           if-no-files-found: error
+
+  release:
+    name: Create Draft Release
+    needs: package
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Show files
+        run: find dist -type f
+
+      - name: Create draft release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          files: |
+            dist/**
