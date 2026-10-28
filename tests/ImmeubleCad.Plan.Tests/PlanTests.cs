@@ -73,3 +73,29 @@ public class FootprintTests
         Assert.NotEmpty(FootprintMatcher.AngleMismatches(plan, skew, 2));
     }
 }
+
+public class DeskewTests
+{
+    private static GrayImage Rotated(double deg)
+    {
+        const int N = 300; var px = Enumerable.Repeat((byte)255, N * N).ToArray(); var r = deg * Math.PI / 180; double c = Math.Cos(r), s = Math.Sin(r);
+        void Line(double x0, double y0, double x1, double y1)
+        {
+            for (var t = 0.0; t <= 1; t += 0.001)
+            {
+                double x = x0 + (x1 - x0) * t - 150, y = y0 + (y1 - y0) * t - 150; // rotate around centre
+                int rx = (int)Math.Round(x * c - y * s + 150), ry = (int)Math.Round(x * s + y * c + 150);
+                if (rx >= 0 && ry >= 0 && rx < N && ry < N) px[ry * N + rx] = 0;
+            }
+        }
+        Line(50, 80, 250, 80); Line(50, 220, 250, 220); Line(50, 80, 50, 220); Line(250, 80, 250, 220); Line(150, 80, 150, 220);
+        return new(px, N, N);
+    }
+
+    [Theory] [InlineData(0)] [InlineData(3)] [InlineData(-4.5)]
+    public void Estimates_rotation_of_a_synthetic_plan(double deg)
+    {
+        var a = Deskew.EstimateAngle(Rotated(deg));
+        Assert.InRange(Math.Abs(a - deg), 0, 0.6); // returns the tilt; rotate the picture by -tilt to straighten it
+    }
+}

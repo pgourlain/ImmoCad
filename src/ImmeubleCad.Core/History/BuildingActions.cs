@@ -122,6 +122,38 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
     public void SetImageTransform(Guid levelId, double[] matrix2x3) =>
         Edit("Set image transform", BuildingEventKind.LevelChanged, () => { Find(levelId).ImageTransform = matrix2x3; return levelId; }, i => i);
 
+    public void SetBackground(Guid levelId, string imageName, double[] matrix2x3, double opacity = 0.5) =>
+        Edit("Set background", BuildingEventKind.LevelChanged, () => { var l = Find(levelId); l.BackgroundImage = imageName; l.ImageTransform = matrix2x3; l.BackgroundOpacity = opacity; return levelId; }, i => i);
+
+    public void SetBackgroundDisplay(Guid levelId, double opacity, bool visible) =>
+        Edit("Background display", BuildingEventKind.LevelChanged, () => { var l = Find(levelId); l.BackgroundOpacity = Math.Clamp(opacity, 0, 1); l.BackgroundVisible = visible; return levelId; }, i => i);
+
+    /// <summary>
+    /// Aligns a level on the one below from matching points (pairs: point on this level → same point on the level below, mm).
+    /// 2 pairs = similarity, 3+ = affine. The background transform is composed with the fit; walls move along when <paramref name="moveWalls"/>.
+    /// Returns the residual error of each pair in mm (null when the fit is degenerate).
+    /// </summary>
+    public double[]? AlignLevel(Guid levelId, IReadOnlyList<((double X, double Y) From, (double X, double Y) To)> pairs, bool moveWalls = true)
+    {
+        var fit = Geometry.ImageFit.Fit(pairs); if (fit is null) return null;
+        var residuals = Geometry.ImageFit.Residuals(fit.Value, pairs);
+        Edit("Align with level below", BuildingEventKind.LevelChanged, () =>
+        {
+            var l = Find(levelId); var f = fit.Value;
+            var t = l.ImageTransform ?? [1, 0, 0, 0, 1, 0];
+            // new = f ∘ old  (old maps px→mm, f maps mm→mm)
+            l.ImageTransform = [f.A * t[0] + f.B * t[3], f.A * t[1] + f.B * t[4], f.A * t[2] + f.B * t[5] + f.Tx,
+                                f.C * t[0] + f.D * t[3], f.C * t[1] + f.D * t[4], f.C * t[2] + f.D * t[5] + f.Ty];
+            if (moveWalls)
+            {
+                PointMm M(PointMm p) { var (x, y) = f.Apply(p.X, p.Y); return new((int)Math.Round(x), (int)Math.Round(y)); }
+                foreach (var w in l.Walls) { w.Footprint = w.Footprint.Select(M).ToList(); w.Holes = w.Holes.Select(h => h.Select(M).ToList()).ToList(); }
+            }
+            return levelId;
+        }, i => i);
+        return residuals;
+    }
+
     public Space AddSpace(Guid levelId, IEnumerable<PointMm> outline, string name, SpaceKind kind, string? number = null) =>
         Edit("Add space", BuildingEventKind.LevelChanged, () =>
         {

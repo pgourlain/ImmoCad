@@ -52,6 +52,9 @@ public sealed class Level
     public LevelKind Kind { get; set; } = LevelKind.Standard;
     public string? BackgroundImage { get; set; }
     public double[]? ImageTransform { get; set; } // 2x3 affine, pixels -> mm
+    public double[]? ImageHomography { get; set; } // optional 8 coefficients for perspective mode
+    public double BackgroundOpacity { get; set; } = 0.5;
+    public bool BackgroundVisible { get; set; } = true;
     public List<Wall> Walls { get; set; } = new();
     public List<Space> Spaces { get; set; } = new();
 }

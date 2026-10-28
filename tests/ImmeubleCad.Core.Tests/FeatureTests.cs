@@ -378,3 +378,39 @@ public class ExportTests
         Assert.Contains("pipe,ColdWater,pipe,22,3,bars of 3 m", ImmeubleCad.Core.Export.BomFull.ToCsv(b, true).Replace("\r", ""));
     }
 }
+
+public class AlignTests
+{
+    [Fact] public void Homography_recovers_perspective_and_rejects_collinear()
+    {
+        var src = new (double, double)[] { (0, 0), (100, 0), (100, 100), (0, 100) };
+        var dst = new (double, double)[] { (10, 5), (120, 0), (95, 110), (0, 90) };
+        var h = ImmeubleCad.Core.Geometry.Homography.Fit(src.Zip(dst).ToList())!.Value;
+        for (var i = 0; i < 4; i++) { var (x, y) = h.Apply(src[i].Item1, src[i].Item2); Assert.Equal(dst[i].Item1, x, 6); Assert.Equal(dst[i].Item2, y, 6); }
+        Assert.Null(ImmeubleCad.Core.Geometry.Homography.Fit(new[] { ((0.0, 0.0), (0.0, 0.0)), ((1.0, 1.0), (1.0, 1.0)), ((2.0, 2.0), (2.0, 2.0)), ((3.0, 3.0), (3.0, 3.0)) }));
+    }
+
+    [Fact] public void Align_scanned_plan_with_3_percent_width_stretch_within_50mm()
+    {
+        var b = new Building(); var h = new BuildingHistory(); var a = new BuildingActions(b, h, new BuildingEventsService());
+        var below = a.AddLevel("RDC", 0); var up = a.AddLevel("R+1", 2700);
+        // stairwell corners on the level below, and the same points scanned 3 % too wide on the upper level
+        var truth = new (double X, double Y)[] { (1000, 1000), (4000, 1000), (4000, 3000), (1000, 3000) };
+        var pairs = truth.Select(t => (From: (t.X * 1.03, t.Y), To: t)).ToList();
+        a.AddWall(up.Id, [new(1030, 1000), new(4120, 1000), new(4120, 3000), new(1030, 3000)]);
+        var steps = h.Items.Count;
+        var res = a.AlignLevel(up.Id, pairs)!;
+        Assert.All(res, r => Assert.True(r < 1));
+        Assert.Equal(steps + 1, h.Items.Count);
+        var x = b.Levels[1].Walls[0].Footprint[0].X; Assert.InRange(x, 1000 - 50, 1000 + 50); // wall moved with the plan
+        h.Undo(b); Assert.Equal(1030, b.Levels[1].Walls[0].Footprint[0].X);
+    }
+
+    [Fact] public void Align_reports_wrong_click_as_large_residual()
+    {
+        var b = new Building(); var a = new BuildingActions(b, new BuildingHistory(), new BuildingEventsService()); a.AddLevel("RDC", 0); var up = a.AddLevel("R+1", 2700);
+        var pairs = new[] { ((0.0, 0.0), (0.0, 0.0)), ((1000.0, 0.0), (1000.0, 0.0)), ((1000.0, 1000.0), (1000.0, 1000.0)), ((0.0, 1000.0), (300.0, 1400.0)) };
+        Assert.Contains(a.AlignLevel(up.Id, pairs)!, r => r > 50);
+        Assert.Null(a.AlignLevel(up.Id, new[] { ((0.0, 0.0), (0.0, 0.0)), ((1.0, 1.0), (1.0, 1.0)), ((2.0, 2.0), (2.0, 2.0)) }));
+    }
+}
