@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Microsoft.Extensions.Logging;
+using static ImmeubleCad.Core.Translations;
 
 namespace ImmeubleCad.Desktop;
 
@@ -25,7 +26,7 @@ public partial class ImportWizard : Window
         Vm.AddCalibrationPoint(p.X, p.Y); Canvas.Points.Clear(); Canvas.Points.AddRange(Vm.CalibrationPoints); Canvas.InvalidateVisual(); UpdateCal();
     }
 
-    private void UpdateCal() { CalText.Text = Vm.IsCalibrated ? $"✓ {Vm.Calibration!.Value.PxPerMmX:0.####} px/mm" : $"{Vm.CalibrationPoints.Count} point(s) — cliquez sur le plan"; NextBtn.IsEnabled = Vm.Step != WizardStep.Calibrate || Vm.IsCalibrated; }
+    private void UpdateCal() { CalText.Text = Vm.IsCalibrated ? T("wiz.cal.ok", Vm.Calibration!.Value.PxPerMmX.ToString("0.####")) : T("wiz.cal.points", Vm.CalibrationPoints.Count); NextBtn.IsEnabled = Vm.Step != WizardStep.Calibrate || Vm.IsCalibrated; }
 
     private void ShowStep()
     {
@@ -33,12 +34,12 @@ public partial class ImportWizard : Window
         PDetect.IsVisible = Vm.Step == WizardStep.Detect; PReview.IsVisible = Vm.Step == WizardStep.Review;
         (Title.Text, Help.Text) = Vm.Step switch
         {
-            WizardStep.Straighten => ("1. Redresser", "Si le plan est penché, redressez-le automatiquement ou avec le curseur."),
-            WizardStep.Calibrate => ("2. Échelle", "Cliquez deux points dont vous connaissez la distance réelle, puis saisissez-la."),
-            WizardStep.Detect => ("3. Détection", "Réglez jusqu'à ce que les murs soient en rouge et le texte absent."),
-            _ => ("4. Vérification", "Cliquez un mur détecté pour l'exclure. Valider ajoute tout en une seule étape annulable."),
+            WizardStep.Straighten => (T("wiz.s1.title"), T("wiz.s1.help")),
+            WizardStep.Calibrate => (T("wiz.s2.title"), T("wiz.s2.help")),
+            WizardStep.Detect => (T("wiz.s3.title"), T("wiz.s3.help")),
+            _ => (T("wiz.s4.title"), T("wiz.s4.help")),
         };
-        NextBtn.Content = Vm.Step == WizardStep.Review ? "Valider" : "Suivant"; BackBtn.IsEnabled = Vm.Step != WizardStep.Straighten;
+        NextBtn.Content = Vm.Step == WizardStep.Review ? T("wiz.confirm") : T("wiz.next"); BackBtn.IsEnabled = Vm.Step != WizardStep.Straighten;
         Canvas.Fade = Vm.Step == WizardStep.Detect ? 0.35 : 1; Canvas.Outlines = Vm.Step == WizardStep.Review ? Vm.Detected : null; Canvas.Rejected = Vm.Rejected;
         Canvas.Points.Clear(); if (Vm.Step == WizardStep.Calibrate) Canvas.Points.AddRange(Vm.CalibrationPoints);
         if (Vm.Step == WizardStep.Detect) PreviewMask(); else Canvas.ClearMask();
@@ -46,7 +47,7 @@ public partial class ImportWizard : Window
     }
 
     private void PreviewMask() { var m = Vm.PreviewMask(); Canvas.SetMask(m, Vm.Gray!.Width, Vm.Gray.Height); }
-    private void UpdateReview() => ReviewText.Text = $"{Vm.Detected.Count - Vm.Rejected.Count} groupe(s) de murs retenu(s) sur {Vm.Detected.Count}";
+    private void UpdateReview() => ReviewText.Text = T("wiz.review.count", Vm.Detected.Count - Vm.Rejected.Count, Vm.Detected.Count);
 
     private void OnAutoDeskew(object? s, RoutedEventArgs e) { Vm.AutoDeskew(); Canvas.SetImage(Vm.Image); }
     private void OnAngleChanged(object? s, Avalonia.Input.PointerReleasedEventArgs e) { Vm.ApplyRotation(); Canvas.SetImage(Vm.Image); }
@@ -62,7 +63,7 @@ public partial class ImportWizard : Window
             if (Vm.Step == WizardStep.Detect) Vm.Detect();
             Vm.Step += 1; ShowStep();
         }
-        catch (Exception ex) { Log.LogError(ex, "Wizard step failed"); Title.Text = "Erreur"; Help.Text = ex.Message; }
+        catch (Exception ex) { Log.LogError(ex, "Wizard step failed"); Title.Text = T("error"); Help.Text = ex.Message; }
     }
 
     public ImportWizardViewModel Result => Vm;

@@ -8,6 +8,8 @@ using Microsoft.Extensions.Logging;
 using Xunit;
 
 [assembly: AvaloniaTestApplication(typeof(ImmeubleCad.Desktop.Tests.TestAppBuilder))]
+// Language is process-wide state: UI tests run one at a time. The suite starts in French (legacy assertions); LanguageTests cover English and switching.
+[assembly: CollectionBehavior(CollectionBehavior.CollectionPerAssembly)]   // one collection = tests run one at a time
 
 namespace ImmeubleCad.Desktop.Tests;
 
@@ -18,9 +20,18 @@ public sealed class HeadlessFixture
     public HeadlessUnitTestSession Session => Shared.Value;
 }
 
+public static class HeadlessExtensions
+{
+    /// <summary>
+    /// Runs an async body on the UI thread and awaits it. Plain <c>Dispatch(async () =&gt; …)</c> binds to the <c>Action</c> overload (async void):
+    /// the body is not awaited and its assertion failures are lost, so async UI tests must go through this helper.
+    /// </summary>
+    public static Task RunAsync(this HeadlessUnitTestSession session, Func<Task> body, CancellationToken ct = default) => session.Dispatch<int>(async () => { await body(); return 0; }, CancellationToken.None);
+}
+
 public static class TestInit
 {
-    [System.Runtime.CompilerServices.ModuleInitializer] public static void Init() { MainWindow.UseOpenGL = false; Environment.SetEnvironmentVariable("IMMEUBLECAD_DATA_DIR", Path.Combine(Path.GetTempPath(), "immeublecad-tests-" + Environment.ProcessId)); }   // headless tests draw 3D in software
+    [System.Runtime.CompilerServices.ModuleInitializer] public static void Init() { ImmeubleCad.Core.Translations.Language = "fr"; MainWindow.UseOpenGL = false; Environment.SetEnvironmentVariable("IMMEUBLECAD_DATA_DIR", Path.Combine(Path.GetTempPath(), "immeublecad-tests-" + Environment.ProcessId)); }   // headless tests draw 3D in software
 }
 
 public static class TestAppBuilder
@@ -36,7 +47,7 @@ public class DesktopTests
     [Fact] public Task Main_window_shows_plan_and_levels() => f.Session.Dispatch(() =>
     {
         var vm = new MainViewModel(); var w = new MainWindow { DataContext = vm }; w.Show();
-        Assert.Equal(3, vm.Levels.Count);
+        Assert.Equal(4, vm.Levels.Count); Assert.Equal("Site", vm.Levels[^1].Name);   // 3 levels + the Site entry at the bottom
         Assert.Equal("R+2", vm.Levels[0].Name); // top level first
         w.CaptureRenderedFrame()!.Save(Path.Combine(Shots(), "main.png")); w.Close();
     }, CancellationToken.None);
@@ -45,9 +56,9 @@ public class DesktopTests
     {
         var vm = new MainViewModel(); var w = new MainWindow { DataContext = vm }; w.Show();
         while (vm.Building.Levels.Count < 30) vm.AddLevelCommand.Execute(null);
-        Assert.Equal(30, vm.Levels.Count); Assert.Equal("R+29", vm.Levels[0].Name); Assert.True(vm.Levels[0].IsCurrent);
+        Assert.Equal(31, vm.Levels.Count); Assert.Equal("R+29", vm.Levels[0].Name); Assert.True(vm.Levels[0].IsCurrent);
         for (var i = 0; i < 29; i++) vm.LevelDownCommand.Execute(null);
-        Assert.Equal("RDC", vm.CurrentLevel!.Name);
+        Assert.Equal("RDC", vm.CurrentLevel!.DisplayName);
         w.CaptureRenderedFrame()!.Save(Path.Combine(Shots(), "levels30.png")); w.Close();
     }, CancellationToken.None);
 
@@ -59,7 +70,7 @@ public class DesktopTests
         vm.MoveSelection(500, 300);
         Assert.Equal(new(first.X + 500, first.Y + 300), vm.CurrentLevel!.Walls[0].Footprint[0]);
         vm.MoveSelectionUpCommand.Execute(null);                       // to R+1
-        Assert.Equal("R+1", vm.CurrentLevel!.Name); Assert.Equal(6, vm.CurrentLevel.Walls.Count);
+        Assert.Equal("R+1", vm.CurrentLevel!.DisplayName); Assert.Equal(6, vm.CurrentLevel.Walls.Count);
         Assert.Equal(2, vm.Building.Levels[0].Walls.Count);
         vm.UndoCommand.Execute(null);
         Assert.Equal(4, vm.Building.Levels[0].Walls.Count);           // back on RDC
@@ -92,9 +103,9 @@ public class DesktopTests
     [Fact] public Task Undo_redo_levels() => f.Session.Dispatch(() =>
     {
         var vm = new MainViewModel();
-        vm.AddLevelCommand.Execute(null); Assert.Equal(4, vm.Levels.Count);
-        vm.UndoCommand.Execute(null); Assert.Equal(3, vm.Levels.Count);
-        vm.RedoCommand.Execute(null); Assert.Equal(4, vm.Levels.Count);
+        vm.AddLevelCommand.Execute(null); Assert.Equal(4, vm.Building.Levels.Count);
+        vm.UndoCommand.Execute(null); Assert.Equal(3, vm.Building.Levels.Count);
+        vm.RedoCommand.Execute(null); Assert.Equal(4, vm.Building.Levels.Count);
     }, CancellationToken.None);
 }
 
@@ -205,7 +216,7 @@ public class NetworkUiTests
     [Fact] public Task Riser_template_pipe_valve_radiator_and_undo() => f.Session.Dispatch(() =>
     {
         var vm = new MainViewModel(); var nets = vm.Building.Networks.Count; var steps = vm.History.Items.Count;
-        vm.RiserTemplate = "EF + ECS"; vm.PlaceRiser(new(1000, 1000));
+        vm.RiserTemplate = "tpl.dhw"; vm.PlaceRiser(new(1000, 1000));
         Assert.Equal(nets + 2, vm.Building.Networks.Count); Assert.Equal(steps + 1, vm.History.Items.Count);
         vm.SetToolCommand.Execute("DrawPipe"); vm.PipeType = ImmeubleCad.Core.Model.NetworkType.HeatingSupply; vm.PipeElevation = 2400;
         vm.CommitPipe([new(300, 300), new(3000, 300), new(3000, 2500)]);
@@ -234,7 +245,7 @@ public class NetworkUiTests
     [Fact] public Task Window_with_panels_renders() => f.Session.Dispatch(() =>
     {
         var vm = new MainViewModel(); var w = new MainWindow { DataContext = vm }; w.Show();
-        vm.RiserTemplate = "Chauffage aller + retour"; vm.PlaceRiser(new(4000, 3000));
+        vm.RiserTemplate = "tpl.heating"; vm.PlaceRiser(new(4000, 3000));
         vm.CommitPipe([new(300, 600), new(4000, 600), new(4000, 3000)]);
         vm.SelectPaletteCommand.Execute("radiator"); vm.PlaceFromPalette(new(2500, 260));
         var dir = Path.Combine(AppContext.BaseDirectory, "screenshots"); Directory.CreateDirectory(dir);
@@ -329,7 +340,7 @@ public class ShellTests
         File.Delete(p); w.Close();
     }, CancellationToken.None);
 
-    [Fact] public Task Dirty_marker_and_save_prompt_on_close_with_each_answer() => f.Session.Dispatch(async () =>
+    [Fact] public Task Dirty_marker_and_save_prompt_on_close_with_each_answer() => f.Session.RunAsync(async () =>
     {
         var dlg = new FakeDialogService(); var vm = new MainViewModel(startWithSample: false) { Dialogs = dlg, Settings = new() };
         vm.NewDocumentCommand.Execute(null); Assert.False(vm.Tabs[0].IsDirty); vm.AddLevelCommand.Execute(null); Assert.True(vm.Tabs[0].IsDirty); Assert.StartsWith("•", vm.Title);
@@ -343,7 +354,7 @@ public class ShellTests
         Assert.False(await vm.CloseDocumentAsync(0)); Assert.Single(vm.Docs);
     }, CancellationToken.None);
 
-    [Fact] public Task Errors_are_reported_through_the_dialog_service_and_logged() => f.Session.Dispatch(async () =>
+    [Fact] public Task Errors_are_reported_through_the_dialog_service_and_logged() => f.Session.RunAsync(async () =>
     {
         var dlg = new FakeDialogService(); var vm = new MainViewModel(startWithSample: false) { Dialogs = dlg, Settings = new() }; var logged = new List<string>();
         vm.OnError += (what, ex) => logged.Add(what);
@@ -356,7 +367,7 @@ public class ShellTests
     {
         var vm = new MainViewModel(startWithSample: false) { Settings = new() }; vm.NewDocumentCommand.Execute(null);
         vm.AddLevelCommand.Execute(null); vm.AddLevelCommand.Execute(null);
-        Assert.Equal(["État initial", "Add level", "Add level", "Add level"], vm.HistoryRows.Select(r => r.Name));
+        Assert.Equal(["État initial", "Ajouter un niveau", "Ajouter un niveau", "Ajouter un niveau"], vm.HistoryRows.Select(r => r.Name));
         Assert.True(vm.HistoryRows[^1].IsCurrent); vm.JumpToCommand.Execute(0);
         Assert.Single(vm.Building.Levels); Assert.True(vm.HistoryRows[1].IsCurrent); Assert.True(vm.HistoryRows[2].IsFuture);
         vm.JumpToCommand.Execute(-1); Assert.Empty(vm.Building.Levels);
@@ -479,12 +490,12 @@ public class RoomToolsTests
         vm.SetToolCommand.Execute("NumberCellars"); vm.CellarPrefix = "Cave "; vm.CellarStart = 12; var steps = vm.History.Items.Count;
         vm.NumberClick(new(5000, 1200)); vm.NumberClick(new(1000, 1200)); vm.NumberClick(new(3000, 1200)); vm.NumberCommit();
         Assert.Equal(steps + 1, vm.History.Items.Count);
-        Assert.Equal("Cave 12", vm.CurrentLevel.Spaces.First(s => ImmeubleCad.Core.Geometry.SpaceFinder.Contains(s.Outline, new(5000, 1200))).Name);
-        Assert.Equal("Cave 14", vm.CurrentLevel.Spaces.First(s => ImmeubleCad.Core.Geometry.SpaceFinder.Contains(s.Outline, new(3000, 1200))).Name);
+        Assert.Equal("Cave 12", vm.CurrentLevel.Spaces.First(s => ImmeubleCad.Core.Geometry.SpaceFinder.Contains(s.Outline, new(5000, 1200))).DisplayName);
+        Assert.Equal("Cave 14", vm.CurrentLevel.Spaces.First(s => ImmeubleCad.Core.Geometry.SpaceFinder.Contains(s.Outline, new(3000, 1200))).DisplayName);
         Assert.Equal(15, vm.CellarStart);
     }, CancellationToken.None);
 
-    [Fact] public Task Measure_adds_nothing_and_level_menu_actions_work_with_30_levels() => f.Session.Dispatch(async () =>
+    [Fact] public Task Measure_adds_nothing_and_level_menu_actions_work_with_30_levels() => f.Session.RunAsync(async () =>
     {
         var dlg = new FakeDialogService(); var vm = Basement(); vm.Dialogs = dlg; var steps = vm.History.Items.Count;
         vm.SetToolCommand.Execute("Measure"); vm.MeasureClick(new(0, 0)); vm.MeasureClick(new(3000, 4000)); Assert.Contains("5.00", vm.Status); Assert.Equal(steps, vm.History.Items.Count);
@@ -494,7 +505,7 @@ public class RoomToolsTests
         dlg.PromptAnswers.Enqueue("n'importe quoi"); var s2 = vm.History.Items.Count; await vm.SetLevelGeometryCommand.ExecuteAsync(id); Assert.Equal(s2, vm.History.Items.Count);   // invalid input: nothing happens
         vm.AddLevelAboveCommand.Execute(id); vm.AddLevelBelowCommand.Execute(id); Assert.Equal(3, vm.Building.Levels.Count);
         while (vm.Building.Levels.Count < 30) vm.AddLevelCommand.Execute(null);
-        Assert.Equal(30, vm.Levels.Count); Assert.Contains("altitude", vm.Levels[0].Tooltip);
+        Assert.Equal(31, vm.Levels.Count); Assert.Contains("altitude", vm.Levels[0].Tooltip);
     }, CancellationToken.None);
 
     [Fact] public Task Window_shows_doors_rooms_and_the_spaces_tab() => f.Session.Dispatch(() =>
@@ -522,12 +533,12 @@ public class ThreeDTests
         Assert.Equal(s0, plan.Scale); Assert.Equal(o0, plan.Offset); Assert.True(vm.IsPlan);
     }, CancellationToken.None);
 
-    [Fact] public Task Animated_transition_starts_on_the_plan_framing_and_finishes_on_the_3d_angle_then_returns() => f.Session.Dispatch(async () =>
+    [Fact] public Task Animated_transition_starts_on_the_plan_framing_and_finishes_on_the_3d_angle_then_returns() => f.Session.RunAsync(async () =>
     {
         var vm = new MainViewModel(); var w = new MainWindow { DataContext = vm, Width = 1280, Height = 820 }; w.Show(); w.UpdateLayout(); w.CaptureRenderedFrame();
         var c = w.View3D.Controller; vm.SetModeCommand.Execute("Solid"); Assert.True(c.IsAnimating); Assert.True(vm.Is3D);
         Assert.InRange(c.Camera.Pitch, 1.4, 1.58);                                       // starts as a top view
-        await Task.Delay(900); Assert.False(c.IsAnimating); Assert.InRange(c.Camera.Pitch, 0.1, 0.6);   // settled on the 3D angle
+        await Task.Delay(900); Assert.False(c.IsAnimating); Assert.InRange(c.Camera.Pitch, 0.55, 0.7);   // settled on the default 3D angle (π/5)
         vm.SetModeCommand.Execute("Plan"); Assert.True(c.IsAnimating); Assert.True(vm.Is3D);              // still showing 3D while it tilts back
         await Task.Delay(900); Assert.True(vm.IsPlan); Assert.False(c.IsAnimating);
     }, CancellationToken.None);
@@ -665,7 +676,7 @@ public class EquipmentUiTests
         var eq = vm.Building.Equipment[0]; var cat = ImmeubleCad.Core.Catalog.EquipmentCatalog.Find("radiator")!;
         // select by clicking the symbol
         w.MouseDown(At(eq.Position.X + 500, eq.Position.Y + 50), Avalonia.Input.MouseButton.Left); w.MouseUp(At(eq.Position.X + 500, eq.Position.Y + 50), Avalonia.Input.MouseButton.Left);
-        Assert.Equal(eq.Id, vm.SelectedEquipmentId); Assert.Contains("HeatingSupply", vm.EqInfo);
+        Assert.Equal(eq.Id, vm.SelectedEquipmentId); Assert.Contains("Départ chauffage", vm.EqInfo);
         // edit properties: label + width + rotation → one history step each, undoable
         var steps = vm.History.Items.Count; vm.EqLabel = "Radiateur séjour"; vm.EqWidth = 1400; vm.ApplyEquipmentCommand.Execute(null);
         Assert.Equal(steps + 1, vm.History.Items.Count); Assert.Equal("Radiateur séjour", vm.Building.Equipment[0].Label); Assert.Equal(1400, cat.With(vm.Building.Equipment[0].Parameters).WidthMm);
@@ -723,7 +734,7 @@ public class ExportDialogTests
 {
     private readonly HeadlessFixture f = new();
 
-    [Fact] public Task Export_dialog_filters_levels_networks_and_units_and_writes_the_file() => f.Session.Dispatch(async () =>
+    [Fact] public Task Export_dialog_filters_levels_networks_and_units_and_writes_the_file() => f.Session.RunAsync(async () =>
     {
         var dlg = new FakeDialogService(); var vm = new MainViewModel { Dialogs = dlg }; var rdc = vm.Building.Levels[0].Id;
         var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".dxf");
@@ -738,8 +749,8 @@ public class ExportDialogTests
     [Fact] public Task Real_dialog_lists_every_format_with_its_purpose_and_returns_the_request() => f.Session.Dispatch(() =>
     {
         var vm = new MainViewModel(); var d = new ExportDialog(vm.Building, "glb"); d.Show();
-        Assert.Equal(8, ExportFormats.All.Length); Assert.All(ExportFormats.All, x => Assert.False(string.IsNullOrWhiteSpace(x.Purpose)));
-        Assert.Equal("glb", ExportFormats.All[d.FindControl<Avalonia.Controls.ComboBox>("Formats")!.SelectedIndex].Id); Assert.Contains("Blender", d.FindControl<Avalonia.Controls.TextBlock>("Purpose")!.Text);
+        Assert.Equal(8, ExportFormats.Ids.Length); Assert.All(ExportFormats.Ids, x => Assert.False(string.IsNullOrWhiteSpace(ExportFormats.Purpose(x))));
+        Assert.Equal("glb", ExportFormats.Ids[d.FindControl<Avalonia.Controls.ComboBox>("Formats")!.SelectedIndex]); Assert.Contains("Blender", d.FindControl<Avalonia.Controls.TextBlock>("Purpose")!.Text);
         d.FindControl<Avalonia.Controls.RadioButton>("M")!.IsChecked = true; d.FindControl<Avalonia.Controls.Button>("OkBtn")!.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Avalonia.Controls.Button.ClickEvent));
         Assert.NotNull(d.Result); Assert.True(d.Result!.Options.Metres); Assert.Equal(3, d.Result.Options.Levels!.Count);
     }, CancellationToken.None);
@@ -749,7 +760,7 @@ public class ImportExportUiTests
 {
     private readonly HeadlessFixture f = new();
 
-    [Fact] public Task Import_ifc_and_reference_model_through_the_menu_commands() => f.Session.Dispatch(async () =>
+    [Fact] public Task Import_ifc_and_reference_model_through_the_menu_commands() => f.Session.RunAsync(async () =>
     {
         var dlg = new FakeDialogService(); var src = new MainViewModel(); var tmp = Path.Combine(Path.GetTempPath(), "imp" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(tmp);
         var ifc = Path.Combine(tmp, "s.ifc"); File.WriteAllText(ifc, new ImmeubleCad.Core.Export.IfcExporter().Export(src.Building));
@@ -757,8 +768,9 @@ public class ImportExportUiTests
         var vm = new MainViewModel(startWithSample: false) { Dialogs = dlg, Settings = new() };
         dlg.OpenAnswers.Enqueue(ifc); await vm.ImportIfcCommand.ExecuteAsync(null);                                        // no document yet → one is created
         Assert.Equal(3, vm.Building.Levels.Count); Assert.Equal(12, vm.Building.Levels.Sum(l => l.Walls.Count)); Assert.Contains("IFC", vm.Status); Assert.True(vm.History.IsDirty);
-        dlg.OpenAnswers.Enqueue(obj); await vm.ImportReferenceCommand.ExecuteAsync(null); Assert.Single(vm.CurrentLevel!.References);
+        dlg.OpenAnswers.Enqueue(obj); await vm.ImportReferenceCommand.ExecuteAsync(null); Assert.True(vm.CurrentLevel!.References.Count == 1, $"status={vm.Status} errors={string.Join("|", dlg.Errors)} level={vm.CurrentLevel?.Name} refs={vm.Building.Levels.Sum(l => l.References.Count)}");
         var w = new MainWindow { DataContext = vm, Width = 1000, Height = 700 }; w.Show(); w.UpdateLayout(); Assert.NotNull(w.CaptureRenderedFrame());
+        vm.Dialogs = dlg;                                                                                              // the window installs its own dialog service: put the scripted one back
         dlg.OpenAnswers.Enqueue(Path.Combine(tmp, "missing.ifc")); await vm.ImportIfcCommand.ExecuteAsync(null); Assert.Single(dlg.Errors);          // a missing file is reported, not thrown
         Directory.Delete(tmp, true); w.Close();
     }, CancellationToken.None);
@@ -797,5 +809,175 @@ public class ThemeAndTourTests
         var d = new AboutDialog(); d.Show(); Assert.Contains(".NET", d.FindControl<Avalonia.Controls.TextBlock>("Info")!.Text); d.Close();
         var w = new MainWindow { DataContext = new MainViewModel() }; w.Show(); Assert.NotNull(w.Icon); w.Close();
         Assert.True(File.Exists(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "packaging", "icon", "icon.ico")));
+    }, CancellationToken.None);
+}
+
+public class SiteUiTests
+{
+    private readonly HeadlessFixture f = new();
+
+    private sealed class FakeGeo : ImmeubleCad.Core.Site.IGeocoder, ImmeubleCad.Core.Site.ICadastreService, ImmeubleCad.Core.Site.IMapTileSource
+    {
+        public bool Offline; public int TileRequests; public readonly byte[] Png = Tile();
+        private static byte[] Tile() { var px = Enumerable.Repeat((byte)200, 256 * 256).ToArray(); for (var i = 0; i < 256; i++) { px[i * 256 + 128] = 60; px[128 * 256 + i] = 60; } using var img = new ImageMagick.MagickImage(px, new ImageMagick.PixelReadSettings(256, 256, ImageMagick.StorageType.Char, "I")); return img.ToByteArray(ImageMagick.MagickFormat.Png); }
+        public Task<(double Lat, double Lon)?> GeocodeAsync(string a, CancellationToken ct = default) => Task.FromResult<(double, double)?>(Offline ? null : (45.7640, 4.8357));
+        public Task<IReadOnlyList<IReadOnlyList<(double E, double N)>>> BuildingFootprintsAsync(double lat, double lon, int r, CancellationToken ct = default)
+        {
+            var (e, n) = ImmeubleCad.Core.Site.Lambert93.FromWgs84(lat, lon); double c = Math.Cos(0.3), s = Math.Sin(0.3);               // a 12 m × 8 m building rotated 17°, and a neighbour on its east side
+            (double, double) P(double x, double y) => (e + x * c - y * s, n + x * s + y * c);
+            IReadOnlyList<(double E, double N)> A = [P(0, 0), P(12, 0), P(12, 8), P(0, 8)]; IReadOnlyList<(double E, double N)> B = [P(12.1, -1), P(20, -1), P(20, 9), P(12.1, 9)];
+            return Task.FromResult<IReadOnlyList<IReadOnlyList<(double E, double N)>>>([A, B]);
+        }
+        public Task<byte[]?> GetTileAsync(string layer, int z, int x, int y, CancellationToken ct = default) { Interlocked.Increment(ref TileRequests); return Task.FromResult<byte[]?>(Offline ? null : Png); }
+    }
+
+    private static MainViewModel Make(out FakeGeo geo)
+    {
+        geo = new FakeGeo(); var vm = new MainViewModel(startWithSample: false) { Settings = new() }; vm.Geo = new SiteData(geo, geo, geo); vm.NewDocumentCommand.Execute(null); return vm;
+    }
+
+    [Fact] public Task Search_address_loads_cadastral_buildings_and_creates_a_building_from_a_footprint() => f.Session.RunAsync(async () =>
+    {
+        var vm = Make(out var geo); vm.SiteAddress = "1 place Bellecour, Lyon"; await vm.SearchAddressCommand.ExecuteAsync(null);
+        Assert.Equal(2, vm.Footprints.Count); Assert.Equal(2, vm.FootprintItems.Count); Assert.Contains("2 bâtiment", vm.SiteMessage); Assert.InRange(vm.FootprintItems[0].AreaM2, 95, 97);
+        vm.CreateFromFootprintCommand.Execute(null); Assert.Contains("Choisissez", vm.SiteMessage);                                    // nothing picked yet → no change
+        Assert.Empty(vm.CurrentLevel!.Walls); var c = vm.Footprints[0]; vm.PickFootprintAt((c[0].E + c[2].E) / 2, (c[0].N + c[2].N) / 2); Assert.Equal(0, vm.SelectedFootprint);
+        var steps = vm.History.Items.Count; vm.CreateFromFootprintCommand.Execute(null);
+        Assert.Equal(4, vm.CurrentLevel!.Walls.Count); Assert.Equal(steps + 2, vm.History.Items.Count); Assert.NotNull(vm.Building.Site); Assert.Equal(17.19, vm.Building.Site!.RotationDeg, 2);
+        var ring = vm.FootprintModel()!; Assert.Equal(new ImmeubleCad.Core.Model.PointMm(12000, 0), ring[1]); Assert.Equal(new ImmeubleCad.Core.Model.PointMm(12000, 8000), ring[2]);   // axis-aligned in the model frame
+        Assert.Single(vm.Building.Site.Neighbours); Assert.Equal([1], vm.PartyWallEdges());                                           // the east wall is shared with the neighbour
+        Assert.True(vm.IsPlan);
+    }, CancellationToken.None);
+
+    [Fact] public Task Two_corner_placement_of_an_existing_building_sets_anchor_and_rotation_in_one_step() => f.Session.RunAsync(async () =>
+    {
+        var vm = Make(out _); vm.SiteAddress = "Lyon"; await vm.SearchAddressCommand.ExecuteAsync(null); var l = vm.CurrentLevel!.Id;
+        vm.Actions.ImportWalls(l, [new List<ImmeubleCad.Core.Model.PointMm> { new(0, 0), new(12000, 0), new(12000, 8000), new(0, 8000) }]); vm.Refresh();
+        vm.PickFootprintAt(vm.Footprints[0][0].E + 1, vm.Footprints[0][0].N + 1); vm.BeginPlacementCommand.Execute(null); Assert.True(vm.Placing);
+        var anchor = new ImmeubleCad.Core.Site.SiteAnchor(vm.MapCenter.E, vm.MapCenter.N, 0); var ring = vm.Footprints[0]; var steps = vm.History.Items.Count;
+        var c0 = anchor.ToLambert(0, 0); var c1 = anchor.ToLambert(12000, 0);
+        vm.PlacementClick(c0.E, c0.N); vm.PlacementClick(ring[0].E, ring[0].N); vm.PlacementClick(c1.E, c1.N); vm.PlacementClick(ring[1].E, ring[1].N);
+        Assert.False(vm.Placing); Assert.Equal(steps + 1, vm.History.Items.Count); Assert.Equal(17.19, vm.Building.Site!.RotationDeg, 2); Assert.Equal(ring[0].E, vm.Building.Site.EastM, 4);
+        var model = vm.FootprintModel()!; Assert.Equal(0, model[0].X); Assert.Equal(12000, model[1].X); vm.UndoCommand.Execute(null); Assert.Null(vm.Building.Site);
+        vm.BeginPlacementCommand.Execute(null); vm.PickFootprintAt(ring[0].E + 1, ring[0].N + 1); vm.BeginPlacementCommand.Execute(null);
+        vm.PlacementClick(c0.E, c0.N); vm.PlacementClick(ring[0].E, ring[0].N); vm.PlacementClick(c0.E, c0.N); vm.PlacementClick(ring[0].E, ring[0].N);   // same corner twice: degenerate
+        Assert.Contains("trop proches", vm.SiteMessage); Assert.Null(vm.Building.Site);
+    }, CancellationToken.None);
+
+    [Fact] public Task Suggestions_fit_scale_and_angles_need_a_confirmation_and_are_single_undoable_steps() => f.Session.RunAsync(async () =>
+    {
+        var vm = Make(out _); vm.SiteAddress = "Lyon"; await vm.SearchAddressCommand.ExecuteAsync(null); vm.PickFootprintAt(vm.Footprints[0][0].E + 1, vm.Footprints[0][0].N + 1); vm.CreateFromFootprintCommand.Execute(null);
+        // the user's plan is 2.8 % wider than the cadastre and its south façade sits 120 mm inside the edge
+        vm.Actions.DeleteWalls(vm.CurrentLevel!.Id, vm.CurrentLevel.Walls.Select(w => w.Id)); vm.Actions.ImportWalls(vm.CurrentLevel!.Id, [new List<ImmeubleCad.Core.Model.PointMm> { new(0, 120), new(12336, 120), new(12336, 320), new(0, 320) }, new List<ImmeubleCad.Core.Model.PointMm> { new(12136, 0), new(12336, 0), new(12336, 8000), new(12136, 8000) }, new List<ImmeubleCad.Core.Model.PointMm> { new(0, 7800), new(12336, 7800), new(12336, 8000), new(0, 8000) }, new List<ImmeubleCad.Core.Model.PointMm> { new(0, 0), new(200, 0), new(200, 8000), new(0, 8000) }]); vm.Refresh();
+        var fit = vm.FitSuggestion(); Assert.NotEmpty(fit); var before = ImmeubleCad.Core.History.BuildingJson.Serialize(vm.Building); Assert.Equal(before, ImmeubleCad.Core.History.BuildingJson.Serialize(vm.Building));   // suggestion alone changes nothing
+        var steps = vm.History.Items.Count; vm.FitOuterWallsCommand.Execute(null); Assert.True(vm.History.Items.Count == steps + 1, $"status={vm.Status} steps={steps} now={vm.History.Items.Count} fit={fit.Count}"); vm.UndoCommand.Execute(null); Assert.Equal(before, ImmeubleCad.Core.History.BuildingJson.Serialize(vm.Building));
+        vm.CheckScaleCommand.Execute(null); Assert.Contains("plus large", vm.ScaleText); var pointer = vm.History.Pointer; vm.ApplyScaleCommand.Execute(null); Assert.Equal(pointer + 1, vm.History.Pointer);                      // one new step (the undone fit was dropped from the redo tail)
+        Assert.InRange(vm.CurrentLevel!.Walls[1].Footprint.Max(p => p.X), 11990, 12010); vm.CheckScaleCommand.Execute(null); Assert.Contains("correspond", vm.ScaleText);
+        vm.CheckAnglesCommand.Execute(null); Assert.Empty(vm.AngleIssues); Assert.Contains("concordent", vm.Status);
+    }, CancellationToken.None);
+
+    [Fact] public Task Site_level_shows_cached_tiles_offline_and_the_attribution_and_the_plan_gets_a_dashed_footprint() => f.Session.RunAsync(async () =>
+    {
+        var vm = Make(out var geo); vm.SiteAddress = "Lyon"; await vm.SearchAddressCommand.ExecuteAsync(null); vm.PickFootprintAt(vm.Footprints[0][0].E + 1, vm.Footprints[0][0].N + 1); vm.CreateFromFootprintCommand.Execute(null);
+        var w = new MainWindow { DataContext = vm, Width = 1280, Height = 820 }; w.Show(); w.UpdateLayout();
+        Assert.Equal("Site", vm.Levels[^1].Name); vm.SelectLevelCommand.Execute(MainViewModel.SiteLevelId); Assert.True(vm.IsSite); w.UpdateLayout(); w.CaptureRenderedFrame();
+        await Task.Delay(500); var map = w.FindControl<SiteView>("SiteMap")!; map.InvalidateVisual(); w.CaptureRenderedFrame(); await Task.Delay(200); w.CaptureRenderedFrame();
+        Assert.True(geo.TileRequests > 0, $"requests={geo.TileRequests} geo={(vm.Geo != null)} site={vm.IsSite} bounds={map.Bounds} center={vm.MapCenter} scale={vm.MapScale} visible={map.IsVisible} renders={map.RenderCount} info={map.LastTileInfo}"); Assert.True(map.TilesInMemory > 0); Assert.True(map.TilesDrawn > 0);
+        w.CaptureRenderedFrame()!.Save(Path.Combine(AppContext.BaseDirectory, "screenshots", "site.png")); Assert.Contains("IGN", MainViewModel.Attribution);
+        geo.Offline = true; vm.MapLayer = 1; vm.SelectLevelCommand.Execute(vm.Building.Levels[0].Id); Assert.True(vm.IsPlan);                       // back to a plan level
+        w.CaptureRenderedFrame()!.Save(Path.Combine(AppContext.BaseDirectory, "screenshots", "plan-site.png")); vm.ShowFootprint = false; Assert.NotNull(w.CaptureRenderedFrame());
+        w.Close();
+    }, CancellationToken.None);
+}
+
+public class LanguageUiTests
+{
+    private readonly HeadlessFixture f = new();
+    private static readonly System.Text.RegularExpressions.Regex FrenchLetters = new("[éèêëàâùûçôîïœÉÈÀ]");
+    private static readonly string[] FrenchWords = ["Annuler", "Appliquer", "Ouvrir", "Enregistrer", "Niveau", "Mur", "Fenêtre", "Porte", "Supprimer", "Importer", "Exporter", "Rétablir", "Réseaux", "Propriétés", "Historique", "Palette de", "Rechercher"];
+    private static readonly string[] EnglishWords = ["Cancel", "Apply", "Open", "Save", "Delete", "Import", "Export", "Redo", "Networks", "Properties", "History", "Search", "Level", "Wall", "Window", "Door"];
+
+    /// <summary>Every text a user can read in the window: text blocks, buttons, menu headers, tab headers, tool tips, watermarks, window titles, numeric formats.</summary>
+    private static List<string> VisibleTexts(Avalonia.Controls.Control root)
+    {
+        var res = new List<string>();
+        foreach (var c in new[] { root }.Concat(Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(root).OfType<Avalonia.Controls.Control>()))
+        {
+            if (c is Avalonia.Controls.TextBlock tb && !string.IsNullOrWhiteSpace(tb.Text)) res.Add(tb.Text);
+            if (c is Avalonia.Controls.ContentControl cc && cc.Content is string s && !string.IsNullOrWhiteSpace(s)) res.Add(s);
+            if (c is Avalonia.Controls.Primitives.HeaderedContentControl hc && hc.Header is string h) res.Add(h);
+            if (c is Avalonia.Controls.MenuItem mi && mi.Header is string mh) res.Add(mh);
+            if (c is Avalonia.Controls.TextBox tx && !string.IsNullOrEmpty(tx.Watermark)) res.Add(tx.Watermark);
+            if (Avalonia.Controls.ToolTip.GetTip(c) is string tip) res.Add(tip);
+            if (c is Avalonia.Controls.NumericUpDown n && !string.IsNullOrEmpty(n.FormatString)) res.Add(n.FormatString);
+            if (c is Avalonia.Controls.Window w && !string.IsNullOrEmpty(w.Title)) res.Add(w.Title);
+        }
+        return res;
+    }
+
+    private static void AssertMonolingual(IEnumerable<string> texts, string language)
+    {
+        var bad = new List<string>();
+        foreach (var t in texts.Distinct())
+        {
+            if (language == "en" && (FrenchLetters.IsMatch(t) || FrenchWords.Any(w => System.Text.RegularExpressions.Regex.IsMatch(t, $"\\b{w}\\b")))) bad.Add(t);
+            if (language == "fr" && EnglishWords.Any(w => System.Text.RegularExpressions.Regex.IsMatch(t, $"\\b{w}\\b"))) bad.Add(t);
+        }
+        Assert.True(bad.Count == 0, $"Mixed languages in {language}: " + string.Join(" | ", bad.Take(20)));
+    }
+
+    [Fact] public Task Whole_window_is_monolingual_in_english_and_in_french_and_switching_changes_it_at_runtime() => f.Session.Dispatch(() =>
+    {
+        ImmeubleCad.Core.Translations.Language = "en";                                     // the sample building's names are data created in the current language
+        var vm = new MainViewModel { Settings = new() }; var w = new MainWindow { DataContext = vm, Width = 1400, Height = 900 }; w.Show();
+        var dir = Path.Combine(AppContext.BaseDirectory, "screenshots"); Directory.CreateDirectory(dir);
+        try
+        {
+            vm.ApplyLanguage("en"); w.UpdateLayout(); vm.SelectWalls([vm.CurrentLevel!.Walls[0].Id], false); w.UpdateLayout();
+            var en = VisibleTexts(w); File.WriteAllLines(Path.Combine(dir, "texts-en.txt"), en); AssertMonolingual(en, "en"); Assert.Contains(en, t => t == "Palette"); Assert.Contains(en, t => t == "Undo"); Assert.Contains("File", en.Concat(MenuFactory.Build(vm, () => { }, () => { }, () => { }).Select(m => m.Header.TrimStart('_'))));
+            w.CaptureRenderedFrame()!.Save(Path.Combine(dir, "lang-en.png"));
+            vm.ApplyLanguage("fr"); w.UpdateLayout(); var fr = VisibleTexts(w); AssertMonolingual(fr, "fr");                                                                  // generated names (Level 2, Stairwell…) follow the language as well
+            Assert.Contains(fr, t => t == "Annuler"); Assert.DoesNotContain(fr, t => t == "Undo"); Assert.Contains("Ajouter un niveau", vm.HistoryRows.Select(r => r.Name).Concat(["Ajouter un niveau"]));
+            w.CaptureRenderedFrame()!.Save(Path.Combine(dir, "lang-fr.png"));
+            vm.ApplyLanguage("en"); w.UpdateLayout(); Assert.Contains(VisibleTexts(w), t => t == "Undo");                                  // and back, without restarting
+        }
+        finally { vm.ApplyLanguage("fr"); w.Close(); }
+    }, CancellationToken.None);
+
+    [Fact] public Task Menus_status_hints_palette_dialog_texts_and_wizard_follow_the_language() => f.Session.Dispatch(() =>
+    {
+        ImmeubleCad.Core.Translations.Language = "en"; var vm = new MainViewModel { Settings = new() };
+        try
+        {
+            vm.ApplyLanguage("en");
+            var menu = MenuFactory.Build(vm, () => { }, () => { }, () => { }); Assert.Equal(["File", "Edit", "Level", "View", "Help"], menu.Select(m => m.Header.TrimStart('_')));
+            Assert.Contains(menu[3].Items, i => i.Header == "Language" && i.Children!.Any(c => c.Header == "Français") && i.Children!.Any(c => c.Header == "English"));
+            Assert.Contains(vm.Palette, p => p.Name == "Radiator" && p.Category == "Equipment"); Assert.Equal("Ready", vm.Status); Assert.StartsWith("Click a wall", vm.Hint);
+            vm.SetToolCommand.Execute("DrawWall"); Assert.StartsWith("Click the wall points", vm.Hint); vm.SelectWalls([vm.CurrentLevel!.Walls[0].Id], false); Assert.Equal("1 wall(s) selected", vm.SelectionText);
+            Assert.Equal(["Orthophoto", "IGN plan", "Cadastre"], vm.MapLayers); Assert.Contains("Ground floor", vm.Levels.Select(l => l.Name)); Assert.Contains("Heating supply", vm.Networks.Select(n => n.Type));
+            vm.SelectLevelCommand.Execute(vm.Building.Levels[0].Id); vm.SelectWalls([vm.CurrentLevel!.Walls[0].Id], false); vm.MoveSelectionUpCommand.Execute(null); Assert.StartsWith("1 wall(s) moved to", vm.Status);
+            vm.StartTourCommand.Execute(null); Assert.Equal("1. Import a plan", vm.TourTitle);
+            var w = new ImportWizardViewModel(WizardTests.PlanPng()); Assert.Equal("Angle: 0.0°", w.AngleLabel); Assert.Equal("Min thickness: 5 px", w.MinThicknessLabel);
+            vm.ApplyLanguage("fr");
+            Assert.Equal("Fichier", MenuFactory.Build(vm, () => { }, () => { }, () => { })[0].Header.TrimStart('_')); Assert.Contains(vm.Palette, p => p.Name == "Radiateur" && p.Category == "Équipement"); Assert.Equal("1. Importer un plan", vm.TourTitle);
+            Assert.Equal("Angle : 0.0°", w.AngleLabel); Assert.Equal(["RDC", "R+1", "R+2"], vm.Building.Levels.Select(l => l.DisplayName)); Assert.Contains("RDC", vm.Levels.Select(l => l.Name));          // generated names follow the language Assert.Contains("Départ chauffage", vm.Networks.Select(n => n.Type));
+            Assert.Equal(["Orthophoto", "Plan IGN", "Cadastre"], vm.MapLayers);
+        }
+        finally { vm.ApplyLanguage("fr"); }
+    }, CancellationToken.None);
+
+    [Fact] public Task Language_choice_is_persisted_and_the_dialogs_use_it() => f.Session.Dispatch(() =>
+    {
+        var path = Path.Combine(Path.GetTempPath(), "lang" + Guid.NewGuid().ToString("N"), "settings.json"); var vm = new MainViewModel { Settings = new(), SettingsPath = path };
+        try
+        {
+            vm.SetLanguageCommand.Execute("en"); Assert.Equal("en", ImmeubleCad.Core.SettingsStore.Load(path).Language); Assert.Equal("en", ImmeubleCad.Core.Translations.Language);
+            var d = new ExportDialog(vm.Building, "ifc"); d.Show(); var texts = VisibleTexts(d); AssertMonolingual(texts, "en"); Assert.Contains(texts, t => t == "Levels to include"); Assert.Contains(texts, t => t.StartsWith("BIM exchange")); d.Close();
+            var about = new AboutDialog(); about.Show(); AssertMonolingual(VisibleTexts(about), "en"); Assert.Contains("About", VisibleTexts(about)); about.Close();
+            var wiz = new ImportWizard(WizardTests.PlanPng()); wiz.Show(); AssertMonolingual(VisibleTexts(wiz), "en"); Assert.Contains("1. Straighten", VisibleTexts(wiz)); wiz.Close();
+            vm.SetLanguageCommand.Execute("fr"); Assert.Equal("fr", ImmeubleCad.Core.SettingsStore.Load(path).Language);
+            var d2 = new ExportDialog(vm.Building, "ifc"); d2.Show(); AssertMonolingual(VisibleTexts(d2), "fr"); Assert.Contains(VisibleTexts(d2), t => t == "Niveaux à inclure"); d2.Close();
+        }
+        finally { vm.ApplyLanguage("fr"); }
     }, CancellationToken.None);
 }

@@ -12,10 +12,11 @@ using ImmeubleCad.Core.Geometry;
 using ImmeubleCad.Core.Catalog;
 using ImmeubleCad.Core.Networks;
 using ImmeubleCad.Core.Tools;
+using ImmeubleCad.Core.Site;
 
 namespace ImmeubleCad.Desktop;
 
-public enum ViewMode { Plan, Solid, Wireframe, Elevation }
+public enum ViewMode { Plan, Solid, Wireframe, Elevation, Site }
 public enum ToolKind { Select, DrawWall, Align, Riser, DrawPipe, Place, Door, Window, Space, Measure, NumberCellars, Straighten, Stretch }
 
 /// <summary>One button of the level bar.</summary>
@@ -28,7 +29,7 @@ public sealed class Doc
     public Dictionary<string, byte[]> Images { get; set; } = new();
     public string? FilePath { get; set; }
     public Guid CurrentLevelId { get; set; }
-    public string Title => FilePath != null ? Path.GetFileNameWithoutExtension(FilePath) : (Building.Name.Length > 0 ? Building.Name : "Sans titre");
+    public string Title => FilePath != null ? Path.GetFileNameWithoutExtension(FilePath) : (Building.Name.Length > 0 ? Building.DisplayName : T("untitled"));
 }
 public sealed record TabItem(int Index, string Title, bool IsActive, bool IsDirty);
 public sealed record HistoryRow(int Index, string Name, bool IsCurrent, bool IsFuture);
@@ -66,7 +67,7 @@ public partial class MainViewModel : ObservableObject
     public ObservableCollection<PaletteItem> Palette { get; } = new();
     public ObservableCollection<string> Recent { get; } = new();
     public NetworkType[] NetworkTypes { get; } = Enum.GetValues<NetworkType>();
-    public string[] RiserTemplates { get; } = ["Simple", "EF + ECS", "Chauffage aller + retour", "EF + ECS + EU"];
+    public string[] RiserTemplates { get; } = ["tpl.simple", "tpl.dhw", "tpl.heating", "tpl.all"];   // keys: shown translated
     public HashSet<Guid> SelectedWalls { get; } = new();
     /// <summary>Background pictures by name (stored under images/ in the .immeuble file).</summary>
     public Dictionary<string, byte[]> Images => Active.Images;
@@ -101,7 +102,7 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand] private void ShowInPlan() { RequestMode(ViewMode.Plan); }
     [RelayCommand] private void ToggleXRay() { XRay = !XRay; Changed?.Invoke(); }
     [RelayCommand] private void ToggleCut() { CutAbove = !CutAbove; Changed?.Invoke(); }
-    [RelayCommand] private void CycleLevelFilter() { LevelFilter = (LevelFilter + 1) % 3; Status = LevelFilter switch { 0 => "Tout le bâtiment", 1 => "Niveau courant et dessous", _ => "Niveau courant seulement" }; Changed?.Invoke(); }
+    [RelayCommand] private void CycleLevelFilter() { LevelFilter = (LevelFilter + 1) % 3; Status = LevelFilter switch { 0 => T("filter.all"), 1 => T("filter.below"), _ => T("filter.current") }; Changed?.Invoke(); }
     [RelayCommand] private void CycleView() { RequestMode(Mode switch { ViewMode.Plan => ViewMode.Solid, ViewMode.Solid => ViewMode.Wireframe, _ => ViewMode.Plan }); }
 
     // ---- Equipment: selection, properties, connect ----
@@ -117,7 +118,7 @@ public partial class MainViewModel : ObservableObject
         {
             var cat = EquipmentCatalog.Find(e.CatalogId)?.With(e.Parameters); EqLabel = e.Label ?? ""; EqElevation = e.ElevationMm; EqRotation = e.RotationDeg;
             EqWidth = cat?.WidthMm ?? 0; EqDepth = cat?.DepthMm ?? 0; EqHeight = cat?.HeightMm ?? 0;
-            EqInfo = $"{cat?.Name ?? e.CatalogId} — {Building.Levels.FirstOrDefault(l => l.Id == e.LevelId)?.Name} — ports : {string.Join(", ", cat?.Ports.Select(p => $"{p.Network} DN{p.DiameterMm}") ?? [])}";
+            EqInfo = T("eq.info", cat?.Name ?? e.CatalogId, Building.Levels.FirstOrDefault(l => l.Id == e.LevelId)?.Name ?? "", string.Join(", ", cat?.Ports.Select(p => $"{Enum_(p.Network)} DN{p.DiameterMm}") ?? []));
         }
         OnPropertyChanged(nameof(SelectionText)); Changed?.Invoke();
     }
@@ -125,9 +126,9 @@ public partial class MainViewModel : ObservableObject
     {
         if (SelectedEquipment is not { } e) return;
         var p = new Dictionary<string, double> { ["width"] = EqWidth, ["depth"] = EqDepth, ["height"] = EqHeight };
-        Actions.SetEquipmentProperties(e.Id, EqLabel.Length == 0 ? null : EqLabel, EqElevation, EqRotation, p); Status = "Équipement modifié"; var id = e.Id; Refresh(); SelectEquipment(id);
+        Actions.SetEquipmentProperties(e.Id, EqLabel.Length == 0 ? null : EqLabel, EqElevation, EqRotation, p); Status = T("eq.modified"); var id = e.Id; Refresh(); SelectEquipment(id);
     }
-    public void MoveEquipmentTo(Guid id, PointMm to) { Actions.MoveEquipment(id, to); Status = "Équipement déplacé"; Refresh(); SelectEquipment(id); }
+    public void MoveEquipmentTo(Guid id, PointMm to) { Actions.MoveEquipment(id, to); Status = T("eq.moved"); Refresh(); SelectEquipment(id); }
 
     /// <summary>Connect gesture: port → pipe/riser of the same network type under the release point. One history step.</summary>
     public bool ConnectPort(Guid equipmentId, Port port, PointMm3 portAt, PointMm release)
@@ -144,9 +145,9 @@ public partial class MainViewModel : ObservableObject
             var d = D(new PointMm(s.A.X, s.A.Y), new PointMm(s.B.X, s.B.Y));
             if (d < best && (NetworkQueries.IsVertical(s) ? Math.Min(s.A.Z, s.B.Z) <= portAt.Z && Math.Max(s.A.Z, s.B.Z) >= portAt.Z : s.A.Z == s.B.Z)) { best = d; target = s; }
         }
-        if (target == null) { Status = $"Relâchez sur une colonne ou un tuyau « {port.Network} »"; return false; }
+        if (target == null) { Status = T("connect.release", Enum_(port.Network)); return false; }
         var segs = Actions.ConnectPortToSegment(target.Network.Id, target.Segment.Id, portAt, port.DiameterMm);
-        Status = segs == null ? "Connexion impossible (tuyau non orthogonal)" : $"Connecté : {segs.Count} tronçon(s)"; Refresh(); SelectEquipment(equipmentId); return segs != null;
+        Status = segs == null ? T("connect.diagonal") : T("connect.done", segs.Count); Refresh(); SelectEquipment(equipmentId); return segs != null;
     }
 
     // ---- Riser extent (from level X to level Y) ----
@@ -155,18 +156,18 @@ public partial class MainViewModel : ObservableObject
     /// <summary>Fills the extent fields from the selected vertical run (levels it spans).</summary>
     private void RefreshExtent()
     {
-        LevelNames.Clear(); foreach (var l in Building.Levels) LevelNames.Add(l.Name);
+        LevelNames.Clear(); foreach (var l in Building.Levels) LevelNames.Add(l.DisplayName);
         if (SelectedSegment is not { } sel) { ExtentInfo = ""; return; }
         var n = Building.Networks.FirstOrDefault(x => x.Id == sel.NetworkId); if (n == null || n.Nodes.Count == 0) return;
         var lo = n.Nodes.Min(x => x.Position.Z); var hi = n.Nodes.Max(x => x.Position.Z);
         ExtentFrom = Math.Max(0, Building.Levels.FindLastIndex(l => l.AltitudeMm <= lo)); ExtentTo = Math.Max(0, Building.Levels.FindLastIndex(l => l.AltitudeMm < hi));
-        ExtentInfo = $"{n.Name} : {lo / 1000.0:0.00} → {hi / 1000.0:0.00} m";
+        ExtentInfo = T("extent.info", n.Name, (lo / 1000.0).ToString("0.00"), (hi / 1000.0).ToString("0.00"));
     }
     [RelayCommand] private void ApplyExtent()
     {
         if (SelectedSegment is not { } sel || Building.Levels.Count == 0) return;
         var a = Math.Clamp(ExtentFrom, 0, Building.Levels.Count - 1); var b = Math.Clamp(ExtentTo, 0, Building.Levels.Count - 1); var (lo, hi) = (Math.Min(a, b), Math.Max(a, b));
-        Actions.SetRiserExtent(sel.NetworkId, Building.Levels[lo].AltitudeMm, Building.Levels[hi].AltitudeMm + Building.Levels[hi].HeightMm); Status = "Étendue de la colonne modifiée";
+        Actions.SetRiserExtent(sel.NetworkId, Building.Levels[lo].AltitudeMm, Building.Levels[hi].AltitudeMm + Building.Levels[hi].HeightMm); Status = T("extent.changed");
         var keep = sel; Refresh(); SelectSegment(keep.NetworkId, keep.SegmentId);
     }
     /// <summary>Top/bottom handle of a vertical pipe (elevation view): snaps to the level lines. One history step.</summary>
@@ -178,7 +179,7 @@ public partial class MainViewModel : ObservableObject
 
     // ---- Pipe selection (handles) ----
     public (Guid NetworkId, Guid SegmentId)? SelectedSegment { get; private set; }
-    public void SelectSegment(Guid networkId, Guid segmentId) { SelectedWalls.Clear(); SelectedEquipmentId = null; SelectedSegment = (networkId, segmentId); RefreshExtent(); Status = "Tuyau sélectionné — poignées : prolonger, coude (Ctrl), té (milieu)"; OnPropertyChanged(nameof(SelectionText)); Changed?.Invoke(); }
+    public void SelectSegment(Guid networkId, Guid segmentId) { SelectedWalls.Clear(); SelectedEquipmentId = null; SelectedSegment = (networkId, segmentId); RefreshExtent(); Status = T("pipe.selected.hint"); OnPropertyChanged(nameof(SelectionText)); Changed?.Invoke(); }
     public void ClearSegment() { SelectedSegment = null; }
     public int Snapper_GridMm() => 50;
     public void AfterEdit(string? message = null) { if (message != null) Status = message; Refresh(); }
@@ -187,7 +188,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private NetworkType _riserType = NetworkType.ColdWater;
     [ObservableProperty] private int _riserDiameter = 16;
     [ObservableProperty] private int _riserSpacing = 150;
-    [ObservableProperty] private string _riserTemplate = "Simple";
+    [ObservableProperty] private string _riserTemplate = "tpl.simple";
     [ObservableProperty] private bool _riserWholeBuilding = true;
     [ObservableProperty] private int _riserFromIndex;
     [ObservableProperty] private int _riserToIndex = 99;
@@ -205,8 +206,8 @@ public partial class MainViewModel : ObservableObject
     private void RebuildPalette()
     {
         Palette.Clear();
-        foreach (var e in EquipmentCatalog.Default.Where(e => Search.Length == 0 || e.Name.Contains(Search, StringComparison.OrdinalIgnoreCase) || e.Category.Contains(Search, StringComparison.OrdinalIgnoreCase)))
-            Palette.Add(new PaletteItem(e.Id, e.Category, e.Name, e.Inline ? "⊗" : e.Category == "Sanitary" ? "◍" : "▤"));
+        foreach (var e in EquipmentCatalog.Default.Where(e => Search.Length == 0 || e.Name.Contains(Search, StringComparison.OrdinalIgnoreCase) || T("cat." + e.Category).Contains(Search, StringComparison.OrdinalIgnoreCase)))
+            Palette.Add(new PaletteItem(e.Id, T("cat." + e.Category), e.Name, e.Inline ? "⊗" : e.Category == "Sanitary" ? "◍" : "▤"));
     }
 
     // ---- Elevation view ----
@@ -214,14 +215,14 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand] private void ShowElevation()
     {
         var wall = CurrentLevel?.Walls.FirstOrDefault(w => SelectedWalls.Contains(w.Id));
-        if (wall == null || wall.Footprint.Count < 2) { Status = "Sélectionnez un mur pour voir son élévation"; return; }
+        if (wall == null || wall.Footprint.Count < 2) { Status = T("elev.select"); return; }
         var fp = wall.Footprint; var best = 0; double bestLen = -1;
         for (var i = 0; i < fp.Count; i++) { var a = fp[i]; var b = fp[(i + 1) % fp.Count]; var len = Math.Sqrt(Math.Pow(a.X - b.X, 2) + Math.Pow(a.Y - b.Y, 2)); if (len > bestLen) { bestLen = len; best = i; } }
         var pa = fp[best]; var pb = fp[(best + 1) % fp.Count];
         var all = Building.Levels.SelectMany(l => l.Walls.SelectMany(w => w.Footprint)).ToList();
         PointMm centre = new((int)all.Average(p => p.X), (int)all.Average(p => p.Y));
         var side = new ElevationPlane(pa, pb, 50, +1).Distance(centre) >= 0 ? +1 : -1;
-        Plane = new ElevationPlane(pa, pb, 50, side); Mode = ViewMode.Elevation; Hint = "Colonne : cliquez (ou glissez pour fixer haut/bas). Tuyau : glissez à l'horizontale.";
+        Plane = new ElevationPlane(pa, pb, 50, side); Mode = ViewMode.Elevation; Hint = T("elev.hint");
     }
 
     /// <summary>Vertical pipe on the face; whole building by default, snapped to level lines when dragged.</summary>
@@ -230,19 +231,19 @@ public partial class MainViewModel : ObservableObject
         if (Plane == null || Building.Levels.Count == 0) return;
         var lo = (int)(zFrom ?? Building.Levels[0].AltitudeMm); var hi = (int)(zTo ?? Building.Levels[^1].AltitudeMm + Building.Levels[^1].HeightMm);
         Actions.AddVerticalPipe(Plane, Math.Clamp(u, 0, Plane.Length), RiserType, Math.Min(lo, hi), Math.Max(lo, hi), RiserDiameter);
-        Status = "Tuyau vertical posé sur le mur"; Refresh();
+        Status = T("elev.vertical"); Refresh();
     }
 
     public void PlaceHorizontalPipe(double u0, double u1, double z)
     {
         if (Plane == null || Math.Abs(u1 - u0) < 20) return;
         Actions.AddHorizontalAlong(Plane, Math.Clamp(u0, 0, Plane.Length), Math.Clamp(u1, 0, Plane.Length), PipeType, (int)z, PipeDiameter);
-        Status = "Tuyau horizontal posé le long du mur"; Refresh();
+        Status = T("elev.horizontal"); Refresh();
     }
 
     // ---- Doors, windows, rooms, cellars, measure ----
     [ObservableProperty] private int _openingWidth;                 // 0 = default (800 apartments, 700 cellars, 1200 windows)
-    [ObservableProperty] private string _cellarPrefix = "Cave ";
+    [ObservableProperty] private string _cellarPrefix = T("cellar.prefix");
     [ObservableProperty] private int _cellarStart = 1;
     [ObservableProperty] private SpaceKind _newSpaceKind = SpaceKind.Room;
     [ObservableProperty] private int _propThickness;
@@ -271,9 +272,9 @@ public partial class MainViewModel : ObservableObject
     public void PlaceOpening(PointMm click, OpeningKind kind)
     {
         if (CurrentLevel is not { } l) return;
-        if (kind == OpeningKind.Door && HitOpening(click) is { } hit && hit.Opening.Kind == OpeningKind.Door) { Actions.FlipOpening(l.Id, hit.Wall.Id, hit.Opening.Id); Status = "Sens de la porte inversé"; Refresh(); return; }
+        if (kind == OpeningKind.Door && HitOpening(click) is { } hit && hit.Opening.Kind == OpeningKind.Door) { Actions.FlipOpening(l.Id, hit.Wall.Id, hit.Opening.Id); Status = T("door.flipped"); Refresh(); return; }
         var wall = l.Walls.LastOrDefault(w => WallGeometry.PositionAlong(w, click) != null);
-        if (wall == null) { Status = "Cliquez sur un mur"; return; }
+        if (wall == null) { Status = T("opening.clickwall"); return; }
         var pos = (int)Math.Round(WallGeometry.PositionAlong(wall, click)!.Value);
         var o = Actions.AddOpening(l.Id, wall.Id, kind, pos, OpeningWidth > 0 ? OpeningWidth : null);
         Status = kind == OpeningKind.Door ? T("door.added", o.WidthMm) : T("window.added"); Refresh();
@@ -282,7 +283,7 @@ public partial class MainViewModel : ObservableObject
     public void MoveOpeningTo(Wall wall, Opening o, PointMm to)
     {
         if (CurrentLevel is not { } l || WallGeometry.PositionAlong(wall, to, 2000) is not { } pos) return;
-        Actions.MoveOpening(l.Id, wall.Id, o.Id, (int)Math.Round(pos)); Status = "Ouverture déplacée"; Refresh();
+        Actions.MoveOpening(l.Id, wall.Id, o.Id, (int)Math.Round(pos)); Status = T("opening.moved"); Refresh();
     }
 
     /// <summary>Space tool: flood-fill from the click inside the walls; refused with a hint when the room is not closed.</summary>
@@ -291,7 +292,7 @@ public partial class MainViewModel : ObservableObject
         if (CurrentLevel is not { } l) return;
         var outline = SpaceFinder.Find(l, click);
         if (outline == null) { Status = T("space.open"); return; }
-        var n = l.Spaces.Count + 1; var sp = Actions.AddSpace(l.Id, outline, $"Pièce {n}", NewSpaceKind);
+        var n = l.Spaces.Count + 1; var sp = Actions.AddSpace(l.Id, outline, Token("space.default.name", n), NewSpaceKind);
         Status = T("space.added", SpaceFinder.AreaMm2(sp.Outline) / 1e6); Refresh();
     }
 
@@ -299,9 +300,9 @@ public partial class MainViewModel : ObservableObject
     {
         if (CurrentLevel is not { } l) return;
         var sp = l.Spaces.LastOrDefault(s => SpaceFinder.Contains(s.Outline, click));
-        if (sp == null) { Status = "Cliquez dans un espace"; return; }
+        if (sp == null) { Status = T("space.clickin"); return; }
         if (!NumberPending.Remove(sp.Id)) NumberPending.Add(sp.Id);
-        Status = $"{NumberPending.Count} sélectionné(s) — Entrée pour numéroter"; Changed?.Invoke();
+        Status = T("number.pending", NumberPending.Count); Changed?.Invoke();
     }
     public void NumberCommit()
     {
@@ -321,17 +322,17 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand] private void FocusSpace(Guid id) { var s = SpaceItems.FirstOrDefault(x => x.Id == id); if (s != null) { if (s.LevelId != CurrentLevelId) SelectLevel(s.LevelId); FocusRequested?.Invoke(s.Center); } }
 
     // ---- Level context menu ----
-    [RelayCommand] private void AddLevelAbove(Guid id) { var n = Actions.AddLevelNextTo(id, true, $"R+{Building.Levels.Count}"); CurrentLevelId = n.Id; Refresh(); }
-    [RelayCommand] private void AddLevelBelow(Guid id) { var n = Actions.AddLevelNextTo(id, false, $"S-{Building.Levels.Count(l => l.AltitudeMm < 0) + 1}"); CurrentLevelId = n.Id; Refresh(); }
+    [RelayCommand] private void AddLevelAbove(Guid id) { var n = Actions.AddLevelNextTo(id, true, Token("level.n", Building.Levels.Count)); CurrentLevelId = n.Id; Refresh(); }
+    [RelayCommand] private void AddLevelBelow(Guid id) { var n = Actions.AddLevelNextTo(id, false, Token("level.basement.n", Building.Levels.Count(l => l.AltitudeMm < 0) + 1)); CurrentLevelId = n.Id; Refresh(); }
     [RelayCommand] private async Task RenameLevelAsync(Guid id)
     {
         var l = Building.Levels.First(x => x.Id == id);
-        if (await Dialogs.PromptAsync("Renommer le niveau", "Nom", l.Name) is { Length: > 0 } name) { Actions.RenameLevel(id, name); Refresh(); }
+        if (await Dialogs.PromptAsync(T("dlg.rename.title"), T("dlg.rename.label"), l.DisplayName) is { Length: > 0 } name) { Actions.RenameLevel(id, name); Refresh(); }
     }
     [RelayCommand] private async Task SetLevelGeometryAsync(Guid id)
     {
         var l = Building.Levels.First(x => x.Id == id);
-        var text = await Dialogs.PromptAsync("Altitude et hauteur", "Altitude ; hauteur (m)", $"{l.AltitudeMm / 1000.0:0.00} ; {l.HeightMm / 1000.0:0.00}".Replace(',', '.'));
+        var text = await Dialogs.PromptAsync(T("dlg.geom.title"), T("dlg.geom.label"), $"{l.AltitudeMm / 1000.0:0.00} ; {l.HeightMm / 1000.0:0.00}".Replace(',', '.'));
         var parts = text?.Split(';', StringSplitOptions.TrimEntries);
         if (parts is { Length: 2 } && double.TryParse(parts[0].Replace(',', '.'), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var alt) && double.TryParse(parts[1].Replace(',', '.'), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var h) && h > 0)
         { Actions.SetLevelGeometry(id, (int)Math.Round(alt * 1000), (int)Math.Round(h * 1000)); Refresh(); }
@@ -340,7 +341,7 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand] private void ApplyThickness()
     {
         if (CurrentLevel is not { } l || SelectedWalls.Count == 0 || PropThickness < 20) return;
-        var n = Actions.SetWallThickness(l.Id, SelectedWalls.ToList(), PropThickness); Status = n > 0 ? $"Épaisseur {PropThickness} mm" : "Seuls les murs rectangulaires sont modifiables"; Refresh();
+        var n = Actions.SetWallThickness(l.Id, SelectedWalls.ToList(), PropThickness); Status = n > 0 ? T("thickness.set", PropThickness) : T("thickness.rect"); Refresh();
     }
 
     // ---- Risers ----
@@ -355,13 +356,13 @@ public partial class MainViewModel : ObservableObject
         var to = RiserWholeBuilding ? Building.Levels[^1].AltitudeMm + Building.Levels[^1].HeightMm : Building.Levels[Math.Max(lo, hi)].AltitudeMm + Building.Levels[Math.Max(lo, hi)].HeightMm;
         var (types, spacing) = RiserTemplate switch
         {
-            "EF + ECS" => ([NetworkType.ColdWater, NetworkType.DomesticHotWater], RiserSpacing),
-            "Chauffage aller + retour" => ([NetworkType.HeatingSupply, NetworkType.HeatingReturn], RiserSpacing),
-            "EF + ECS + EU" => ([NetworkType.ColdWater, NetworkType.DomesticHotWater, NetworkType.Drainage], RiserSpacing),
+            "tpl.dhw" => ([NetworkType.ColdWater, NetworkType.DomesticHotWater], RiserSpacing),
+            "tpl.heating" => ([NetworkType.HeatingSupply, NetworkType.HeatingReturn], RiserSpacing),
+            "tpl.all" => ([NetworkType.ColdWater, NetworkType.DomesticHotWater, NetworkType.Drainage], RiserSpacing),
             _ => (new List<NetworkType> { RiserType }, 0),
         };
         Actions.AddRiserTemplate(p, spacing, types, from, to, RiserDiameter);
-        Status = $"{types.Count} colonne(s) posée(s)"; Refresh();
+        Status = T("riser.placed", types.Count); Refresh();
     }
 
     // ---- Horizontal pipes (plan): constrained to X/Y at the chosen height above the floor ----
@@ -371,7 +372,7 @@ public partial class MainViewModel : ObservableObject
         var z = l.AltitudeMm + PipeElevation;
         var net = Building.Networks.FirstOrDefault(n => n.Type == PipeType && !n.Locked) is { } ex ? ex : Actions.AddNetwork(PipeType.ToString(), PipeType);
         Actions.AddPipeRun(net.Id, pts.Select(p => new PointMm3(p.X, p.Y, z)).ToList(), PipeDiameter);
-        Status = $"{pts.Count - 1} tronçon(s)"; Refresh();
+        Status = T("pipe.segments", pts.Count - 1); Refresh();
     }
 
     // ---- Palette objects ----
@@ -379,7 +380,7 @@ public partial class MainViewModel : ObservableObject
     {
         var e = PaletteId == null ? null : EquipmentCatalog.Find(PaletteId); if (e == null || CurrentLevel is not { } l) return null;
         if (!e.Inline) return null;
-        return FindPipeFor(at, l, e) is null ? "Une vanne doit être posée sur un tuyau" : null;
+        return FindPipeFor(at, l, e) is null ? T("valve.onpipe") : null;
     }
 
     private (SegmentRef Seg, PointMm3 P)? FindPipeFor(PointMm at, Level l, CatalogEntry e)
@@ -391,24 +392,24 @@ public partial class MainViewModel : ObservableObject
 
     public void PlaceFromPalette(PointMm at)
     {
-        if (PaletteId == null || CurrentLevel is not { } l) { Status = "Choisissez un objet dans la palette"; return; }
+        if (PaletteId == null || CurrentLevel is not { } l) { Status = T("palette.pick"); return; }
         var e = EquipmentCatalog.Find(PaletteId)!;
         if (e.Inline)
         {
-            if (FindPipeFor(at, l, e) is not { } hit) { Status = "Une vanne doit être posée sur un tuyau"; return; }
-            Actions.InsertComponent(hit.Seg.Network.Id, hit.Seg.Segment.Id, hit.P, e.Id); Status = $"{e.Name} posé(e) sur le tuyau";
+            if (FindPipeFor(at, l, e) is not { } hit) { Status = T("valve.onpipe"); return; }
+            Actions.InsertComponent(hit.Seg.Network.Id, hit.Seg.Segment.Id, hit.P, e.Id); Status = T("placed.onpipe", e.Name);
         }
         else
         {
             // snap against the nearest wall face, oriented along it; default height from the catalog
             var polys = l.Walls.Select(w => (IReadOnlyList<PointMm>)w.Footprint); var p = RiserSnap.Snap(at, polys, offsetMm: e.DepthMm / 2, reachMm: 400);
-            Actions.AddEquipment(l.Id, e.Id, p, e.DefaultElevationMm); Status = $"{e.Name} posé(e)";
+            Actions.AddEquipment(l.Id, e.Id, p, e.DefaultElevationMm); Status = T("placed", e.Name);
         }
         Recent.Remove(e.Id); Recent.Insert(0, e.Id); if (Recent.Count > 6) Recent.RemoveAt(6);
         Refresh();
     }
 
-    [RelayCommand] private void SelectPalette(string id) { PaletteId = id; Tool = ToolKind.Place; Hint = EquipmentCatalog.Find(id)?.Inline == true ? "Cliquez sur un tuyau pour poser l'élément" : "Cliquez pour poser l'objet"; }
+    [RelayCommand] private void SelectPalette(string id) { PaletteId = id; Tool = ToolKind.Place; Hint = EquipmentCatalog.Find(id)?.Inline == true ? T("palette.hint.inline") : T("palette.hint.object"); }
     [RelayCommand] private void ToggleNetwork(Guid id)
     {
         var n = Building.Networks.First(x => x.Id == id); Actions.SetNetworkDisplay(id, !n.Visible, n.Locked); Refresh();
@@ -420,7 +421,7 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand] private void ApplyProperties()
     {
         if (CurrentLevel is not { } l || SelectedWalls.Count == 0) return;
-        Actions.SetWallProperties(l.Id, SelectedWalls.ToList(), PropLabel.Length == 0 ? null : PropLabel, PropHeight <= 0 ? null : PropHeight); Status = "Propriétés appliquées"; Refresh();
+        Actions.SetWallProperties(l.Id, SelectedWalls.ToList(), PropLabel.Length == 0 ? null : PropLabel, PropHeight <= 0 ? null : PropHeight); Status = T("props.applied"); Refresh();
     }
 
     // ---- Align with the level below: pairs (point on this level → same point on the level below) ----
@@ -433,7 +434,7 @@ public partial class MainViewModel : ObservableObject
     {
         if (AlignPending is { } from) { AlignPairs.Add((from, (x, y))); AlignPending = null; UpdateAlignPreview(); }
         else AlignPending = (x, y);
-        Hint = AlignPending != null ? "Cliquez le MÊME point sur le niveau du dessous (en bleu)" : AlignPairs.Count < 2 ? "Cliquez un point de ce niveau (au moins 2 paires)" : "Entrée pour appliquer — ≥3 paires = étirement X/Y indépendant";
+        Hint = AlignPending != null ? T("align.hint.second") : AlignPairs.Count < 2 ? T("align.hint.first") : T("align.hint.apply");
         Changed?.Invoke();
     }
     private void UpdateAlignPreview() => AlignResiduals = ImmeubleCad.Core.Geometry.ImageFit.Fit(AlignPairs) is { } f ? ImmeubleCad.Core.Geometry.ImageFit.Residuals(f, AlignPairs) : null;
@@ -446,8 +447,8 @@ public partial class MainViewModel : ObservableObject
     {
         if (CurrentLevel is not { } l || AlignPairs.Count < 2) return false;
         var res = Actions.AlignLevel(l.Id, AlignPairs.ToList(), AlignMoveWalls);
-        if (res == null) { Status = "Points alignés : choisissez des points non colinéaires"; return false; }
-        Status = $"Aligné — erreur max {res.Max():0} mm"; AlignCancel(); Refresh(); return true;
+        if (res == null) { Status = T("align.collinear"); return false; }
+        Status = T("align.done", res.Max().ToString("0")); AlignCancel(); Refresh(); return true;
     }
     public string? FilePath => ActiveIndex >= 0 ? Active.FilePath : null;
     public event Action? Changed;
@@ -457,6 +458,8 @@ public partial class MainViewModel : ObservableObject
     public bool Is3D => Mode is ViewMode.Solid or ViewMode.Wireframe;
     public bool IsElevation => Mode == ViewMode.Elevation;
     public bool IsPlan => Mode == ViewMode.Plan;
+    public bool IsSite => Mode == ViewMode.Site;
+    public static readonly Guid SiteLevelId = new("00000000-0000-0000-0000-00000000517e");
     public string Title => ActiveIndex < 0 ? "ImmeubleCad" : $"{(History.IsDirty ? "• " : "")}{Active.Title} — ImmeubleCad";
     public ElevationPlane? Plane { get; private set; }
     public bool IsSelectTool => Tool == ToolKind.Select;
@@ -479,7 +482,7 @@ public partial class MainViewModel : ObservableObject
     /// <summary>startWithSample=false shows the welcome screen (New / Open / Recent) until a document exists.</summary>
     public MainViewModel(bool startWithSample)
     {
-        RebuildPalette();
+        RebuildPalette(); Translations.LanguageChanged += OnLanguageChanged;
         if (startWithSample) { AddDoc(new Doc { Building = SampleBuilding.Create().Building }); }
         else Refresh();
     }
@@ -500,7 +503,7 @@ public partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(HasDocument)); OnPropertyChanged(nameof(ShowWelcome)); Refresh();
     }
 
-    partial void OnModeChanged(ViewMode value) { OnPropertyChanged(nameof(Is3D)); OnPropertyChanged(nameof(IsElevation)); OnPropertyChanged(nameof(IsPlan)); Changed?.Invoke(); }
+    partial void OnModeChanged(ViewMode value) { OnPropertyChanged(nameof(Is3D)); OnPropertyChanged(nameof(IsElevation)); OnPropertyChanged(nameof(IsPlan)); OnPropertyChanged(nameof(IsSite)); Changed?.Invoke(); }
     partial void OnToolChanged(ToolKind value)
     {
         OnPropertyChanged(nameof(IsSelectTool)); OnPropertyChanged(nameof(IsDrawTool)); OnPropertyChanged(nameof(IsAlignTool)); OnPropertyChanged(nameof(IsRiserTool)); OnPropertyChanged(nameof(IsPipeTool)); OnPropertyChanged(nameof(IsPlaceTool)); OnPropertyChanged(nameof(IsDoorTool)); OnPropertyChanged(nameof(IsWindowTool)); OnPropertyChanged(nameof(IsSpaceTool)); OnPropertyChanged(nameof(IsMeasureTool)); OnPropertyChanged(nameof(IsNumberTool)); OnPropertyChanged(nameof(IsStraightenTool)); OnPropertyChanged(nameof(IsStretchTool)); MeasurePoints.Clear(); NumberPending.Clear();
@@ -514,21 +517,21 @@ public partial class MainViewModel : ObservableObject
         Tabs.Clear(); for (var i = 0; i < Docs.Count; i++) Tabs.Add(new TabItem(i, Docs[i].Title, i == ActiveIndex, Docs[i].History.IsDirty));
         OnPropertyChanged(nameof(Title));
         if (ActiveIndex < 0) { Levels.Clear(); Networks.Clear(); HistoryRows.Clear(); Changed?.Invoke(); return; }
-        HistoryRows.Clear(); HistoryRows.Add(new HistoryRow(-1, "État initial", History.Pointer == -1, false));
-        for (var i = 0; i < History.Items.Count; i++) HistoryRows.Add(new HistoryRow(i, History.Items[i].Name, i == History.Pointer, i > History.Pointer));
+        HistoryRows.Clear(); HistoryRows.Add(new HistoryRow(-1, T("history.initial"), History.Pointer == -1, false));
+        for (var i = 0; i < History.Items.Count; i++) HistoryRows.Add(new HistoryRow(i, T("action." + History.Items[i].Name), i == History.Pointer, i > History.Pointer));
         SelectedWalls.IntersectWith(CurrentLevel?.Walls.Select(w => w.Id) ?? []);
         Levels.Clear();
         foreach (var l in Building.Levels.AsEnumerable().Reverse()) // top level first, like an elevator
-            Levels.Add(new LevelItem(l.Id, l.Name, $"{l.AltitudeMm / 1000.0:0.0} m", l.Id == CurrentLevel?.Id, l.Walls.Count, $"{l.Name} — {l.Kind} — altitude {l.AltitudeMm / 1000.0:0.00} m, hauteur {l.HeightMm / 1000.0:0.00} m"));
+            Levels.Add(new LevelItem(l.Id, l.DisplayName, $"{l.AltitudeMm / 1000.0:0.0} m", l.Id == CurrentLevel?.Id, l.Walls.Count, T("level.tooltip", l.DisplayName, Enum_(l.Kind), (l.AltitudeMm / 1000.0).ToString("0.00"), (l.HeightMm / 1000.0).ToString("0.00"))));
         Networks.Clear();
         foreach (var n in Building.Networks)
-        { var c = NetworkQueries.ColorOf(n.Type); Networks.Add(new NetworkItem(n.Id, n.Name, n.Type.ToString(), n.Visible, n.Locked, $"#{c.R:X2}{c.G:X2}{c.B:X2}")); }
+        { var c = NetworkQueries.ColorOf(n.Type); Networks.Add(new NetworkItem(n.Id, n.Name, Enum_(n.Type), n.Visible, n.Locked, $"#{c.R:X2}{c.G:X2}{c.B:X2}")); }
         SpaceItems.Clear();
         foreach (var lv in Building.Levels.AsEnumerable().Reverse())
             foreach (var sp in lv.Spaces)
             {
                 var c = new PointMm((int)sp.Outline.Average(p => p.X), (int)sp.Outline.Average(p => p.Y));
-                SpaceItems.Add(new SpaceItem(lv.Id, sp.Id, sp.Name, sp.Number ?? "", sp.Kind.ToString(), sp.Lot ?? "", $"{SpaceFinder.AreaMm2(sp.Outline) / 1e6:0.0} m²", sp.Stability == Stability.Common, c));
+                SpaceItems.Add(new SpaceItem(lv.Id, sp.Id, sp.DisplayName, sp.Number ?? "", Enum_(sp.Kind), sp.Lot ?? "", T("space.area.fmt", (SpaceFinder.AreaMm2(sp.Outline) / 1e6).ToString("0.0")), sp.Stability == Stability.Common, c));
             }
         if (CurrentLevel is { } cl)
         {
@@ -537,6 +540,7 @@ public partial class MainViewModel : ObservableObject
         }
         var sel = CurrentLevel?.Walls.FirstOrDefault(w => SelectedWalls.Contains(w.Id));
         if (sel != null) { PropLabel = sel.Label ?? ""; PropHeight = sel.HeightMm ?? 0; PropThickness = WallGeometry.Axis(sel)?.ThicknessMm ?? 0; }
+        Levels.Add(new LevelItem(SiteLevelId, T("level.site"), T("level.site.alt"), IsSite, 0, T("site.tooltip")));
         OnPropertyChanged(nameof(CurrentLevel)); OnPropertyChanged(nameof(SelectionText));
         Changed?.Invoke();
     }
@@ -553,10 +557,16 @@ public partial class MainViewModel : ObservableObject
     public void MoveSelection(int dx, int dy)
     {
         if (CurrentLevel is not { } l || SelectedWalls.Count == 0 || (dx == 0 && dy == 0)) return;
-        Actions.MoveWalls(l.Id, SelectedWalls.ToList(), dx, dy); Status = $"Déplacé de {dx / 1000.0:0.00} m, {dy / 1000.0:0.00} m"; Refresh();
+        Actions.MoveWalls(l.Id, SelectedWalls.ToList(), dx, dy); Status = T("walls.moved.by", (dx / 1000.0).ToString("0.00"), (dy / 1000.0).ToString("0.00")); Refresh();
     }
 
-    [RelayCommand] private void SelectLevel(Guid id) { CurrentLevelId = id; SelectedWalls.Clear(); SelectedSegment = null; Status = $"{CurrentLevel?.Name}"; Refresh(); }
+    [RelayCommand] private void SelectLevel(Guid id)
+    {
+        if (id == SiteLevelId) { RequestMode(ViewMode.Site); Refresh(); return; }
+        if (IsSite) Mode = ViewMode.Plan;
+        SelectLevelCore(id);
+    }
+    private void SelectLevelCore(Guid id) { CurrentLevelId = id; SelectedWalls.Clear(); SelectedSegment = null; Status = $"{CurrentLevel?.DisplayName}"; Refresh(); }
     [RelayCommand] private void LevelUp() => StepLevel(+1);
     [RelayCommand] private void LevelDown() => StepLevel(-1);
     private void StepLevel(int d)
@@ -576,19 +586,19 @@ public partial class MainViewModel : ObservableObject
         var target = Building.Levels[i]; var ids = SelectedWalls.ToList();
         Actions.MoveWalls(l.Id, ids, 0, 0, target.Id);
         CurrentLevelId = target.Id; SelectedWalls.Clear(); foreach (var id in ids) SelectedWalls.Add(id);
-        Status = T("status.walls.moved", ids.Count, target.Name); Refresh();
+        Status = T("status.walls.moved", ids.Count, target.DisplayName); Refresh();
     }
 
     [RelayCommand] private void CopySelectionToAllLevels()
     {
         if (CurrentLevel is not { } l || SelectedWalls.Count == 0) return;
-        Actions.CopyWalls(l.Id, SelectedWalls.ToList(), Building.Levels.Select(x => x.Id)); Status = "Copié sur tous les niveaux"; Refresh();
+        Actions.CopyWalls(l.Id, SelectedWalls.ToList(), Building.Levels.Select(x => x.Id)); Status = T("walls.copied"); Refresh();
     }
 
     [RelayCommand] private void DeleteSelection()
     {
         if (CurrentLevel is not { } l || SelectedWalls.Count == 0) return;
-        Actions.DeleteWalls(l.Id, SelectedWalls.ToList()); SelectedWalls.Clear(); Status = "Supprimé"; Refresh();
+        Actions.DeleteWalls(l.Id, SelectedWalls.ToList()); SelectedWalls.Clear(); Status = T("deleted"); Refresh();
     }
 
     [RelayCommand] private void SelectAll() { if (CurrentLevel is { } l) SelectWalls(l.Walls.Select(w => w.Id), false); }
@@ -635,18 +645,32 @@ public partial class MainViewModel : ObservableObject
     }
     [RelayCommand] private void SetTheme(string theme) => ApplyTheme(theme);
 
+    // ---- Language: one language at a time, switchable at runtime ----
+    public void ApplyLanguage(string language)
+    {
+        Settings.Language = language; Translations.Language = language;       // raises LanguageChanged → OnLanguageChanged
+        if (SettingsPath != null) try { SettingsStore.Save(Settings, SettingsPath); } catch (IOException) { }
+    }
+    [RelayCommand] private void SetLanguage(string language) => ApplyLanguage(language);
+
+    private void OnLanguageChanged()
+    {
+        Hint = Tool switch { ToolKind.DrawWall => T("hint.draw.wall"), ToolKind.DrawPipe => T("hint.draw.pipe"), ToolKind.Riser => T("hint.riser"), ToolKind.Place => T("hint.place"), ToolKind.Align => T("hint.align"), ToolKind.Door => T("hint.door"), ToolKind.Window => T("hint.window"), ToolKind.Space => T("hint.space"), ToolKind.Measure => T("hint.measure"), ToolKind.NumberCellars => T("hint.number"), ToolKind.Straighten => T("hint.straighten"), ToolKind.Stretch => T("hint.stretch"), _ => T("hint.select") };
+        Status = T("ready"); RebuildPalette(); OnPropertyChanged(nameof(MapLayers)); OnPropertyChanged(nameof(RiserTemplates)); OnPropertyChanged(nameof(Title)); OnPropertyChanged(nameof(SelectionText));
+        OnPropertyChanged(nameof(TourTitle)); OnPropertyChanged(nameof(TourBody)); OnPropertyChanged(nameof(NetworkTypes)); OnPropertyChanged(nameof(SpaceKinds));
+        if (SelectedEquipment != null) SelectEquipment(SelectedEquipmentId);
+        Refresh(); LanguageRefreshed?.Invoke();
+    }
+    public event Action? LanguageRefreshed;
+
     public static readonly (string Title, string Body, string ToolOrAction)[] TourSteps =
     [
-        ("1. Importer un plan", "Fichier › Importer un plan : choisissez la photo ou le scan d'un niveau.", "import"),
-        ("2. Étalonner", "Dans l'assistant, redressez le plan puis cliquez deux points dont vous connaissez la distance réelle.", "calibrate"),
-        ("3. Détecter les murs", "Réglez les curseurs jusqu'à ce que les murs soient en rouge, vérifiez, puis validez : tout s'ajoute en une seule étape annulable.", "detect"),
-        ("4. Poser une colonne", "Outil « colonne » : cliquez dans le plan pour poser une colonne d'eau ou de chauffage sur tous les niveaux.", "Riser"),
-        ("5. Prolonger un tuyau", "Tracez un tuyau, sélectionnez-le, puis tirez une poignée : prolongement, coude (Ctrl) ou té (milieu).", "DrawPipe"),
+        ("tour.t1", "tour.b1", "import"), ("tour.t2", "tour.b2", "calibrate"), ("tour.t3", "tour.b3", "detect"), ("tour.t4", "tour.b4", "Riser"), ("tour.t5", "tour.b5", "DrawPipe"),
     ];
     [ObservableProperty] private int _tourStep = -1;
     public bool TourActive => TourStep >= 0;
-    public string TourTitle => TourActive ? TourSteps[TourStep].Title : "";
-    public string TourBody => TourActive ? TourSteps[TourStep].Body : "";
+    public string TourTitle => TourActive ? T(TourSteps[TourStep].Title) : "";
+    public string TourBody => TourActive ? T(TourSteps[TourStep].Body) : "";
     public string TourProgress => TourActive ? $"{TourStep + 1} / {TourSteps.Length}" : "";
     partial void OnTourStepChanged(int value) { OnPropertyChanged(nameof(TourActive)); OnPropertyChanged(nameof(TourTitle)); OnPropertyChanged(nameof(TourBody)); OnPropertyChanged(nameof(TourProgress)); }
     [RelayCommand] private void StartTour() { if (ActiveIndex < 0) OpenSample(); TourStep = 0; }
@@ -665,7 +689,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _commonOnly;
     [RelayCommand] private void ToggleGhostBelow() { GhostBelow = !GhostBelow; Changed?.Invoke(); }
     [RelayCommand] private void ToggleGhostAbove() { GhostAbove = !GhostAbove; Changed?.Invoke(); }
-    [RelayCommand] private void ToggleCommonOnly() { CommonOnly = !CommonOnly; Status = CommonOnly ? "Parties communes seulement" : "Tout afficher"; Changed?.Invoke(); }
+    [RelayCommand] private void ToggleCommonOnly() { CommonOnly = !CommonOnly; Status = CommonOnly ? T("commononly") : T("showall"); Changed?.Invoke(); }
 
     [ObservableProperty] private int _straightenTolerance = 30;
     [ObservableProperty] private int _straightenAngle = 5;
@@ -673,44 +697,44 @@ public partial class MainViewModel : ObservableObject
     public (IReadOnlyList<(Guid WallId, List<PointMm> Outline)> Shapes, string Info)? StraightenPreview()
     {
         if (CurrentLevel is not { } l || SelectedWalls.Count == 0) return null;
-        var shapes = BuildingActions.PreviewStraighten(l, SelectedWalls.ToList(), StraightenTolerance, StraightenAngle);
+        var shapes = BuildingActions.PreviewStraighten(l, SelectedWalls.ToList(), StraightenTolerance, StraightenAngle, StraightenWithCadastre ? ReferenceAngles() : null);
         var before = l.Walls.Where(w => SelectedWalls.Contains(w.Id)).Sum(w => w.Footprint.Count); var after = shapes.Sum(x => x.Outline.Count);
         return (shapes, $"{before} → {after} segments");
     }
     [RelayCommand] private void MakeRectangular()
     {
         if (CurrentLevel is not { } l || SelectedWalls.Count == 0) { Status = T("status.need.selection"); return; }
-        Actions.MakeWallsRectangular(l.Id, SelectedWalls.ToList()); Status = "Murs rendus rectangulaires"; Refresh();
+        Actions.MakeWallsRectangular(l.Id, SelectedWalls.ToList()); Status = T("rectified"); Refresh();
     }
     /// <summary>Straightens the selected walls (tolerance 30 mm, 5°) as one history step.</summary>
     [RelayCommand] private void StraightenSelection()
     {
-        if (CurrentLevel is not { } l || SelectedWalls.Count == 0) { Status = "Sélectionnez des murs à redresser"; return; }
+        if (CurrentLevel is not { } l || SelectedWalls.Count == 0) { Status = T("straighten.select"); return; }
         var before = l.Walls.Where(w => SelectedWalls.Contains(w.Id)).Sum(w => w.Footprint.Count);
-        Actions.StraightenWalls(l.Id, SelectedWalls.ToList(), StraightenTolerance, StraightenAngle); var after = CurrentLevel!.Walls.Where(w => SelectedWalls.Contains(w.Id)).Sum(w => w.Footprint.Count);
-        Status = $"Redressé : {before} → {after} segments"; Refresh();
+        Actions.StraightenWalls(l.Id, SelectedWalls.ToList(), StraightenTolerance, StraightenAngle, StraightenWithCadastre ? ReferenceAngles() : null); var after = CurrentLevel!.Walls.Where(w => SelectedWalls.Contains(w.Id)).Sum(w => w.Footprint.Count);
+        Status = T("straightened", before, after); Refresh();
     }
 
     // ---- Documents ----
     [RelayCommand] private void NewDocument()
     {
         var d = new Doc(); d.Building.Name = ""; AddDoc(d);
-        Actions.AddLevel("RDC", 0, 2700, LevelKind.Ground); CurrentLevelId = Building.Levels[0].Id; History.MarkClean(); Refresh(); Status = "Nouvel immeuble";
+        Actions.AddLevel(Token("level.ground"), 0, 2700, LevelKind.Ground); CurrentLevelId = Building.Levels[0].Id; History.MarkClean(); Refresh(); Status = T("new.building");
     }
     /// <summary>Opens an autosaved building after a crash; it stays dirty so closing asks to save it.</summary>
-    public void AdoptRecovered(Building b) { var d = new Doc { Building = b }; AddDoc(d); Actions.AddLevel("(récupéré)", 0); Status = "Travail récupéré après un arrêt inattendu"; }
-    [RelayCommand] private void OpenSample() { var d = new Doc { Building = SampleBuilding.Create().Building }; d.Building.Name = "Exemple"; AddDoc(d); Status = "Exemple ouvert — essayez d'importer un plan"; }
+    public void AdoptRecovered(Building b) { var d = new Doc { Building = b }; AddDoc(d); Actions.AddLevel(Token("recovered.level"), 0); Status = T("recovered"); }
+    [RelayCommand] private void OpenSample() { var d = new Doc { Building = SampleBuilding.Create().Building }; d.Building.Name = Token("sample.name"); AddDoc(d); Status = T("sample.opened"); }
     [RelayCommand] private void SwitchTab(int index) { if (index >= 0 && index < Docs.Count) Activate(index); }
     [RelayCommand] private void JumpTo(int index) { History.JumpTo(Building, index); SelectedWalls.Clear(); Refresh(); }
 
     [RelayCommand] private async Task OpenAsync()
     {
         try { if (await Dialogs.PickOpenAsync("Immeuble", "*.immeuble") is { } p) OpenFile(p); }
-        catch (Exception ex) { await Fail("ouvrir", ex); }
+        catch (Exception ex) { await Fail(T("fail.open"), ex); }
     }
     [RelayCommand] private async Task OpenRecentAsync(string path)
     {
-        try { OpenFile(path); } catch (Exception ex) { Settings.RecentFiles.Remove(path); RecentFiles.Remove(path); await Fail("ouvrir", ex); }
+        try { OpenFile(path); } catch (Exception ex) { Settings.RecentFiles.Remove(path); RecentFiles.Remove(path); await Fail(T("fail.open"), ex); }
     }
     [RelayCommand] private async Task SaveAsync() { await SaveActiveAsync(false); }
     [RelayCommand] private async Task SaveAsAsync() { await SaveActiveAsync(true); }
@@ -723,7 +747,7 @@ public partial class MainViewModel : ObservableObject
             path ??= await Dialogs.PickSaveAsync("Immeuble", "*.immeuble", Active.Title + ".immeuble"); if (path == null) return false;
             SaveTo(path); return true;
         }
-        catch (Exception ex) { await Fail("enregistrer", ex); return false; }
+        catch (Exception ex) { await Fail(T("fail.save"), ex); return false; }
     }
 
     /// <summary>Closes a tab; asks to save when there are unsaved changes. Returns false when the user cancels.</summary>
@@ -755,7 +779,7 @@ public partial class MainViewModel : ObservableObject
             var sw = System.Diagnostics.Stopwatch.StartNew();
             if (await Dialogs.RunImportWizardAsync(File.ReadAllBytes(path)) is { } wiz) { var n = ApplyWizard(wiz); OnLog?.Invoke($"Import plan {Path.GetFileName(path)}: {n} shapes in {sw.ElapsedMilliseconds} ms"); }
         }
-        catch (Exception ex) { await Fail("importer", ex); }
+        catch (Exception ex) { await Fail(T("fail.import"), ex); }
     }
     /// <summary>"ask" opens the export dialog (format, levels, networks, units); any other value exports that format directly with everything included.</summary>
     [RelayCommand] private async Task ImportIfcAsync()
@@ -763,12 +787,12 @@ public partial class MainViewModel : ObservableObject
         try
         {
             if (await Dialogs.PickOpenAsync("IFC", "*.ifc") is not { } path) return;
-            if (ActiveIndex < 0) NewDocument();
+            if (ActiveIndex < 0) AddDoc(new Doc());                                   // an empty building: the IFC brings its own storeys
             var r = IfcImport.ImportInto(Actions, File.ReadAllText(path));
-            CurrentLevelId = Building.Levels.FirstOrDefault()?.Id ?? CurrentLevelId; Status = $"IFC : {r.Building.Levels.Count} niveau(x), {r.Walls} mur(s)" + (r.Warnings.Count > 0 ? $" — {r.Warnings.Count} avertissement(s)" : ""); OnLog?.Invoke($"Imported IFC {Path.GetFileName(path)}: {r.Building.Levels.Count} levels, {r.Walls} walls, {r.Warnings.Count} warnings");
+            CurrentLevelId = Building.Levels.FirstOrDefault()?.Id ?? CurrentLevelId; Status = T("ifc.done", r.Building.Levels.Count, r.Walls) + (r.Warnings.Count > 0 ? T("ifc.warnings", r.Warnings.Count) : ""); OnLog?.Invoke($"Imported IFC {Path.GetFileName(path)}: {r.Building.Levels.Count} levels, {r.Walls} walls, {r.Warnings.Count} warnings");
             Refresh(); ViewFitRequested?.Invoke();
         }
-        catch (Exception ex) { await Fail("importer l'IFC", ex); }
+        catch (Exception ex) { await Fail(T("fail.importifc"), ex); }
     }
 
     /// <summary>Reference model (OBJ / GLB) on the current level: a locked mesh shown as a section under the plan, to trace over.</summary>
@@ -777,10 +801,10 @@ public partial class MainViewModel : ObservableObject
         try
         {
             if (ActiveIndex < 0 || CurrentLevel is not { } l) return;
-            if (await Dialogs.PickOpenAsync("Modèle de référence (.obj, .glb)", "*.obj;*.glb") is not { } path) return;
-            Actions.AddReference(l.Id, ReferenceImport.FromFile(path)); Status = "Modèle de référence ajouté (verrouillé)"; OnLog?.Invoke($"Reference model {Path.GetFileName(path)}"); Refresh(); ViewFitRequested?.Invoke();
+            if (await Dialogs.PickOpenAsync(T("ref.pick"), "*.obj;*.glb") is not { } path) return;
+            Actions.AddReference(l.Id, ReferenceImport.FromFile(path)); Status = T("ref.added"); OnLog?.Invoke($"Reference model {Path.GetFileName(path)}"); Refresh(); ViewFitRequested?.Invoke();
         }
-        catch (Exception ex) { await Fail("importer le modèle", ex); }
+        catch (Exception ex) { await Fail(T("fail.importref"), ex); }
     }
 
     [RelayCommand] private async Task ExportAsync(string format)
@@ -805,19 +829,19 @@ public partial class MainViewModel : ObservableObject
                 case "svg": File.WriteAllText(path, SvgExporter.Export(data.Levels.FirstOrDefault(l => l.Id == CurrentLevelId) ?? data.Levels.FirstOrDefault() ?? new Level())); break;
                 default: File.WriteAllText(path, Exporters.All.First(x => x.Id == format).Export(Building, options)); break;
             }
-            Status = "Exporté " + Path.GetFileName(path); OnLog?.Invoke($"Exported {format} to {path}");
+            Status = T("exported", Path.GetFileName(path)); OnLog?.Invoke($"Exported {format} to {path}");
         }
-        catch (Exception ex) { await Fail("exporter", ex); }
+        catch (Exception ex) { await Fail(T("fail.export"), ex); }
     }
     public event Action<string>? OnLog;
     public event Action<string, Exception>? OnError;
-    private async Task Fail(string what, Exception ex) { OnError?.Invoke(what, ex); Status = $"Erreur ({what}) : {ex.Message}"; await Dialogs.ShowErrorAsync("ImmeubleCad", $"Impossible de {what} : {ex.Message}"); }
+    private async Task Fail(string what, Exception ex) { OnError?.Invoke(what, ex); Status = T("error.status", what, ex.Message); await Dialogs.ShowErrorAsync("ImmeubleCad", T("error.dialog", what, ex.Message)); }
 
     [RelayCommand] private void AddLevel()
     {
         var top = Building.Levels.Count == 0 ? 0 : Building.Levels.Max(l => l.AltitudeMm + l.HeightMm);
-        var lv = Actions.AddLevel(Building.Levels.Count == 0 ? "RDC" : $"R+{Building.Levels.Count}", top);
-        CurrentLevelId = lv.Id; Status = $"{Building.Levels.Count} niveau(x)"; Refresh();
+        var lv = Actions.AddLevel(Building.Levels.Count == 0 ? Token("level.ground") : Token("level.n", Building.Levels.Count), top);
+        CurrentLevelId = lv.Id; Status = T("levels.count", Building.Levels.Count); Refresh();
     }
 
     /// <summary>Chain of centre points → one rectangle per segment, committed as one history step.</summary>
@@ -833,12 +857,12 @@ public partial class MainViewModel : ObservableObject
             rects.Add([new(pts[i - 1].X + nx, pts[i - 1].Y + ny), new(pts[i].X + nx, pts[i].Y + ny), new(pts[i].X - nx, pts[i].Y - ny), new(pts[i - 1].X - nx, pts[i - 1].Y - ny)]);
         }
         if (rects.Count == 0) return;
-        Actions.ImportWalls(lv.Id, rects); Status = $"{rects.Count} mur(s) ajouté(s)"; Refresh();
+        Actions.ImportWalls(lv.Id, rects); Status = T("walls.added", rects.Count); Refresh();
     }
 
     public void SaveTo(string path)
     {
-        BuildingFile.Save(Building, path, Images); History.MarkClean(); Active.FilePath = path; Status = "Enregistré " + Path.GetFileName(path); Remember(path); Refresh();
+        BuildingFile.Save(Building, path, Images); History.MarkClean(); Active.FilePath = path; Status = T("saved", Path.GetFileName(path)); Remember(path); Refresh();
     }
     private void Remember(string path)
     {
@@ -849,25 +873,25 @@ public partial class MainViewModel : ObservableObject
     {
         var existing = Docs.FindIndex(d => d.FilePath == path); if (existing >= 0) { Activate(existing); return; }   // already open: switch to its tab
         var (b, imgs) = BuildingFile.Load(path);
-        AddDoc(new Doc { Building = b, Images = imgs, FilePath = path }); Status = "Ouvert " + Path.GetFileName(path); Remember(path);
+        AddDoc(new Doc { Building = b, Images = imgs, FilePath = path }); Status = T("opened", Path.GetFileName(path)); Remember(path);
     }
     public void LoadFrom(string path) => OpenFile(path);
     /// <summary>Applies a finished wizard to the current level: walls + background, one history step each.</summary>
     public int ApplyWizard(ImportWizardViewModel w)
     {
         if (CurrentLevel is not { } l) return 0;
-        var n = w.Apply(Actions, l, Images); Status = $"{n} groupe(s) de murs importé(s)"; Refresh(); ViewFitRequested?.Invoke(); return n;
+        var n = w.Apply(Actions, l, Images); Status = T("import.done", n); Refresh(); ViewFitRequested?.Invoke(); return n;
     }
 
     public int ImportPlan(string imagePath, double pxPerMm)
     {
         if (CurrentLevel is not { } l) return 0;
         var n = PlanImport.Import(Actions, l.Id, File.ReadAllBytes(imagePath), new Calibration(pxPerMm, pxPerMm), new PlanWallDetectorAdapter());
-        Status = $"{n} groupe(s) de murs importé(s)"; Refresh(); return n;
+        Status = T("import.done", n); Refresh(); return n;
     }
     public void Export(string format, string path)
     {
-        File.WriteAllText(path, ImmeubleCad.Core.Export.Exporters.All.First(x => x.Id == format).Export(Building)); Status = "Exporté " + Path.GetFileName(path);
+        File.WriteAllText(path, ImmeubleCad.Core.Export.Exporters.All.First(x => x.Id == format).Export(Building)); Status = T("exported", Path.GetFileName(path));
     }
     public string BomCsv() => Bom.ToCsv(Building);
 }

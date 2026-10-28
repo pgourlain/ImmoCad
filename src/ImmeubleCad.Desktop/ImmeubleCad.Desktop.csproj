@@ -21,5 +21,6 @@
     <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.0" />
     <ProjectReference Include="..\ImmeubleCad.Core\ImmeubleCad.Core.csproj" />
     <ProjectReference Include="..\ImmeubleCad.Mcp\ImmeubleCad.Mcp.csproj" />
+    <ProjectReference Include="..\ImmeubleCad.Geo\ImmeubleCad.Geo.csproj" />
   </ItemGroup>
 </Project>

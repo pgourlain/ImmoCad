@@ -45,7 +45,7 @@ public static class GltfExporter
                 MeshBuilder.ExtrudeWall(w.Footprint.Select(p => (p.X, p.Y)).ToList(), l.AltitudeMm, w.HeightMm ?? l.HeightMm, m);
                 foreach (var h in w.Holes) MeshBuilder.ExtrudeSides(h.Select(p => (p.X, p.Y)).ToList(), l.AltitudeMm, w.HeightMm ?? l.HeightMm, m);
             }
-            if (m.VertexCount > 0) children.Add(AddMesh("level_" + l.Name, m, 0));
+            if (m.VertexCount > 0) children.Add(AddMesh("level_" + l.DisplayName, m, 0));
         }
         foreach (var n in b.Networks)
         {
@@ -61,7 +61,7 @@ public static class GltfExporter
             children.Add(AddMesh("network_" + n.Name, m, mi));
         }
         Align(bin);
-        nodes.Add(new { name = b.Name.Length > 0 ? b.Name : "building", children }); var root = nodes.Count - 1;
+        nodes.Add(new { name = b.Name.Length > 0 ? b.DisplayName : "building", children }); var root = nodes.Count - 1;
         var gltf = new Dictionary<string, object>
         {
             ["asset"] = new { version = "2.0", generator = "ImmeubleCad" }, ["scene"] = 0, ["scenes"] = new[] { new { nodes = new[] { root } } },

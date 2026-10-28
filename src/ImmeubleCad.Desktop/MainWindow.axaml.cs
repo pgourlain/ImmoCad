@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Microsoft.Extensions.Logging;
+using static ImmeubleCad.Core.Translations;
 
 namespace ImmeubleCad.Desktop;
 
@@ -76,10 +77,10 @@ public partial class MainWindow : Window
         DataContextChanged += (_, _) =>
         {
             Vm.Dialogs = new AvaloniaDialogService(this);
-            Vm.Changed += () => { Plan.Invalidate(); SyncView3D(); Elev.InvalidateVisual(); };
+            Vm.Changed += () => { Plan.Invalidate(); SyncView3D(); Elev.InvalidateVisual(); SiteMap.InvalidateVisual(); };
             Vm.OnLog += m => Log.LogInformation("{Message}", m);
             Vm.OnError += (what, ex) => Log.LogError(ex, "Failed to {What}", what);
-            Vm.RecentFiles.CollectionChanged += (_, _) => BuildMenus();
+            Vm.RecentFiles.CollectionChanged += (_, _) => BuildMenus(); Vm.LanguageRefreshed += BuildMenus;
             Plan.CursorMoved += p => Vm.Status = $"X {p.X / 1000.0:0.00} m   Y {p.Y / 1000.0:0.00} m";
             Vm.TransitionHandler = HandleTransition;
             KeyDown += OnWindowKey;
@@ -123,7 +124,7 @@ public partial class MainWindow : Window
     {
         var text = AppLogProvider.SystemInfo() + "\n\n--- log ---\n" + App.Log.Tail(200);
         if (Clipboard != null) await Clipboard.SetTextAsync(text);
-        Vm.Status = "Informations système copiées";
+        Vm.Status = T("sysinfo.copied");
     }
 
     private async void ShowAbout() => await new AboutDialog().ShowDialog(this);

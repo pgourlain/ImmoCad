@@ -391,6 +391,10 @@ Place the building on its real plot, using French open data (IGN Géoplateforme,
 - [ ] On a building with non-90° corners, Straighten with the cadastre reference keeps the real corner angles (within 1°), and the scale/stretch suggestion matches a manual calibration within 1 %.
 - [ ] With the network off, a building opened before still shows its site from the cache.
 
+## Cross-cutting — Language
+
+- [x] **One language at a time.** The whole UI is English by default (menus, tool tips, panels, dialogs, status and hint lines, wizard, errors, exported text such as bill-of-materials headings); French is a complete second language; never both in the same screen. The language is switchable at runtime (View › Language, persisted in the settings), without restarting. A test fails when a key is missing in one language or a user-visible string is a hard-coded literal. *(English default, French complete, 470 keys; `vm:L.*` attached properties for XAML (no reflection bindings); View › Language switches at runtime and is persisted; generated names (levels, rooms, cellars, sample) are language tokens, names typed by the user stay as typed; MCP tool descriptions and log lines stay English, they are not UI. Tests: key parity, no French letters in English text, no hard-coded literals in views/view-models, whole window text scanned in both languages.)*
+
 ## Criteria for the MVP (0.1)
 
 - [ ] Import JPG plans for several levels, calibrate, detect walls, align levels.

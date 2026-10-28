@@ -206,7 +206,7 @@ public class ActionTests
         var ids = Enumerable.Range(0, 3).Select(i => a.AddSpace(l.Id, [new(i * 2000, 0), new(i * 2000 + 1800, 0), new(i * 2000 + 1800, 2000), new(i * 2000, 2000)], "", SpaceKind.Cellar).Id).ToList();
         Assert.All(b.Levels[0].Spaces, s => Assert.Equal(Stability.Common, s.Stability));
         AssertUndoExact(b, h, () => a.NumberSpaces(l.Id, ids, "Cave ", 12));
-        Assert.Equal(["Cave 12", "Cave 13", "Cave 14"], b.Levels[0].Spaces.Select(s => s.Name));
+        Assert.Equal(["Cave 12", "Cave 13", "Cave 14"], b.Levels[0].Spaces.Select(s => s.DisplayName));
     }
 
     [Fact] public void Door_defaults_by_level_kind_and_flip()
@@ -288,7 +288,7 @@ public class SettingsTests
         SettingsStore.Save(s, p);
         var r = SettingsStore.Load(p);
         Assert.Equal(10, r.RecentFiles.Count); Assert.Equal("f5", r.RecentFiles[0]); Assert.Equal(150, r.RiserTemplates[0].SpacingMm);
-        File.WriteAllText(p, "{ not json"); Assert.Equal("fr", SettingsStore.Load(p).Language);
+        File.WriteAllText(p, "{ not json"); Assert.Equal("en", SettingsStore.Load(p).Language);
     }
 
     [Fact] public void Autosave_offers_recovery_only_after_a_crash()
@@ -364,8 +364,8 @@ public class ExportTests
     [Fact] public void Bom_full_counts_fittings_equipment_and_rounds_bars()
     {
         var b = Sample(); var csv = ImmeubleCad.Core.Export.BomFull.ToCsv(b, roundToBars: true);
-        Assert.Contains($"equipment,,{ImmeubleCad.Core.Catalog.EquipmentCatalog.Find("radiator")!.Name},,1,pcs", csv);
-        Assert.Contains("bars of 3 m", csv);
+        Assert.Contains($"équipement,,{ImmeubleCad.Core.Catalog.EquipmentCatalog.Find("radiator")!.Name},,1,pcs", csv);
+        Assert.Contains("barres de 3 m", csv);
         var pdf = System.Text.Encoding.Latin1.GetString(ImmeubleCad.Core.Export.BomFull.ToPdf(b));
         Assert.StartsWith("%PDF-1.4", pdf); Assert.Contains("%%EOF", pdf); Assert.Contains(ImmeubleCad.Core.Catalog.EquipmentCatalog.Find("radiator")!.Name.Replace("é", "\u00e9"), pdf.Replace("\u00e9", "\u00e9"));
     }
@@ -377,7 +377,7 @@ public class ExportTests
         Assert.Equal(6.9, Bom.Pipes(b).Single().LengthM, 3);
         var f = ImmeubleCad.Core.Export.BomFull.Fittings(b);
         Assert.Equal(2, f.Single(x => x.Kind == FittingKind.Elbow90).Count);
-        Assert.Contains("pipe,ColdWater,pipe,22,3,bars of 3 m", ImmeubleCad.Core.Export.BomFull.ToCsv(b, true).Replace("\r", ""));
+        Assert.Contains("tuyau,ColdWater,tuyau,22,3,barres de 3 m", ImmeubleCad.Core.Export.BomFull.ToCsv(b, true).Replace("\r", ""));
     }
 }
 
@@ -1062,7 +1062,7 @@ public class SiteFitTests
     [Fact] public void Scale_check_reports_a_wider_plan_and_angle_check_lists_the_skewed_corner()
     {
         var plan = Rect(0, 0, 10280, 6000); var foot = Rect(0, 0, 10000, 6000); var sug = FootprintFit.CheckScale(plan, foot)!;
-        Assert.Equal(2.8, sug.WidthPercent, 6); Assert.Equal(0, sug.HeightPercent, 6); Assert.Contains("2.8 % wider", sug.Message); Assert.Contains("matches", FootprintFit.CheckScale(foot, foot)!.Message);
+        Assert.Equal(2.8, sug.WidthPercent, 6); Assert.Equal(0, sug.HeightPercent, 6); Assert.Contains("2.8 % plus large", sug.Message); Assert.Contains("correspond", FootprintFit.CheckScale(foot, foot)!.Message);
         var skew = new List<PointMm> { new(0, 0), new(10000, 0), new(10000, 6000), new(600, 6000) };                                           // top-left corner no longer 90°
         var bad = FootprintFit.AngleCheck(skew, foot, 2); Assert.Contains(bad, m => m.At == new PointMm(600, 6000) && Math.Abs(m.DiffDeg) > 2); Assert.Empty(FootprintFit.AngleCheck(foot, foot));
     }
@@ -1099,5 +1099,17 @@ public class GeoreferencedExportTests
         Assert.Contains("Licence Ouverte", new ImmeubleCad.Core.Export.DxfExporter().Export(b)); Assert.Contains("<desc>Cadastre", ImmeubleCad.Core.Export.SvgExporter.Export(b.Levels[0], b.Site)); Assert.Contains("rotate(-12", ImmeubleCad.Core.Export.SvgExporter.Export(b.Levels[0], b.Site));
         var plain = SampleBuilding.Create().Building; Assert.DoesNotContain("IFCMAPCONVERSION", new ImmeubleCad.Core.Export.IfcExporter().Export(plain)); Assert.DoesNotContain("<desc>", ImmeubleCad.Core.Export.SvgExporter.Export(plain.Levels[0]));
         Assert.Equal(12, BuildingJson.Deserialize(BuildingJson.Serialize(b)).Site!.RotationDeg);                   // survives save/load
+    }
+}
+
+public class WebMercatorTests
+{
+    [Fact] public void Tile_of_a_point_contains_it_and_corners_are_consistent_with_lambert()
+    {
+        var (x, y) = ImmeubleCad.Core.Site.WebMercator.TileOf(45.7640, 4.8357, 17); Assert.Equal((67296, 46753), (x, y));       // 2^17 tiles across: x = (4.8357+180)/360·131072
+        var (lat, lon) = ImmeubleCad.Core.Site.WebMercator.CornerOf(x, y, 17); var (lat2, lon2) = ImmeubleCad.Core.Site.WebMercator.CornerOf(x + 1, y + 1, 17);
+        Assert.InRange(45.7640, lat2, lat); Assert.InRange(4.8357, lon, lon2);
+        var c = ImmeubleCad.Core.Site.WebMercator.LambertCorners(x, y, 17); var w = Math.Sqrt(Math.Pow(c.TR.E - c.TL.E, 2) + Math.Pow(c.TR.N - c.TL.N, 2));
+        Assert.InRange(w, 205, 222);                                                                                            // a z17 tile is 305.7 m at the equator × cos(45.76°) ≈ 213 m of ground
     }
 }

@@ -1,11 +1,11 @@
-<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        x:Class="ImmeubleCad.Desktop.AboutDialog" Title="À propos" Width="460" SizeToContent="Height" CanResize="False" WindowStartupLocation="CenterOwner">
+<Window xmlns:vm="using:ImmeubleCad.Desktop" xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="ImmeubleCad.Desktop.AboutDialog" vm:L.Title="about.title" Width="460" SizeToContent="Height" CanResize="False" WindowStartupLocation="CenterOwner">
   <StackPanel Margin="24" Spacing="12" HorizontalAlignment="Center">
     <Image Source="avares://ImmeubleCad/Assets/icon.png" Width="96" Height="96" />
-    <TextBlock Text="ImmeubleCad" FontSize="26" FontWeight="Light" HorizontalAlignment="Center" />
+    <TextBlock vm:L.Text="app.name" FontSize="26" FontWeight="Light" HorizontalAlignment="Center" />
     <TextBlock x:Name="Info" TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" Opacity="0.75" />
-    <TextBlock Text="Licence MIT — © 2026 Pierrick Gourlain" HorizontalAlignment="Center" Opacity="0.75" />
-    <TextBlock Text="Données cartographiques : © IGN / DGFiP — Licence Ouverte 2.0" HorizontalAlignment="Center" Opacity="0.75" TextWrapping="Wrap" TextAlignment="Center" />
-    <Button x:Name="Ok" Content="OK" HorizontalAlignment="Center" IsDefault="True" Margin="0,8,0,0" />
+    <TextBlock vm:L.Text="about.license" HorizontalAlignment="Center" Opacity="0.75" />
+    <TextBlock vm:L.Text="about.data" HorizontalAlignment="Center" Opacity="0.75" TextWrapping="Wrap" TextAlignment="Center" />
+    <Button x:Name="Ok" vm:L.Content="btn.ok" HorizontalAlignment="Center" IsDefault="True" Margin="0,8,0,0" />
   </StackPanel>
 </Window>

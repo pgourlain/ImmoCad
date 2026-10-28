@@ -503,6 +503,21 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
             return n;
         }, _ => levelId);
 
+    /// <summary>Scales a level about the origin (the cadastre says the plan is too wide / too long): the background and, optionally, the walls. One history step.</summary>
+    public void ScaleLevel(Guid levelId, double sx, double sy, bool moveWalls = true) =>
+        Edit("Scale level", BuildingEventKind.LevelChanged, () =>
+        {
+            var l = Find(levelId); var t = l.ImageTransform;
+            if (t is { Length: 6 }) l.ImageTransform = [t[0] * sx, t[1] * sx, t[2] * sx, t[3] * sy, t[4] * sy, t[5] * sy];
+            if (moveWalls)
+            {
+                PointMm M(PointMm p) => new((int)Math.Round(p.X * sx), (int)Math.Round(p.Y * sy));
+                foreach (var w in l.Walls) { w.Footprint = w.Footprint.Select(M).ToList(); w.Holes = w.Holes.Select(h => h.Select(M).ToList()).ToList(); }
+                foreach (var sp in l.Spaces) sp.Outline = sp.Outline.Select(M).ToList();
+            }
+            return levelId;
+        }, i => i);
+
     public ReferenceMesh AddReference(Guid levelId, ReferenceMesh mesh) =>
         Edit("Add reference model", BuildingEventKind.LevelChanged, () => { Find(levelId).References.Add(mesh); return mesh; }, _ => levelId);
 
@@ -513,13 +528,13 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
         Edit("Set stability", BuildingEventKind.LevelChanged, () => { Find(levelId).Spaces.First(s => s.Id == spaceId).Stability = stability; return spaceId; }, i => i);
 
     /// <summary>Numbers the given spaces in order ("Cave 1", "Cave 2"…) as one history step; also labels their doors.</summary>
-    public void NumberSpaces(Guid levelId, IReadOnlyList<Guid> spaceIds, string prefix = "Cave ", int start = 1) =>
+    public void NumberSpaces(Guid levelId, IReadOnlyList<Guid> spaceIds, string? prefix = null, int start = 1) =>
         Edit("Number spaces", BuildingEventKind.LevelChanged, () =>
         {
             var l = Find(levelId); var n = start;
             foreach (var id in spaceIds)
             {
-                var sp = l.Spaces.First(x => x.Id == id); sp.Number = n.ToString(); sp.Name = prefix + n;
+                var sp = l.Spaces.First(x => x.Id == id); sp.Number = n.ToString(); sp.Name = prefix == null || prefix == Translations.T("cellar.prefix") ? Translations.Token("cellar.name", n) : prefix + n;
                 foreach (var w in l.Walls)
                     foreach (var o in w.Openings.Where(o => o.Kind == OpeningKind.Door && IsOnOutline(w, o, sp)))
                         o.Label = sp.Name;

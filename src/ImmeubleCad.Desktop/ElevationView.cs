@@ -5,6 +5,7 @@ using Avalonia.Media;
 using ImmeubleCad.Core.Geometry;
 using ImmeubleCad.Core.Model;
 using ImmeubleCad.Core.Networks;
+using static ImmeubleCad.Core.Translations;
 
 namespace ImmeubleCad.Desktop;
 
@@ -91,7 +92,7 @@ public class ElevationView : Control
         {
             var y = S(0, l.AltitudeMm).Y;
             ctx.DrawLine(new Pen(new SolidColorBrush(Color.FromRgb(90, 140, 220)), 1, DashStyle.Dash), new(_ox - 10, y), new(Bounds.Width, y));
-            ctx.DrawText(new FormattedText($"{l.Name}  {l.AltitudeMm / 1000.0:0.00} m", System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 11, txt), new Point(Bounds.Width - 130, y - 14));
+            ctx.DrawText(new FormattedText($"{l.DisplayName}  {l.AltitudeMm / 1000.0:0.00} m", System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 11, txt), new Point(Bounds.Width - 130, y - 14));
         }
         ctx.DrawLine(new Pen(new SolidColorBrush(Color.FromRgb(90, 140, 220)), 1, DashStyle.Dash), new(_ox - 10, S(0, top).Y), new(Bounds.Width, S(0, top).Y));
         // pipes in the plane
@@ -110,6 +111,6 @@ public class ElevationView : Control
         // rubber band
         if (_endDrag != null && _now is { } en) ctx.DrawLine(new Pen(Brushes.DodgerBlue, 2, DashStyle.Dash), new Point(S(_endDrag.Value.U, 0).X, en.Y), new Point(S(_endDrag.Value.U, 0).X + 30, en.Y));
         else if (_down is { } d && _now is { } n) ctx.DrawLine(new Pen(Brushes.OrangeRed, 2, DashStyle.Dash), Vm.IsRiserTool ? new Point(d.X, S(0, _z0).Y) : S(ToU(d.X), _z0), Vm.IsRiserTool ? new Point(d.X, n.Y) : new Point(n.X, S(0, _z0).Y));
-        ctx.DrawText(new FormattedText($"Élévation — {plane.Length / 1000.0:0.00} m", System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 14, txt), new Point(12, 8));
+        ctx.DrawText(new FormattedText(ImmeubleCad.Core.Translations.T("elev.title", (plane.Length / 1000.0).ToString("0.00")), System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 14, txt), new Point(12, 8));
     }
 }

@@ -78,7 +78,11 @@ public sealed class IgnCadastre(HttpClient http, DiskCache cache) : CachedHttp(h
 
 public sealed class IgnTiles(HttpClient http, DiskCache cache) : CachedHttp(http, cache), IMapTileSource
 {
-    public const string Attribution = "© IGN / DGFiP — Licence Ouverte 2.0";
-    public Task<byte[]?> GetTileAsync(string layer, int z, int x, int y, CancellationToken ct = default) =>
-        GetAsync($"https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={layer}&STYLE=normal&FORMAT=image/jpeg&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}", ct);
+    public static string Attribution => ImmeubleCad.Core.Translations.T("attribution");
+    public const string Orthophoto = "ORTHOIMAGERY.ORTHOPHOTOS", PlanIgn = "GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2", Cadastre = "CADASTRALPARCELS.PARCELLAIRE_EXPRESS";
+    public Task<byte[]?> GetTileAsync(string layer, int z, int x, int y, CancellationToken ct = default)
+    {
+        var (format, style) = layer == Orthophoto ? ("image/jpeg", "normal") : layer == Cadastre ? ("image/png", "PCI vecteur") : ("image/png", "normal");
+        return GetAsync($"https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={layer}&STYLE={Uri.EscapeDataString(style)}&FORMAT={format}&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}", ct);
+    }
 }

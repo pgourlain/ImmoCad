@@ -63,7 +63,7 @@ public sealed class ObjExporter : IBuildingExporter
                 MeshBuilder.ExtrudeWall(w.Footprint.Select(p => (p.X, p.Y)).ToList(), l.AltitudeMm, F.WallHeight(l, w), m);
                 foreach (var h in w.Holes) MeshBuilder.ExtrudeSides(h.Select(p => (p.X, p.Y)).ToList(), l.AltitudeMm, F.WallHeight(l, w), m);
             }
-            if (m.VertexCount > 0) Write("level_" + l.Name, m);
+            if (m.VertexCount > 0) Write("level_" + l.DisplayName, m);
         }
         foreach (var n in b.Networks)
         {
@@ -87,7 +87,7 @@ public sealed class DxfExporter : IBuildingExporter
     public string Id => "dxf"; public string Extension => ".dxf"; public string Purpose => "2D drawing for AutoCAD, LibreCAD, QCAD: one layer per level and per network.";
     public string Export(Building b)
     {
-        var sb = new StringBuilder((b.Site != null ? "999\nCadastre: IGN / DGFiP - Licence Ouverte 2.0\n" : "") + $"0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n9\n$INSUNITS\n70\n{(_k == 1 ? 4 : 6)}\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n");
+        var sb = new StringBuilder((b.Site != null ? $"999\n{Translations.T("export.attribution")}\n" : "") + $"0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n9\n$INSUNITS\n70\n{(_k == 1 ? 4 : 6)}\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n");
         void Line(string layer, double x1, double y1, double z1, double x2, double y2, double z2) =>
             sb.Append($"0\nLINE\n8\n{layer}\n10\n{F.N(x1 * _k)}\n20\n{F.N(y1 * _k)}\n30\n{F.N(z1 * _k)}\n11\n{F.N(x2 * _k)}\n21\n{F.N(y2 * _k)}\n31\n{F.N(z2 * _k)}\n");
         foreach (var l in b.Levels)
@@ -95,7 +95,7 @@ public sealed class DxfExporter : IBuildingExporter
                 for (var i = 0; i < w.Footprint.Count; i++)
                 {
                     var p = w.Footprint[i]; var q = w.Footprint[(i + 1) % w.Footprint.Count];
-                    Line("WALLS_" + l.Name, p.X, p.Y, l.AltitudeMm, q.X, q.Y, l.AltitudeMm);
+                    Line("WALLS_" + l.DisplayName, p.X, p.Y, l.AltitudeMm, q.X, q.Y, l.AltitudeMm);
                 }
         foreach (var n in b.Networks)
             foreach (var s in n.Segments)
@@ -117,7 +117,7 @@ public sealed class FreeCadMacroExporter : IBuildingExporter
         var sb = new StringBuilder("import FreeCAD, Part\nfrom FreeCAD import Vector as V\ndoc = FreeCAD.newDocument('Immeuble')\n");
         foreach (var l in b.Levels)
         {
-            sb.AppendLine($"# level {l.Name}");
+            sb.AppendLine($"# level {l.DisplayName}");
             foreach (var w in l.Walls)
             {
                 var pts = string.Join(", ", w.Footprint.Select(p => $"V({p.X},{p.Y},{l.AltitudeMm})"));
@@ -165,12 +165,12 @@ public sealed class IfcExporter : IBuildingExporter
         string Axis(string loc, string? axis = null, string? refDir = null) => E($"IFCAXIS2PLACEMENT3D({loc},{axis ?? "$"},{refDir ?? "$"})");
         string Place(string? rel, string axis) => E($"IFCLOCALPLACEMENT({rel ?? "$"},{axis})");
 
-        sb.AppendLine($"ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('ViewDefinition [CoordinationView]'{(b.Site != null ? ",'Cadastre: © IGN / DGFiP - Licence Ouverte 2.0'" : "")}),'2;1');\nFILE_NAME('building.ifc','',(''),(''),'ImmeubleCad','ImmeubleCad','');\nFILE_SCHEMA(('IFC4'));\nENDSEC;\nDATA;");
+        sb.AppendLine($"ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('ViewDefinition [CoordinationView]'{(b.Site != null ? ",'" + Translations.T("export.attribution").Replace("'", "''") + "'" : "")}),'2;1');\nFILE_NAME('building.ifc','',(''),(''),'ImmeubleCad','ImmeubleCad','');\nFILE_SCHEMA(('IFC4'));\nENDSEC;\nDATA;");
         var origin = Pt(0, 0, 0); var wcs = Axis(origin); var zDir = Dir(0, 0, 1); var xDir = Dir(1, 0, 0);
         var ctx = E($"IFCGEOMETRICREPRESENTATIONCONTEXT($,'Model',3,1.E-05,{wcs},$)");
         var length = E("IFCSIUNIT(*,.LENGTHUNIT.,.MILLI.,.METRE.)"); var area = E("IFCSIUNIT(*,.AREAUNIT.,$,.SQUARE_METRE.)"); var angle = E("IFCSIUNIT(*,.PLANEANGLEUNIT.,$,.RADIAN.)");
         var units = E($"IFCUNITASSIGNMENT(({length},{area},{angle}))");
-        var proj = E($"IFCPROJECT('{G()}',$,'{Esc(b.Name)}',$,$,$,$,({ctx}),{units})");
+        var proj = E($"IFCPROJECT('{G()}',$,'{Esc(b.DisplayName)}',$,$,$,$,({ctx}),{units})");
         var sitePl = Place(null, wcs);
         string Dms(double deg) { var sign = deg < 0 ? -1 : 1; deg = Math.Abs(deg); var d = (int)deg; var m = (int)((deg - d) * 60); var sec = (int)((deg - d - m / 60.0) * 3600); var micro = (int)Math.Round(((deg - d - m / 60.0) * 3600 - sec) * 1e6); return $"({sign * d},{sign * m},{sign * sec},{sign * micro})"; }
         var geo = "$,$,$";                                                                                        // RefLatitude, RefLongitude, RefElevation
@@ -181,7 +181,7 @@ public sealed class IfcExporter : IBuildingExporter
             var metre = E("IFCSIUNIT(*,.LENGTHUNIT.,$,.METRE.)"); var crs = E($"IFCPROJECTEDCRS('EPSG:2154','RGF93 / Lambert-93',$,$,'Lambert-93','',{metre})");
             var r = st2.RotationDeg * Math.PI / 180; E($"IFCMAPCONVERSION({ctx},{crs},{N(st2.EastM)},{N(st2.NorthM)},{N(st2.AltitudeM)},{N(Math.Cos(r))},{N(Math.Sin(r))},0.001)");
         }
-        var bldPl = Place(sitePl, wcs); var bld = E($"IFCBUILDING('{G()}',$,'{Esc(b.Name)}',$,$,{bldPl},$,$,.ELEMENT.,$,$,$)");
+        var bldPl = Place(sitePl, wcs); var bld = E($"IFCBUILDING('{G()}',$,'{Esc(b.DisplayName)}',$,$,{bldPl},$,$,.ELEMENT.,$,$,$)");
         E($"IFCRELAGGREGATES('{G()}',$,$,$,{proj},({site}))"); E($"IFCRELAGGREGATES('{G()}',$,$,$,{site},({bld}))");
 
         string ProfileOf(IReadOnlyList<PointMm> ring, IEnumerable<IReadOnlyList<PointMm>>? holes = null)
@@ -202,7 +202,7 @@ public sealed class IfcExporter : IBuildingExporter
         var storeyPl = new Dictionary<Guid, string>(); var storeyRef = new Dictionary<Guid, string>(); var contained = new Dictionary<Guid, List<string>>();
         foreach (var l in b.Levels)
         {
-            var pl = Place(bldPl, Axis(Pt(0, 0, l.AltitudeMm))); var st = E($"IFCBUILDINGSTOREY('{G()}',$,'{Esc(l.Name)}',$,$,{pl},$,$,.ELEMENT.,{N(l.AltitudeMm)})");
+            var pl = Place(bldPl, Axis(Pt(0, 0, l.AltitudeMm))); var st = E($"IFCBUILDINGSTOREY('{G()}',$,'{Esc(l.DisplayName)}',$,$,{pl},$,$,.ELEMENT.,{N(l.AltitudeMm)})");
             E($"IFCRELAGGREGATES('{G()}',$,$,$,{bld},({st}))"); storeyPl[l.Id] = pl; storeyRef[l.Id] = st; contained[l.Id] = new();
             foreach (var w in l.Walls.Where(w => w.Footprint.Count >= 3))
             {
@@ -273,7 +273,7 @@ public static class SvgExporter
         var pts = l.Walls.SelectMany(w => w.Footprint).ToList();
         if (pts.Count == 0) return "<svg xmlns=\"http://www.w3.org/2000/svg\"/>";
         int x0 = pts.Min(p => p.X), x1 = pts.Max(p => p.X), y0 = pts.Min(p => p.Y), y1 = pts.Max(p => p.Y);
-        var sb = new StringBuilder($"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"{x0} {-y1} {x1 - x0} {y1 - y0}\"><title>{System.Net.WebUtility.HtmlEncode(l.Name)}</title>");
+        var sb = new StringBuilder($"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"{x0} {-y1} {x1 - x0} {y1 - y0}\"><title>{System.Net.WebUtility.HtmlEncode(l.DisplayName)}</title>");
         foreach (var w in l.Walls)
             sb.Append("<path fill-rule=\"evenodd\" fill=\"#444\" stroke=\"#000\" d=\"")
               .Append(string.Join(" ", new[] { w.Footprint }.Concat(w.Holes).Select(r => "M" + string.Join(" L", r.Select(p => $"{p.X},{-p.Y}")) + " Z"))).Append("\"/>");
@@ -281,7 +281,7 @@ public static class SvgExporter
         {   // north arrow (rotated by the site rotation) and the data attribution
             var r = -site.RotationDeg; var w = x1 - x0; var h = y1 - y0; var size = Math.Max(w, h) * 0.08; var cx = x1 - size; var cy = -y1 + size * 1.5;
             sb.Append($"<g transform=\"translate({F.N(cx)} {F.N(cy)}) rotate({F.N(r)})\"><polygon points=\"0,{F.N(-size)} {F.N(size * 0.3)},{F.N(size * 0.4)} 0,{F.N(size * 0.2)} {F.N(-size * 0.3)},{F.N(size * 0.4)}\" fill=\"#222\"/><text x=\"0\" y=\"{F.N(-size * 1.15)}\" font-size=\"{F.N(size * 0.6)}\" text-anchor=\"middle\">N</text></g>");
-            sb.Append($"<desc>Cadastre: © IGN / DGFiP - Licence Ouverte 2.0</desc>");
+            sb.Append($"<desc>{Translations.T("export.attribution")}</desc>");
         }
         return sb.Append("</svg>").ToString();
     }

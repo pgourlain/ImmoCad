@@ -1,6 +1,7 @@
 using System.Text;
 using ImmeubleCad.Core.Model;
 using ImmeubleCad.Core.Networks;
+using static ImmeubleCad.Core.Translations;
 
 namespace ImmeubleCad.Core.Export;
 
@@ -23,20 +24,20 @@ public static class BomFull
 
     public static string ToCsv(Building b, bool roundToBars = false)
     {
-        var sb = new StringBuilder("section,network,item,diameter_mm,quantity,unit\n");
-        foreach (var p in Bom.Pipes(b)) sb.AppendLine($"pipe,{p.Network},pipe,{p.DiameterMm},{(roundToBars ? Math.Ceiling(p.LengthM / BarLengthM) : Math.Round(p.LengthM, 3)).ToString(System.Globalization.CultureInfo.InvariantCulture)},{(roundToBars ? "bars of 3 m" : "m")}");
-        foreach (var f in Fittings(b)) sb.AppendLine($"fitting,{f.Network},{f.Kind},{f.DiameterMm},{f.Count},pcs");
-        foreach (var e in Equipment(b)) sb.AppendLine($"equipment,,{e.Name},,{e.Count},pcs");
+        var sb = new StringBuilder(T("bom.csv.header") + "\n");
+        foreach (var p in Bom.Pipes(b)) sb.AppendLine($"{T("bom.sec.pipe")},{p.Network},{T("bom.sec.pipe")},{p.DiameterMm},{(roundToBars ? Math.Ceiling(p.LengthM / BarLengthM) : Math.Round(p.LengthM, 3)).ToString(System.Globalization.CultureInfo.InvariantCulture)},{(roundToBars ? T("bom.bars") : "m")}");
+        foreach (var f in Fittings(b)) sb.AppendLine($"{T("bom.sec.fitting")},{f.Network},{f.Kind},{f.DiameterMm},{f.Count},pcs");
+        foreach (var e in Equipment(b)) sb.AppendLine($"{T("bom.sec.equipment")},,{e.Name},,{e.Count},pcs");
         return sb.ToString();
     }
 
     /// <summary>Minimal single-page text PDF of the bill of materials (no external library).</summary>
     public static byte[] ToPdf(Building b)
     {
-        var lines = new List<string> { $"Bill of materials - {b.Name}", "" };
-        lines.Add("Pipes"); lines.AddRange(Bom.Pipes(b).Select(p => $"  {p.Network}  DN{p.DiameterMm}  {p.LengthM:0.00} m  ({Math.Ceiling(p.LengthM / BarLengthM)} bars of 3 m)"));
-        lines.Add(""); lines.Add("Fittings"); lines.AddRange(Fittings(b).Select(f => $"  {f.Network}  {f.Kind}  DN{f.DiameterMm}  x{f.Count}"));
-        lines.Add(""); lines.Add("Equipment"); lines.AddRange(Equipment(b).Select(e => $"  {e.Name}  x{e.Count}"));
+        var lines = new List<string> { $"{T("bom.title")} - {b.DisplayName}", "" };
+        lines.Add(T("bom.pipes")); lines.AddRange(Bom.Pipes(b).Select(p => $"  {p.Network}  DN{p.DiameterMm}  {p.LengthM:0.00} m  ({Math.Ceiling(p.LengthM / BarLengthM)} {T("bom.bars")})"));
+        lines.Add(""); lines.Add(T("bom.fittings")); lines.AddRange(Fittings(b).Select(f => $"  {f.Network}  {f.Kind}  DN{f.DiameterMm}  x{f.Count}"));
+        lines.Add(""); lines.Add(T("bom.equipment")); lines.AddRange(Equipment(b).Select(e => $"  {e.Name}  x{e.Count}"));
         var content = new StringBuilder("BT /F1 11 Tf 50 790 Td 14 TL\n");
         foreach (var l in lines.Take(52)) content.Append('(').Append(l.Replace("\\", "\\\\").Replace("(", "\\(").Replace(")", "\\)")).Append(") Tj T*\n");
         content.Append("ET");

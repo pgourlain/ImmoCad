@@ -9,10 +9,10 @@ public static class Spaces
     /// <summary>CSV of spaces: lot numbers only, never owner names.</summary>
     public static string ToCsv(Building b)
     {
-        var sb = new StringBuilder("level,kind,number,name,lot,area_m2,stability\n");
+        var sb = new StringBuilder(Translations.T("spaces.csv.header") + "\n");
         foreach (var l in b.Levels)
             foreach (var s in l.Spaces)
-                sb.AppendLine($"{Q(l.Name)},{s.Kind},{Q(s.Number)},{Q(s.Name)},{Q(s.Lot)},{SpaceFinder.AreaMm2(s.Outline) / 1e6:0.##},{s.Stability}");
+                sb.AppendLine($"{Q(l.DisplayName)},{s.Kind},{Q(s.Number)},{Q(s.DisplayName)},{Q(s.Lot)},{SpaceFinder.AreaMm2(s.Outline) / 1e6:0.##},{s.Stability}");
         return sb.ToString();
     }
     private static string Q(string? v) => v == null ? "" : v.Contains(',') || v.Contains('"') ? "\"" + v.Replace("\"", "\"\"") + "\"" : v;

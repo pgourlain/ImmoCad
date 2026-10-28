@@ -9,6 +9,7 @@ using ImmeubleCad.Core.Catalog;
 using ImmeubleCad.Core.Tools;
 using ImmeubleCad.Core.Geometry;
 using ImmeubleCad.Core.IO;
+using static ImmeubleCad.Core.Translations;
 
 namespace ImmeubleCad.Desktop;
 
@@ -61,10 +62,10 @@ public class PlanView : Control
     {
         var menu = new ContextMenu();
         MenuItem Item(string h, Action a, bool enabled = true) { var m = new MenuItem { Header = h, IsEnabled = enabled }; m.Click += (_, _) => { a(); InvalidateVisual(); }; return m; }
-        menu.Items.Add(Item("Terminer", () => t.Finish(), t.Points.Count >= 2));
-        menu.Items.Add(Item("Annuler le dernier point", () => t.Backspace(), t.Points.Count > 1));
-        menu.Items.Add(Item("Fermer le contour", () => t.Close(), t.Points.Count >= 3));
-        menu.Items.Add(Item("Annuler", () => t.Cancel()));
+        menu.Items.Add(Item(T("ctx.finish"), () => t.Finish(), t.Points.Count >= 2));
+        menu.Items.Add(Item(T("ctx.undolast"), () => t.Backspace(), t.Points.Count > 1));
+        menu.Items.Add(Item(T("ctx.close"), () => t.Close(), t.Points.Count >= 3));
+        menu.Items.Add(Item(T("btn.cancel"), () => t.Cancel()));
         menu.Open(this);
     }
     internal StretchHandle? StretchActiveForTest => _stretch;
@@ -233,7 +234,7 @@ public class PlanView : Control
     private void FinishHandle(MainViewModel vm)
     {
         var t = _handleTool!; _handleTool = null; _typed = "";
-        vm.AfterEdit(t.Committed ? "Tuyau modifié" : t.Refused ?? "Aucun changement"); InvalidateVisual();
+        vm.AfterEdit(t.Committed ? T("pipe.modified") : t.Refused ?? T("nochange")); InvalidateVisual();
     }
 
     private static int Snap(int v, int g) => g <= 0 ? v : (int)Math.Round((double)v / g) * g;
@@ -344,7 +345,7 @@ public class PlanView : Control
             var g = new StreamGeometry(); using (var c = g.Open()) { c.BeginFigure(ToScreen(sp.Outline[0]), true); foreach (var p in sp.Outline.Skip(1)) c.LineTo(ToScreen(p)); c.EndFigure(true); }
             ctx.DrawGeometry(new SolidColorBrush(pending ? Color.FromArgb(90, 255, 160, 0) : sp.Stability == Stability.Common ? Color.FromArgb(34, 80, 160, 255) : Color.FromArgb(22, 120, 200, 120)), null, g);
             var cx = (int)sp.Outline.Average(p => p.X); var cy = (int)sp.Outline.Average(p => p.Y); var cs = ToScreen(new PointMm(cx, cy));
-            var label = sp.Number != null ? $"{sp.Name}" : sp.Name; var ft = Txt(label, 12, dark ? Brushes.Gainsboro : Brushes.DimGray);
+            var label = sp.DisplayName; var ft = Txt(label, 12, dark ? Brushes.Gainsboro : Brushes.DimGray);
             ctx.DrawText(ft, new Point(cs.X - ft.Width / 2, cs.Y - ft.Height / 2));
         }
     }
@@ -396,7 +397,28 @@ public class PlanView : Control
             ctx.DrawGeometry(null, new Pen(Brushes.LimeGreen, 2.5), g);                 // straightened outline over the original
             foreach (var p in outline) ctx.DrawRectangle(Brushes.White, new Pen(Brushes.LimeGreen, 1.5), new Rect(ToScreen(p).X - 3, ToScreen(p).Y - 3, 6, 6));
         }
-        var first = ToScreen(pv.Shapes[0].Outline[0]); ctx.DrawText(Txt(pv.Info + " — Entrée pour appliquer", 13, Brushes.ForestGreen), new Point(first.X + 10, first.Y - 22));
+        var first = ToScreen(pv.Shapes[0].Outline[0]); ctx.DrawText(Txt(pv.Info + T("press.enter.apply"), 13, Brushes.ForestGreen), new Point(first.X + 10, first.Y - 22));
+    }
+
+    /// <summary>Cadastral footprint as a dashed reference outline (party walls drawn thicker and labelled), plus a north arrow rotated by the site rotation.</summary>
+    private void DrawSiteOverlay(DrawingContext ctx, bool dark)
+    {
+        if (Vm?.Building.Site is not { } site) return;
+        if (Vm.ShowFootprint && Vm.FootprintModel() is { } f && f.Count >= 3)
+        {
+            var shared = Vm.PartyWallEdges().ToHashSet(); var pen = new Pen(Brushes.MediumVioletRed, 1.6, DashStyle.Dash);
+            for (var i = 0; i < f.Count; i++)
+            {
+                var a = ToScreen(f[i]); var b = ToScreen(f[(i + 1) % f.Count]);
+                if (shared.Contains(i)) { ctx.DrawLine(new Pen(Brushes.MediumVioletRed, 4), a, b); ctx.DrawText(Txt(T("party.wall"), 11, Brushes.MediumVioletRed), new Point((a.X + b.X) / 2 + 6, (a.Y + b.Y) / 2 - 16)); }
+                else ctx.DrawLine(pen, a, b);
+            }
+        }
+        var c = new Point(Bounds.Width - 46, 56); var r = -site.RotationDeg * Math.PI / 180;     // the model's Y axis points site.RotationDeg° from north: the arrow turns the other way
+        ctx.DrawEllipse(new SolidColorBrush(Color.FromArgb(170, 255, 255, 255)), new Pen(Brushes.Gray, 1), c, 22, 22);
+        Point Rot(double x, double y) => new(c.X + x * Math.Cos(r) - y * Math.Sin(r), c.Y + x * Math.Sin(r) + y * Math.Cos(r));
+        var g = new StreamGeometry(); using (var cx = g.Open()) { cx.BeginFigure(Rot(0, -17), true); cx.LineTo(Rot(7, 9)); cx.LineTo(Rot(0, 4)); cx.LineTo(Rot(-7, 9)); cx.EndFigure(true); }
+        ctx.DrawGeometry(Brushes.Black, null, g); ctx.DrawText(Txt("N", 11, Brushes.Black), Rot(-4, -33));
     }
 
     private void DrawMeasure(DrawingContext ctx)
@@ -526,6 +548,7 @@ public class PlanView : Control
             var pen = new Pen(new SolidColorBrush(Color.FromArgb(150, 160, 90, 200)), 1.2, DashStyle.Dash);
             foreach (var (a, c) in ReferenceImport.Slice(rm, l.AltitudeMm + 1000)) ctx.DrawLine(pen, ToScreen(a), ToScreen(c));
         }
+        DrawSiteOverlay(ctx, dark);
         DrawSpaces(ctx, l, dark);
         DrawOpenings(ctx, l, dark);
         DrawNetworks(ctx, l, dark);
@@ -550,8 +573,8 @@ public class PlanView : Control
                 {   // input box near the cursor: length (Tab → angle), Enter applies
                     var box = new Rect(ToScreen(pv).X + 12, ToScreen(pv).Y + 8, 150, 46);
                     ctx.DrawRectangle(Brushes.White, new Pen(Brushes.OrangeRed, 1.5), box, 4, 4);
-                    ctx.DrawText(new FormattedText($"{(_chainField == 0 ? "▶ " : "  ")}Longueur : {_chainTyped} m", System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 12, Brushes.Black), box.TopLeft + new Point(6, 5));
-                    ctx.DrawText(new FormattedText($"{(_chainField == 1 ? "▶ " : "  ")}Angle : {_chainAngle}°", System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 12, Brushes.Black), box.TopLeft + new Point(6, 24));
+                    ctx.DrawText(new FormattedText($"{(_chainField == 0 ? "▶ " : "  ")}{T("typed.length", _chainTyped)}", System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 12, Brushes.Black), box.TopLeft + new Point(6, 5));
+                    ctx.DrawText(new FormattedText($"{(_chainField == 1 ? "▶ " : "  ")}{T("typed.angle", _chainAngle)}", System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 12, Brushes.Black), box.TopLeft + new Point(6, 24));
                 }
             }
         }
@@ -568,7 +591,7 @@ public class PlanView : Control
             }
             if (Vm.AlignPending is { } pd) ctx.DrawEllipse(Brushes.Orange, new Pen(Brushes.White, 2), ToScreen(new PointMm((int)pd.X, (int)pd.Y)), 6, 6);
         }
-        var label = new FormattedText($"{l.Name}  ·  {l.AltitudeMm / 1000.0:0.0} m", System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 14, dark ? Brushes.Gainsboro : Brushes.DimGray);
+        var label = new FormattedText($"{l.DisplayName}  ·  {l.AltitudeMm / 1000.0:0.0} m", System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 14, dark ? Brushes.Gainsboro : Brushes.DimGray);
         ctx.DrawText(label, new Point(12, 8));
     }
 

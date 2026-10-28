@@ -37,6 +37,7 @@ public sealed class Space
     public Guid Id { get; set; } = Guid.NewGuid();
     public List<PointMm> Outline { get; set; } = new();
     public string Name { get; set; } = "";
+    [System.Text.Json.Serialization.JsonIgnore] public string DisplayName => Translations.Display(Name);
     public string? Number { get; set; }
     public SpaceKind Kind { get; set; } = SpaceKind.Room;
     public string? Lot { get; set; }
@@ -55,6 +56,8 @@ public sealed class Level
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Name { get; set; } = "";
+    /// <summary>The name in the current language when it is a generated one ("@level.n:2").</summary>
+    [System.Text.Json.Serialization.JsonIgnore] public string DisplayName => Translations.Display(Name);
     public int AltitudeMm { get; set; }
     public int HeightMm { get; set; } = 2700;
     public LevelKind Kind { get; set; } = LevelKind.Standard;
@@ -128,6 +131,7 @@ public sealed class Building
 {
     public int SchemaVersion { get; set; } = 1;
     public string Name { get; set; } = "";
+    [System.Text.Json.Serialization.JsonIgnore] public string DisplayName => Translations.Display(Name);
     public List<Level> Levels { get; set; } = new();
     public List<Network> Networks { get; set; } = new();
     public List<Equipment> Equipment { get; set; } = new();

@@ -14,7 +14,7 @@ public sealed class AppSettings
     public int SnapGridMm { get; set; } = 100;
     public bool AnimateTransitions { get; set; } = true;
     public bool ShowGhostBelow { get; set; } = true;
-    public string Language { get; set; } = "fr";
+    public string Language { get; set; } = "en";
     /// <summary>auto | light | dark</summary>
     public string Theme { get; set; } = "auto";
     public bool TourDone { get; set; }
@@ -63,10 +63,10 @@ public static class SampleBuilding
     /// <summary>3-level sample: walls, a stairwell space, a cold-water and heating riser, one radiator.</summary>
     public static (Building Building, BuildingHistory History) Create()
     {
-        var b = new Building { Name = "Exemple" }; var h = new BuildingHistory(); var a = new BuildingActions(b, h, new BuildingEventsService());
+        var b = new Building { Name = Translations.Token("sample.name") }; var h = new BuildingHistory(); var a = new BuildingActions(b, h, new BuildingEventsService());
         for (var i = 0; i < 3; i++)
         {
-            var l = a.AddLevel(i == 0 ? "RDC" : $"R+{i}", i * 2700, 2700, i == 0 ? LevelKind.Ground : LevelKind.Standard);
+            var l = a.AddLevel(i == 0 ? Translations.Token("level.ground") : Translations.Token("level.n", i), i * 2700, 2700, i == 0 ? LevelKind.Ground : LevelKind.Standard);
             a.ImportWalls(l.Id, new[]
             {
                 new[] { new PointMm(0, 0), new PointMm(8000, 0), new PointMm(8000, 200), new PointMm(0, 200) },
@@ -74,7 +74,7 @@ public static class SampleBuilding
                 new[] { new PointMm(0, 0), new PointMm(200, 0), new PointMm(200, 6000), new PointMm(0, 6000) },
                 new[] { new PointMm(7800, 0), new PointMm(8000, 0), new PointMm(8000, 6000), new PointMm(7800, 6000) },
             });
-            a.AddSpace(l.Id, [new(200, 200), new(2200, 200), new(2200, 2200), new(200, 2200)], "Cage d'escalier", SpaceKind.Stairwell);
+            a.AddSpace(l.Id, [new(200, 200), new(2200, 200), new(2200, 2200), new(200, 2200)], Translations.Token("sample.stairwell"), SpaceKind.Stairwell);
         }
         a.AddRiserTemplate(new(300, 300), 150, [NetworkType.HeatingSupply, NetworkType.HeatingReturn], 0, 8100, 28);
         a.AddEquipment(b.Levels[0].Id, "radiator", new(3000, 250), 150);

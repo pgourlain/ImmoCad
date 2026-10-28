@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using static ImmeubleCad.Core.Translations;
 using ImmeubleCad.Scene;
 
 namespace ImmeubleCad.Desktop;
@@ -67,8 +68,8 @@ public class Viewport3D : Control, IViewport3D
             ctx.DrawGeometry(new SolidColorBrush(t.Color), new Pen(new SolidColorBrush(t.Color), 0.6), g);
         }
         foreach (var l in lines) ctx.DrawLine(new Pen(new SolidColorBrush(l.Color), l.W), l.A, l.B);
-        var label = Controller.Wireframe ? "Filaire" : Controller.XRay ? "Rayons X" : "Plein";
-        ctx.DrawText(new FormattedText($"3D — {label}   (T/F/R/I : vues, glisser : orbite, molette : zoom)", System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 12, dark ? Brushes.Gainsboro : Brushes.DimGray), new Point(12, 8));
+        var label = Controller.Wireframe ? T("view3d.wire") : Controller.XRay ? T("view3d.xray") : T("view3d.solid");
+        ctx.DrawText(new FormattedText(T("view3d.label", label), System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 12, dark ? Brushes.Gainsboro : Brushes.DimGray), new Point(12, 8));
     }
 
     // wall triangulation diagonals (coplanar fan edges) are not drawn in wireframe: keep edges whose two adjacent faces differ or that border a face boundary

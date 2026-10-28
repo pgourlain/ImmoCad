@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using ImmeubleCad.Core;
 using ImmeubleCad.Core.History;
 using ImmeubleCad.Core.Import;
 using ImmeubleCad.Core.Model;
@@ -60,6 +61,18 @@ public partial class ImportWizardViewModel : ObservableObject
     }
 
     public bool IsCalibrated => Calibration != null;
+
+    // labels with their values, in the current language (bound by the view)
+    public string AngleLabel => Translations.T("wiz.angle", Angle.ToString("0.0"));
+    public string ThresholdLabel => Translations.T("wiz.threshold", Threshold);
+    public string MinThicknessLabel => Translations.T("wiz.minthick", MinThickness);
+    public string BridgeLabel => Translations.T("wiz.bridge", BridgeGap);
+    public string MinAreaLabel => Translations.T("wiz.minarea", MinArea);
+    partial void OnAngleChanged(double value) => OnPropertyChanged(nameof(AngleLabel));
+    partial void OnThresholdChanged(int value) => OnPropertyChanged(nameof(ThresholdLabel));
+    partial void OnMinThicknessChanged(int value) => OnPropertyChanged(nameof(MinThicknessLabel));
+    partial void OnBridgeGapChanged(int value) => OnPropertyChanged(nameof(BridgeLabel));
+    partial void OnMinAreaChanged(int value) => OnPropertyChanged(nameof(MinAreaLabel));
 
     public void AutoThickness() { MinThickness = PlanWallDetector.SuggestThickness(Gray!, Threshold); Message = $"≥ {MinThickness} px"; }
 

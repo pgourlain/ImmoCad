@@ -68,9 +68,9 @@ public static class FootprintFit
         var rot = AngleDiff(pa, fa); var swap = Math.Abs(rot) > 45;           // the two main axes may be exchanged
         if (swap) { (pw, ph) = (ph, pw); rot = AngleDiff(pa + 90, fa); }
         var wp = (pw / fw - 1) * 100; var hp = (ph / fh - 1) * 100;
-        string Dir(double v, string more, string less) => Math.Abs(v) < 0.5 ? "" : $"{Math.Abs(v):0.0} % {(v > 0 ? more : less)}";
-        var parts = new[] { Dir(wp, "wider", "narrower"), Dir(hp, "longer", "shorter") }.Where(x => x.Length > 0).ToList();
-        return new ScaleSuggestion(wp, hp, rot, parts.Count == 0 ? "The plan matches the cadastre." : "Your plan is " + string.Join(" and ", parts) + " than the cadastre — apply?");
+        string Dir(double v, string more, string less) => Math.Abs(v) < 0.5 ? "" : Translations.T(v > 0 ? more : less, Math.Abs(v).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture));
+        var parts = new[] { Dir(wp, "scale.wider", "scale.narrower"), Dir(hp, "scale.longer", "scale.shorter") }.Where(x => x.Length > 0).ToList();
+        return new ScaleSuggestion(wp, hp, rot, parts.Count == 0 ? Translations.T("scale.ok") : Translations.T("scale.msg", string.Join(Translations.T("scale.and"), parts)));
     }
 
     /// <summary>Corners of the plan outline whose angle differs from the footprint's matching corner by more than the threshold.</summary>

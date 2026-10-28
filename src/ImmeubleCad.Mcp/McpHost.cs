@@ -35,7 +35,7 @@ public sealed class McpSession
 public sealed class BuildingResources(McpSession s)
 {
     [McpServerResource(UriTemplate = "immeuble://buildings", Name = "buildings", MimeType = "application/json")]
-    public string Buildings() => System.Text.Json.JsonSerializer.Serialize(new[] { new { id = "current", name = s.Building.Name, path = s.Path, levels = s.Building.Levels.Count } });
+    public string Buildings() => System.Text.Json.JsonSerializer.Serialize(new[] { new { id = "current", name = s.Building.DisplayName, path = s.Path, levels = s.Building.Levels.Count } });
 
     [McpServerResource(UriTemplate = "immeuble://buildings/{id}/networks", Name = "networks", MimeType = "application/json")]
     public string Networks(string id) => System.Text.Json.JsonSerializer.Serialize(s.Building.Networks.Select(n => new { id = n.Id, n.Name, type = n.Type.ToString(), nodes = n.Nodes.Count, segments = n.Segments.Count }));
@@ -51,7 +51,7 @@ public sealed class BuildingTools(McpSession s)
     public string AddLevel(string name, int altitudeMm, int heightMm = 2700) => s.Actions.AddLevel(name, altitudeMm, heightMm).Id.ToString();
 
     [McpServerTool, Description("List levels as 'id name altitudeMm'.")]
-    public string[] ListLevels() => s.Building.Levels.Select(l => $"{l.Id} {l.Name} {l.AltitudeMm}").ToArray();
+    public string[] ListLevels() => s.Building.Levels.Select(l => $"{l.Id} {l.DisplayName} {l.AltitudeMm}").ToArray();
 
     [McpServerTool, Description("Add a vertical riser (pipe) at XY mm between two altitudes in a new network. Returns the network id.")]
     public string AddRiser(string type, int xMm, int yMm, int fromZMm, int toZMm, int diameterMm = 20)

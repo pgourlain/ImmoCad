@@ -33,6 +33,10 @@ public partial class App : Application
             var vm = new MainViewModel(startWithSample: false) { Settings = settings, SettingsPath = settingsPath };
             foreach (var f in settings.RecentFiles.Where(File.Exists)) vm.RecentFiles.Add(f);
             vm.ApplyTheme(settings.Theme);
+            // map data: IGN Géoplateforme over HTTP with a disk cache, so a site already seen still shows offline
+            var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) }; http.DefaultRequestHeaders.UserAgent.ParseAdd("ImmeubleCad/1.0");
+            var cache = new ImmeubleCad.Geo.DiskCache(Path.Combine(dir, "cache"));
+            vm.Geo = new SiteData(new ImmeubleCad.Geo.IgnGeocoder(http, cache), new ImmeubleCad.Geo.IgnCadastre(http, cache), new ImmeubleCad.Geo.IgnTiles(http, cache));
             Translations.Language = settings.Language;
             var win = new MainWindow { DataContext = vm, Width = settings.WindowWidth, Height = settings.WindowHeight };
             win.Opened += (_, _) =>
