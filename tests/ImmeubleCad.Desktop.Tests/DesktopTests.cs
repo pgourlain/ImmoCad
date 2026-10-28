@@ -31,7 +31,7 @@ public static class HeadlessExtensions
 
 public static class TestInit
 {
-    [System.Runtime.CompilerServices.ModuleInitializer] public static void Init() { ImmeubleCad.Core.Translations.Language = "fr"; MainWindow.UseOpenGL = false; Environment.SetEnvironmentVariable("IMMEUBLECAD_DATA_DIR", Path.Combine(Path.GetTempPath(), "immeublecad-tests-" + Environment.ProcessId)); }   // headless tests draw 3D in software
+    [System.Runtime.CompilerServices.ModuleInitializer] public static void Init() { Directory.CreateDirectory(Path.Combine(AppContext.BaseDirectory, "screenshots")); ImmeubleCad.Core.Translations.Language = "fr"; MainWindow.UseOpenGL = false; Environment.SetEnvironmentVariable("IMMEUBLECAD_DATA_DIR", Path.Combine(Path.GetTempPath(), "immeublecad-tests-" + Environment.ProcessId)); }   // headless tests draw 3D in software
 }
 
 public static class TestAppBuilder
