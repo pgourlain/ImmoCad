@@ -963,3 +963,67 @@ public class ExportOptionsTests
         Assert.DoesNotContain("R+1", new ImmeubleCad.Core.Export.IfcExporter().Export(b, o)); Assert.DoesNotContain("R+1", new ImmeubleCad.Core.Export.FreeCadMacroExporter().Export(b, o));
     }
 }
+
+public class IfcRoundTripTests
+{
+    [Fact] public void Exported_ifc_has_units_context_storeys_geometry_valves_colours_and_matching_references()
+    {
+        var (b, h) = SampleBuilding.Create(); var a = new BuildingActions(b, h, new BuildingEventsService()); var net = b.Networks[0];
+        var seg = a.AddPipeRun(a.AddNetwork("ECS", NetworkType.DomesticHotWater).Id, [new(1000, 1000, 2400), new(3000, 1000, 2400)], 20)[0]; var ecs = b.Networks[^1]; a.InsertComponent(ecs.Id, seg.Id, new(2000, 1000, 2400), "shutoff-valve");
+        var ifc = new ImmeubleCad.Core.Export.IfcExporter().Export(b);
+        foreach (var t in new[] { "IFCPROJECT", "IFCUNITASSIGNMENT", "IFCSIUNIT(*,.LENGTHUNIT.,.MILLI.,.METRE.)", "IFCGEOMETRICREPRESENTATIONCONTEXT", "IFCSITE", "IFCBUILDING(", "IFCBUILDINGSTOREY", "IFCWALL(", "IFCEXTRUDEDAREASOLID", "IFCPIPESEGMENT", "IFCCIRCLEPROFILEDEF", "IFCVALVE(", "IFCSPACEHEATER(", "IFCSURFACESTYLE", "IFCDISTRIBUTIONSYSTEM", "IFCRELCONTAINEDINSPATIALSTRUCTURE", "IFCARBITRARYCLOSEDPROFILEDEF" }) Assert.Contains(t, ifc);
+        Assert.Equal(3, System.Text.RegularExpressions.Regex.Matches(ifc, "IFCBUILDINGSTOREY\\(").Count); Assert.Equal(12, System.Text.RegularExpressions.Regex.Matches(ifc, "IFCWALL\\(").Count);
+        // every #reference points at an entity that exists, and ids are unique
+        var ids = System.Text.RegularExpressions.Regex.Matches(ifc, "^#(\\d+)=", System.Text.RegularExpressions.RegexOptions.Multiline).Select(m => int.Parse(m.Groups[1].Value)).ToList();
+        Assert.Equal(ids.Count, ids.Distinct().Count()); var set = ids.ToHashSet();
+        foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(ifc, "#(\\d+)")) Assert.Contains(int.Parse(m.Groups[1].Value), set);
+        Assert.All(System.Text.RegularExpressions.Regex.Matches(ifc, "'([0-3][0-9A-Za-z_$]{21})'").Select(m => m.Groups[1].Value), g => Assert.Equal(22, g.Length));      // IfcGloballyUniqueId format
+    }
+
+    [Fact] public void Import_reads_back_storeys_walls_holes_and_heights_and_goes_through_actions()
+    {
+        var b = new Building { Name = "Test" }; var h = new BuildingHistory(); var a = new BuildingActions(b, h, new BuildingEventsService());
+        var l0 = a.AddLevel("RDC", 0); var l1 = a.AddLevel("R+1", 2800, 2600);
+        a.ImportWallShapes(l0.Id, [((IEnumerable<PointMm>)new List<PointMm> { new(0, 0), new(5000, 0), new(5000, 4000), new(0, 4000) }, (IEnumerable<IEnumerable<PointMm>>)new List<IEnumerable<PointMm>> { new List<PointMm> { new(200, 200), new(4800, 200), new(4800, 3800), new(200, 3800) } })]);
+        a.AddWall(l1.Id, [new(0, 0), new(3000, 0), new(3000, 200), new(0, 200)], "Porteur");
+        var ifc = new ImmeubleCad.Core.Export.IfcExporter().Export(b);
+        var r = ImmeubleCad.Core.IO.IfcImport.Import(ifc);
+        Assert.Equal(2, r.Building.Levels.Count); Assert.Equal(2, r.Walls); Assert.Empty(r.Warnings); Assert.Equal("Test", r.Building.Name);
+        Assert.Equal(("RDC", 0, 2800), (r.Building.Levels[0].Name, r.Building.Levels[0].AltitudeMm, r.Building.Levels[0].HeightMm));       // height = distance to the next storey
+        var w0 = r.Building.Levels[0].Walls[0]; Assert.Equal(b.Levels[0].Walls[0].Footprint, w0.Footprint); Assert.Equal(b.Levels[0].Walls[0].Holes[0], w0.Holes[0]); Assert.Equal(2700, w0.HeightMm);
+        Assert.Equal("Porteur", r.Building.Levels[1].Walls[0].Label); Assert.Equal(2800, r.Building.Levels[1].AltitudeMm);
+        var target = new Building(); var h2 = new BuildingHistory(); var a2 = new BuildingActions(target, h2, new BuildingEventsService()); var steps = h2.Items.Count;
+        ImmeubleCad.Core.IO.IfcImport.ImportInto(a2, ifc); Assert.Equal(2, target.Levels.Count); Assert.True(h2.Items.Count > steps); while (h2.CanUndo) h2.Undo(target); Assert.Empty(target.Levels);
+    }
+
+    [Fact] public void Import_handles_metre_units_and_foreign_garbage_gracefully()
+    {
+        var text = "ISO-10303-21;\nDATA;\n#1=IFCSIUNIT(*,.LENGTHUNIT.,$,.METRE.);\n#2=IFCBUILDINGSTOREY('x',$,'Étage',$,$,$,$,$,.ELEMENT.,3.);\n#3=IFCWALL('y',$,'W',$,$,$,$,$,$);\n#4=IFCRELCONTAINEDINSPATIALSTRUCTURE('z',$,$,$,(#3),#2);\nENDSEC;\nEND-ISO-10303-21;";
+        var r = ImmeubleCad.Core.IO.IfcImport.Import(text); Assert.Single(r.Building.Levels); Assert.Equal(3000, r.Building.Levels[0].AltitudeMm); Assert.Equal(0, r.Walls); Assert.NotEmpty(r.Warnings);
+        Assert.Empty(ImmeubleCad.Core.IO.IfcImport.Import("not an ifc file at all").Building.Levels);
+    }
+}
+
+public class ReferenceModelTests
+{
+    private static string BoxObj() => "v 0 0 0\nv 4 0 0\nv 4 3 0\nv 0 3 0\nv 0 0 2.7\nv 4 0 2.7\nv 4 3 2.7\nv 0 3 2.7\nf 1 2 3 4\nf 5 6 7 8\nf 1 2 6 5\nf 2 3 7 6\nf 3 4 8 7\nf 4 1 5 8\n";
+
+    [Fact] public void Obj_import_triangulates_quads_converts_units_and_slices_into_a_closed_section()
+    {
+        var m = ImmeubleCad.Core.IO.ReferenceImport.FromObj("box", BoxObj());
+        Assert.Equal(24, m.Positions.Count); Assert.Equal(12 * 3, m.Indices.Count); Assert.Equal(4000, m.Positions.Where((_, i) => i % 3 == 0).Max()); Assert.Equal(2700, m.Positions.Where((_, i) => i % 3 == 2).Max());
+        var section = ImmeubleCad.Core.IO.ReferenceImport.Slice(m, 1000); Assert.True(section.Count >= 4);
+        Assert.All(section.SelectMany(s => new[] { s.A, s.B }), p => Assert.True((p.X is 0 or 4000) || (p.Y is 0 or 3000)));      // the cut lies on the walls of the box
+        Assert.Empty(ImmeubleCad.Core.IO.ReferenceImport.Slice(m, 5000));
+    }
+
+    [Fact] public void Our_own_glb_round_trips_as_a_reference_mesh_and_actions_are_undoable()
+    {
+        var (b, h) = SampleBuilding.Create(); var glb = ImmeubleCad.Core.Export.GltfExporter.ExportGlb(b); var m = ImmeubleCad.Core.IO.ReferenceImport.FromGlb("sample.glb", glb);
+        Assert.True(m.Positions.Count > 100); Assert.Equal(8000, m.Positions.Where((_, i) => i % 3 == 0).Max()); Assert.Equal(6000, m.Positions.Where((_, i) => i % 3 == 1).Max());   // X east / Y north survive the Y-up round trip
+        Assert.Equal(8100, m.Positions.Where((_, i) => i % 3 == 2).Max());
+        var a = new BuildingActions(b, h, new BuildingEventsService()); var before = BuildingJson.Serialize(b); a.AddReference(b.Levels[0].Id, m); Assert.Single(b.Levels[0].References);
+        var json = BuildingJson.Serialize(b); Assert.Single(BuildingJson.Deserialize(json).Levels[0].References); h.Undo(b); Assert.Equal(before, BuildingJson.Serialize(b));
+        Assert.Throws<InvalidDataException>(() => ImmeubleCad.Core.IO.ReferenceImport.FromGlb("x", new byte[40])); Assert.Throws<NotSupportedException>(() => ImmeubleCad.Core.IO.ReferenceImport.FromFile("a.stl"));
+    }
+}

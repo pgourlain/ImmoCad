@@ -65,3 +65,17 @@ public class McpTests
         using var _ = JsonDocument.Parse(line!);
     }
 }
+
+public class McpExportAliasTests
+{
+    [Fact] public void Named_export_tools_ifc_import_and_reference_models()
+    {
+        var s = new McpSession(); var t = new BuildingTools(s); var lv = t.AddLevel("RDC", 0); t.AddWall(lv, 0, 0, 4000, 200); t.AddRiser("ColdWater", 100, 100, 0, 2700);
+        var d = Path.Combine(Path.GetTempPath(), "mcpx" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(d);
+        t.ExportIfc(Path.Combine(d, "a.ifc")); t.ExportFreecadMacro(Path.Combine(d, "a.FCMacro")); t.ExportDxf(Path.Combine(d, "a.dxf")); t.ExportGltf(Path.Combine(d, "a.glb"));
+        Assert.Contains("IFCWALL", File.ReadAllText(Path.Combine(d, "a.ifc"))); Assert.Contains("makeCylinder", File.ReadAllText(Path.Combine(d, "a.FCMacro"))); Assert.Contains("LINE", File.ReadAllText(Path.Combine(d, "a.dxf"))); Assert.True(File.ReadAllBytes(Path.Combine(d, "a.glb")).Length > 100);
+        var other = new McpSession(); var t2 = new BuildingTools(other); Assert.StartsWith("1 level(s), 1 wall(s)", t2.ImportIfc(Path.Combine(d, "a.ifc")));
+        File.WriteAllText(Path.Combine(d, "box.obj"), "v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nf 1 2 3 4\n"); Assert.Equal("ok", t2.ImportReference(other.Building.Levels[0].Id.ToString(), Path.Combine(d, "box.obj"))); Assert.Single(other.Building.Levels[0].References);
+        Directory.Delete(d, true);
+    }
+}

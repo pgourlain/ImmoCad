@@ -743,3 +743,22 @@ public class ExportDialogTests
         Assert.NotNull(d.Result); Assert.True(d.Result!.Options.Metres); Assert.Equal(3, d.Result.Options.Levels!.Count);
     }, CancellationToken.None);
 }
+
+public class ImportExportUiTests
+{
+    private readonly HeadlessFixture f = new();
+
+    [Fact] public Task Import_ifc_and_reference_model_through_the_menu_commands() => f.Session.Dispatch(async () =>
+    {
+        var dlg = new FakeDialogService(); var src = new MainViewModel(); var tmp = Path.Combine(Path.GetTempPath(), "imp" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(tmp);
+        var ifc = Path.Combine(tmp, "s.ifc"); File.WriteAllText(ifc, new ImmeubleCad.Core.Export.IfcExporter().Export(src.Building));
+        var obj = Path.Combine(tmp, "b.obj"); File.WriteAllText(obj, "v 0 0 0\nv 4 0 0\nv 4 3 0\nv 0 3 0\nv 0 0 2.7\nv 4 0 2.7\nv 4 3 2.7\nv 0 3 2.7\nf 1 2 3 4\nf 5 6 7 8\nf 1 2 6 5\nf 2 3 7 6\nf 3 4 8 7\nf 4 1 5 8\n");
+        var vm = new MainViewModel(startWithSample: false) { Dialogs = dlg, Settings = new() };
+        dlg.OpenAnswers.Enqueue(ifc); await vm.ImportIfcCommand.ExecuteAsync(null);                                        // no document yet → one is created
+        Assert.Equal(3, vm.Building.Levels.Count); Assert.Equal(12, vm.Building.Levels.Sum(l => l.Walls.Count)); Assert.Contains("IFC", vm.Status); Assert.True(vm.History.IsDirty);
+        dlg.OpenAnswers.Enqueue(obj); await vm.ImportReferenceCommand.ExecuteAsync(null); Assert.Single(vm.CurrentLevel!.References);
+        var w = new MainWindow { DataContext = vm, Width = 1000, Height = 700 }; w.Show(); w.UpdateLayout(); Assert.NotNull(w.CaptureRenderedFrame());
+        dlg.OpenAnswers.Enqueue(Path.Combine(tmp, "missing.ifc")); await vm.ImportIfcCommand.ExecuteAsync(null); Assert.Single(dlg.Errors);          // a missing file is reported, not thrown
+        Directory.Delete(tmp, true); w.Close();
+    }, CancellationToken.None);
+}

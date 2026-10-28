@@ -43,6 +43,14 @@ public sealed class Space
     public Stability Stability { get; set; } = Stability.Private;
 }
 
+/// <summary>A locked, non-editable 3D mesh (from glTF/OBJ) shown as a section under the level so it can be traced over. Positions are millimetres.</summary>
+public sealed class ReferenceMesh
+{
+    public string Name { get; set; } = "";
+    public List<int> Positions { get; set; } = new();   // x,y,z triples (Z up)
+    public List<int> Indices { get; set; } = new();     // triangles
+}
+
 public sealed class Level
 {
     public Guid Id { get; set; } = Guid.NewGuid();
@@ -57,6 +65,7 @@ public sealed class Level
     public bool BackgroundVisible { get; set; } = true;
     public List<Wall> Walls { get; set; } = new();
     public List<Space> Spaces { get; set; } = new();
+    public List<ReferenceMesh> References { get; set; } = new();
 }
 
 public sealed class Node

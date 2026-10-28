@@ -90,6 +90,17 @@ public sealed class BuildingTools(McpSession s)
         return path;
     }
 
+    [McpServerTool, Description("Export IFC 4 (BIM) to a file.")] public string ExportIfc(string path, bool overwrite = true) => Export("ifc", path, overwrite);
+    [McpServerTool, Description("Export a FreeCAD macro (.FCMacro) that rebuilds editable walls and pipes.")] public string ExportFreecadMacro(string path, bool overwrite = true) => Export("freecad", path, overwrite);
+    [McpServerTool, Description("Export a DXF drawing (one layer per level and per network).")] public string ExportDxf(string path, bool overwrite = true) => Export("dxf", path, overwrite);
+    [McpServerTool, Description("Export a binary glTF (.glb), one node per level and per network.")] public string ExportGltf(string path, bool overwrite = true) => Export("glb", path, overwrite);
+
+    [McpServerTool, Description("Import the storeys and walls of an IFC file into the open building (undoable).")]
+    public string ImportIfc(string path) { var r = ImmeubleCad.Core.IO.IfcImport.ImportInto(s.Actions, File.ReadAllText(s.Check(path, false))); return $"{r.Building.Levels.Count} level(s), {r.Walls} wall(s), {r.Warnings.Count} warning(s)"; }
+
+    [McpServerTool, Description("Add a locked reference mesh (.obj or .glb) to a level, shown as a section to trace over.")]
+    public string ImportReference(string levelId, string path) { s.Actions.AddReference(Guid.Parse(levelId), ImmeubleCad.Core.IO.ReferenceImport.FromFile(s.Check(path, false))); return "ok"; }
+
     [McpServerTool, Description("Save the building to a .immeuble file.")]
     public string Save(string path, bool overwrite = true) { path = s.Check(path, true, overwrite); ImmeubleCad.Core.IO.BuildingFile.Save(s.Building, path); s.History.MarkClean(); s.Path = path; return path; }
 

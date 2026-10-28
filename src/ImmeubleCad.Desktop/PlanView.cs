@@ -8,6 +8,7 @@ using ImmeubleCad.Core.Networks;
 using ImmeubleCad.Core.Catalog;
 using ImmeubleCad.Core.Tools;
 using ImmeubleCad.Core.Geometry;
+using ImmeubleCad.Core.IO;
 
 namespace ImmeubleCad.Desktop;
 
@@ -520,6 +521,11 @@ public class PlanView : Control
         var wallFill = new SolidColorBrush(dark ? Color.FromRgb(190, 192, 198) : Color.FromRgb(70, 72, 78));
         var sel = new SolidColorBrush(Color.FromRgb(255, 140, 0));
         DrawWalls(ctx, l, wallFill, new Pen(new SolidColorBrush(dark ? Colors.Black : Colors.Black), 0.8), null, Vm.SelectedWalls, sel);
+        foreach (var rm in l.References)   // locked reference mesh: horizontal section 1 m above the floor, to trace over
+        {
+            var pen = new Pen(new SolidColorBrush(Color.FromArgb(150, 160, 90, 200)), 1.2, DashStyle.Dash);
+            foreach (var (a, c) in ReferenceImport.Slice(rm, l.AltitudeMm + 1000)) ctx.DrawLine(pen, ToScreen(a), ToScreen(c));
+        }
         DrawSpaces(ctx, l, dark);
         DrawOpenings(ctx, l, dark);
         DrawNetworks(ctx, l, dark);

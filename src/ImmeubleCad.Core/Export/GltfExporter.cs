@@ -53,7 +53,7 @@ public static class GltfExporter
             foreach (var s in n.Segments)
             {
                 var a = n.Nodes.First(x => x.Id == s.A).Position; var c = n.Nodes.First(x => x.Id == s.B).Position;
-                MeshBuilder.Pipe((a.X, a.Y, a.Z), (c.X, c.Y, c.Z), s.DiameterMm, m);
+                MeshBuilder.Cylinder((a.X, a.Y, a.Z), (c.X, c.Y, c.Z), s.DiameterMm, 12, m);
             }
             if (m.VertexCount == 0) continue;
             if (!matByType.TryGetValue(n.Type, out var mi))

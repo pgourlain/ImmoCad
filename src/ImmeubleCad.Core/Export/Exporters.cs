@@ -71,7 +71,7 @@ public sealed class ObjExporter : IBuildingExporter
             foreach (var s in n.Segments)
             {
                 var a = F.Node(n, s.A).Position; var c = F.Node(n, s.B).Position;
-                MeshBuilder.Pipe((a.X, a.Y, a.Z), (c.X, c.Y, c.Z), s.DiameterMm, m);
+                MeshBuilder.Cylinder((a.X, a.Y, a.Z), (c.X, c.Y, c.Z), s.DiameterMm, 12, m);
             }
             if (m.VertexCount > 0) Write("network_" + n.Name, m);
         }
@@ -138,45 +138,119 @@ public sealed class FreeCadMacroExporter : IBuildingExporter
     }
 }
 
-/// <summary>Minimal IFC4 (STEP) skeleton: project, site, building, one storey per level, IfcWall / IfcPipeSegment entities.</summary>
+/// <summary>
+/// IFC4 (STEP) export: project with units and a geometric context, site → building → one storey per level, walls as extruded footprints
+/// (with voids for rooms), pipe segments as extruded circles, valves/meters, radiators and boilers as extruded boxes, one distribution system and colour per network.
+/// Placement: every product is placed in its storey (walls: plan coordinates, pipes: world coordinates relative to the building), lengths in millimetres.
+/// </summary>
 public sealed class IfcExporter : IBuildingExporter
 {
-    public string Export(Building b, ExportOptions o) => Export(o.Apply(b));
     public string Id => "ifc"; public string Extension => ".ifc"; public string Purpose => "BIM exchange (Revit, ArchiCAD, FreeCAD BIM, BlenderBIM).";
+    public string Export(Building b, ExportOptions o) => Export(o.Apply(b));
+
+    private static readonly Dictionary<NetworkType, (double R, double G, double B)> Colour = new()
+    {
+        [NetworkType.HeatingSupply] = (0.85, 0.12, 0.12), [NetworkType.HeatingReturn] = (0.12, 0.24, 0.85), [NetworkType.DomesticHotWater] = (0.95, 0.45, 0.1),
+        [NetworkType.ColdWater] = (0.1, 0.6, 0.95), [NetworkType.Drainage] = (0.4, 0.4, 0.4), [NetworkType.Gas] = (0.9, 0.8, 0.1),
+    };
+
     public string Export(Building b)
     {
-        var sb = new StringBuilder();
-        var id = 0;
+        var sb = new StringBuilder(); var id = 0;
         string E(string body) { id++; sb.AppendLine($"#{id}={body};"); return "#" + id; }
+        string N(double v) => v.ToString("0.###", CultureInfo.InvariantCulture) is var t && !t.Contains('.') ? t + "." : t;
+        string Pt(double x, double y, double z) => E($"IFCCARTESIANPOINT(({N(x)},{N(y)},{N(z)}))");
+        string Pt2(double x, double y) => E($"IFCCARTESIANPOINT(({N(x)},{N(y)}))");
+        string Dir(double x, double y, double z) => E($"IFCDIRECTION(({N(x)},{N(y)},{N(z)}))");
+        string Axis(string loc, string? axis = null, string? refDir = null) => E($"IFCAXIS2PLACEMENT3D({loc},{axis ?? "$"},{refDir ?? "$"})");
+        string Place(string? rel, string axis) => E($"IFCLOCALPLACEMENT({rel ?? "$"},{axis})");
+
         sb.AppendLine("ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('ViewDefinition [CoordinationView]'),'2;1');\nFILE_NAME('building.ifc','',(''),(''),'ImmeubleCad','ImmeubleCad','');\nFILE_SCHEMA(('IFC4'));\nENDSEC;\nDATA;");
-        var proj = E("IFCPROJECT('" + G() + "',$,'" + Esc(b.Name) + "',$,$,$,$,$,$)");
-        var site = E("IFCSITE('" + G() + "',$,'Site',$,$,$,$,$,.ELEMENT.,$,$,$,$,$)");
-        var bld = E("IFCBUILDING('" + G() + "',$,'" + Esc(b.Name) + "',$,$,$,$,$,.ELEMENT.,$,$,$)");
-        E($"IFCRELAGGREGATES('{G()}',$,$,$,{proj},({site}))");
-        E($"IFCRELAGGREGATES('{G()}',$,$,$,{site},({bld}))");
+        var origin = Pt(0, 0, 0); var wcs = Axis(origin); var zDir = Dir(0, 0, 1); var xDir = Dir(1, 0, 0);
+        var ctx = E($"IFCGEOMETRICREPRESENTATIONCONTEXT($,'Model',3,1.E-05,{wcs},$)");
+        var length = E("IFCSIUNIT(*,.LENGTHUNIT.,.MILLI.,.METRE.)"); var area = E("IFCSIUNIT(*,.AREAUNIT.,$,.SQUARE_METRE.)"); var angle = E("IFCSIUNIT(*,.PLANEANGLEUNIT.,$,.RADIAN.)");
+        var units = E($"IFCUNITASSIGNMENT(({length},{area},{angle}))");
+        var proj = E($"IFCPROJECT('{G()}',$,'{Esc(b.Name)}',$,$,$,$,({ctx}),{units})");
+        var sitePl = Place(null, wcs); var site = E($"IFCSITE('{G()}',$,'Site',$,$,{sitePl},$,$,.ELEMENT.,$,$,$,$,$)");
+        var bldPl = Place(sitePl, wcs); var bld = E($"IFCBUILDING('{G()}',$,'{Esc(b.Name)}',$,$,{bldPl},$,$,.ELEMENT.,$,$,$)");
+        E($"IFCRELAGGREGATES('{G()}',$,$,$,{proj},({site}))"); E($"IFCRELAGGREGATES('{G()}',$,$,$,{site},({bld}))");
+
+        string ProfileOf(IReadOnlyList<PointMm> ring, IEnumerable<IReadOnlyList<PointMm>>? holes = null)
+        {
+            string Poly(IReadOnlyList<PointMm> r) { var pts = r.Select(p => Pt2(p.X, p.Y)).ToList(); pts.Add(pts[0]); return E($"IFCPOLYLINE(({string.Join(",", pts)}))"); }
+            var outer = E($"IFCARBITRARYCLOSEDPROFILEDEF(.AREA.,$,{Poly(ring)})");
+            var voids = holes?.Where(h => h.Count >= 3).Select(h => E($"IFCARBITRARYCLOSEDPROFILEDEF(.AREA.,$,{Poly(h)})")).ToList();
+            if (voids is { Count: > 0 }) { var outerCurve = ((string)null!) ?? ""; _ = outerCurve; }
+            return outer;
+        }
+        string Rep(string solid, double? r = null, double? g = null, double? bl = null)
+        {
+            if (r != null) { var col = E($"IFCCOLOURRGB($,{N(r.Value)},{N(g!.Value)},{N(bl!.Value)})"); var rend = E($"IFCSURFACESTYLERENDERING({col},$,$,$,$,$,$,$,.FLAT.)"); var style = E($"IFCSURFACESTYLE($,.BOTH.,({rend}))"); var assign = E($"IFCPRESENTATIONSTYLEASSIGNMENT(({style}))"); E($"IFCSTYLEDITEM({solid},({assign}),$)"); }
+            var shape = E($"IFCSHAPEREPRESENTATION({ctx},'Body','SweptSolid',({solid}))"); return E($"IFCPRODUCTDEFINITIONSHAPE($,$,({shape}))");
+        }
+        string Extrude(string profile, string pos, double depth, string? dir = null) => E($"IFCEXTRUDEDAREASOLID({profile},{pos},{dir ?? zDir},{N(depth)})");
+
+        var storeyPl = new Dictionary<Guid, string>(); var storeyRef = new Dictionary<Guid, string>(); var contained = new Dictionary<Guid, List<string>>();
         foreach (var l in b.Levels)
         {
-            var st = E($"IFCBUILDINGSTOREY('{G()}',$,'{Esc(l.Name)}',$,$,$,$,$,.ELEMENT.,{F.N(l.AltitudeMm)})");
-            E($"IFCRELAGGREGATES('{G()}',$,$,$,{bld},({st}))");
-            var walls = l.Walls.Select(w => E($"IFCWALL('{G(w.Id)}',$,'{Esc(w.Label ?? "Wall")}',$,$,$,$,$,$)")).ToList();
-            if (walls.Count > 0) E($"IFCRELCONTAINEDINSPATIALSTRUCTURE('{G()}',$,$,$,({string.Join(",", walls)}),{st})");
+            var pl = Place(bldPl, Axis(Pt(0, 0, l.AltitudeMm))); var st = E($"IFCBUILDINGSTOREY('{G()}',$,'{Esc(l.Name)}',$,$,{pl},$,$,.ELEMENT.,{N(l.AltitudeMm)})");
+            E($"IFCRELAGGREGATES('{G()}',$,$,$,{bld},({st}))"); storeyPl[l.Id] = pl; storeyRef[l.Id] = st; contained[l.Id] = new();
+            foreach (var w in l.Walls.Where(w => w.Footprint.Count >= 3))
+            {
+                var wallPl = Place(pl, wcs); string profile;
+                if (w.Holes.Count > 0)
+                {
+                    string Poly(IReadOnlyList<PointMm> r) { var pts = r.Select(p => Pt2(p.X, p.Y)).ToList(); pts.Add(pts[0]); return E($"IFCPOLYLINE(({string.Join(",", pts)}))"); }
+                    profile = E($"IFCARBITRARYPROFILEDEFWITHVOIDS(.AREA.,$,{Poly(w.Footprint)},({string.Join(",", w.Holes.Where(h => h.Count >= 3).Select(h => Poly(h)))}))");
+                }
+                else profile = ProfileOf(w.Footprint);
+                var solid = Extrude(profile, wcs, w.HeightMm ?? l.HeightMm); var rep = Rep(solid, 0.78, 0.78, 0.75);
+                contained[l.Id].Add(E($"IFCWALL('{G(w.Id)}',$,'{Esc(w.Label ?? "Wall")}',$,$,{wallPl},{rep},$,$)"));
+            }
+            foreach (var eq in b.Equipment.Where(e => e.LevelId == l.Id))
+            {
+                var cat = Catalog.EquipmentCatalog.Find(eq.CatalogId)?.With(eq.Parameters); var w = cat?.WidthMm ?? 500; var d = cat?.DepthMm ?? 100; var h = cat?.HeightMm ?? 500;
+                var ep = Place(pl, Axis(Pt(eq.Position.X, eq.Position.Y, eq.ElevationMm), zDir, Dir(Math.Cos(eq.RotationDeg * Math.PI / 180), Math.Sin(eq.RotationDeg * Math.PI / 180), 0)));
+                var prof = E($"IFCRECTANGLEPROFILEDEF(.AREA.,$,{E($"IFCAXIS2PLACEMENT2D({Pt2(w / 2.0, d / 2.0)},$)")},{N(w)},{N(d)})");
+                var rep = Rep(Extrude(prof, wcs, h), 0.35, 0.35, 0.8); var name = Esc(eq.Label ?? cat?.NameIn("en") ?? eq.CatalogId);
+                var kind = eq.CatalogId switch { "radiator" => "IFCSPACEHEATER", "boiler" => "IFCBOILER", "hot-water-tank" => "IFCTANK", "circulator-pump" => "IFCPUMP", _ => "IFCSANITARYTERMINAL" };
+                contained[l.Id].Add(E($"{kind}('{G(eq.Id)}',$,'{name}',$,$,{ep},{rep},$,$,.NOTDEFINED.)"));
+            }
         }
         foreach (var n in b.Networks)
         {
-            var segs = n.Segments.Select(s => E($"IFCPIPESEGMENT('{G(s.Id)}',$,'{n.Type} DN{s.DiameterMm}',$,$,$,$,$,.RIGIDSEGMENT.)")).ToList();
-            var sys = E($"IFCDISTRIBUTIONSYSTEM('{G(n.Id)}',$,'{Esc(n.Name)}',$,$,.NOTDEFINED.)");
-            if (segs.Count > 0) E($"IFCRELASSIGNSTOGROUP('{G()}',$,$,$,({string.Join(",", segs)}),$,{sys})");
+            var (cr, cg, cb) = Colour[n.Type]; var members = new List<string>();
+            foreach (var s in n.Segments)
+            {
+                var a = n.Nodes.First(x => x.Id == s.A).Position; var c = n.Nodes.First(x => x.Id == s.B).Position; double dx = c.X - a.X, dy = c.Y - a.Y, dz = c.Z - a.Z; var len = Math.Sqrt(dx * dx + dy * dy + dz * dz); if (len < 1) continue;
+                var ax = Dir(dx / len, dy / len, dz / len); var refd = Math.Abs(dz / len) > 0.9 ? Dir(1, 0, 0) : Dir(0, 0, 1);
+                var host = b.Levels.LastOrDefault(l => l.AltitudeMm <= Math.Min(a.Z, c.Z)) ?? b.Levels.FirstOrDefault();
+                var pp = Place(bldPl, Axis(Pt(a.X, a.Y, a.Z), ax, refd));
+                var prof = E($"IFCCIRCLEPROFILEDEF(.AREA.,$,{E($"IFCAXIS2PLACEMENT2D({Pt2(0, 0)},$)")},{N(s.DiameterMm / 2.0)})");
+                var rep = Rep(Extrude(prof, wcs, len), cr, cg, cb);
+                var seg = E($"IFCPIPESEGMENT('{G(s.Id)}',$,'{n.Type} DN{s.DiameterMm}',$,$,{pp},{rep},$,.RIGIDSEGMENT.)"); members.Add(seg);
+                if (host != null) contained[host.Id].Add(seg);
+            }
+            foreach (var comp in n.Nodes.Where(x => x.Component != null))
+            {
+                var host = b.Levels.LastOrDefault(l => l.AltitudeMm <= comp.Position.Z) ?? b.Levels.FirstOrDefault();
+                var prof = E($"IFCRECTANGLEPROFILEDEF(.AREA.,$,{E($"IFCAXIS2PLACEMENT2D({Pt2(0, 0)},$)")},80.,80.)");
+                var vp = Place(bldPl, Axis(Pt(comp.Position.X, comp.Position.Y, comp.Position.Z - 40)));
+                var kind = comp.Component == "meter" ? "IFCFLOWMETER" : "IFCVALVE"; var rep = Rep(Extrude(prof, wcs, 80), 0.1, 0.1, 0.1);
+                var v = E($"{kind}('{G(comp.Id)}',$,'{Esc(comp.Component!)}',$,$,{vp},{rep},$,$)"); members.Add(v); if (host != null) contained[host.Id].Add(v);
+            }
+            var sys = E($"IFCDISTRIBUTIONSYSTEM('{G(n.Id)}',$,'{Esc(n.Name)}','{n.Type}',$,.NOTDEFINED.)");
+            if (members.Count > 0) E($"IFCRELASSIGNSTOGROUP('{G()}',$,$,$,({string.Join(",", members)}),$,{sys})");
         }
+        foreach (var (lid, items) in contained) if (items.Count > 0) E($"IFCRELCONTAINEDINSPATIALSTRUCTURE('{G()}',$,$,$,({string.Join(",", items)}),{storeyRef[lid]})");
         return sb.AppendLine("ENDSEC;\nEND-ISO-10303-21;").ToString();
     }
     private static string Esc(string s) => s.Replace("'", "''");
-    // IFC GlobalId: 22 chars base64-ish
     private static string G() => G(Guid.NewGuid());
-    private static string G(Guid g)
+    internal static string G(Guid g)
     {
         const string c = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_$";
-        var bytes = g.ToByteArray(); var num = new System.Numerics.BigInteger(bytes, isUnsigned: true);
-        var sb = new StringBuilder();
+        var num = new System.Numerics.BigInteger(g.ToByteArray(), isUnsigned: true); var sb = new StringBuilder();
         for (var i = 0; i < 22; i++) { sb.Insert(0, c[(int)(num % 64)]); num /= 64; }
         return sb.ToString();
     }

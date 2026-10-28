@@ -489,6 +489,12 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
         return AddLevel(name, above ? l.AltitudeMm + l.HeightMm : l.AltitudeMm - 2700, above ? l.HeightMm : 2700, above ? LevelKind.Standard : LevelKind.Basement);
     }
 
+    public ReferenceMesh AddReference(Guid levelId, ReferenceMesh mesh) =>
+        Edit("Add reference model", BuildingEventKind.LevelChanged, () => { Find(levelId).References.Add(mesh); return mesh; }, _ => levelId);
+
+    public void RemoveReference(Guid levelId, string name) =>
+        Edit("Remove reference model", BuildingEventKind.LevelChanged, () => { Find(levelId).References.RemoveAll(r => r.Name == name); return levelId; }, i => i);
+
     public void SetStability(Guid levelId, Guid spaceId, Stability stability) =>
         Edit("Set stability", BuildingEventKind.LevelChanged, () => { Find(levelId).Spaces.First(s => s.Id == spaceId).Stability = stability; return spaceId; }, i => i);
 

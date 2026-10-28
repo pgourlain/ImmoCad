@@ -322,13 +322,13 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 - [x] **glTF** (`.glb`) and **OBJ**: 3D meshes from `ImmeubleCad.Scene` for Blender, SketchUp, web viewers, 3D printing; one node per level and per network so they can be hidden in the target tool. *(OBJ + GLB in Core/MCP; no UI menu entry for GLB yet)*
 - [x] **SVG / PDF**: printable plans per level and per network (title block with level name, scale, north arrow, legend). *(SVG per level in Core; PDF only for the bill of materials; no title block / north arrow)*
 - [x] **CSV / PDF**: bill of materials (above).
-- [ ] Export dialog: format, levels to include, networks to include, units (mm/m), with a short line explaining which tool each format is for (beginner friendly).
-- [ ] MCP tools `export_ifc`, `export_freecad_macro`, `export_dxf`, `export_gltf` (Phase 10).
+- [x] Export dialog: format, levels to include, networks to include, units (mm/m), with a short line explaining which tool each format is for (beginner friendly). *(File › Export…; quick-export entries kept)*
+- [x] MCP tools `export_ifc`, `export_freecad_macro`, `export_dxf`, `export_gltf` (Phase 10).
 
 **Imports from other tools (later)**
 
-- [ ] Reference model: import a glTF/OBJ/IFC (e.g. the author's existing FreeCAD model) as a locked, non-editable reference mesh to trace over, per level.
-- [ ] IFC import of walls and storeys (editable), once the IFC export is stable.
+- [x] Reference model: import a glTF/OBJ/IFC (e.g. the author's existing FreeCAD model) as a locked, non-editable reference mesh to trace over, per level. *(OBJ and GLB, locked, drawn as a section 1 m above the floor of the level; IFC meshes are not read as references, use the IFC import)*
+- [x] IFC import of walls and storeys (editable), once the IFC export is stable.
 
 **Validation**
 

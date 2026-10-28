@@ -725,6 +725,31 @@ public partial class MainViewModel : ObservableObject
         catch (Exception ex) { await Fail("importer", ex); }
     }
     /// <summary>"ask" opens the export dialog (format, levels, networks, units); any other value exports that format directly with everything included.</summary>
+    [RelayCommand] private async Task ImportIfcAsync()
+    {
+        try
+        {
+            if (await Dialogs.PickOpenAsync("IFC", "*.ifc") is not { } path) return;
+            if (ActiveIndex < 0) NewDocument();
+            var r = IfcImport.ImportInto(Actions, File.ReadAllText(path));
+            CurrentLevelId = Building.Levels.FirstOrDefault()?.Id ?? CurrentLevelId; Status = $"IFC : {r.Building.Levels.Count} niveau(x), {r.Walls} mur(s)" + (r.Warnings.Count > 0 ? $" — {r.Warnings.Count} avertissement(s)" : ""); OnLog?.Invoke($"Imported IFC {Path.GetFileName(path)}: {r.Building.Levels.Count} levels, {r.Walls} walls, {r.Warnings.Count} warnings");
+            Refresh(); ViewFitRequested?.Invoke();
+        }
+        catch (Exception ex) { await Fail("importer l'IFC", ex); }
+    }
+
+    /// <summary>Reference model (OBJ / GLB) on the current level: a locked mesh shown as a section under the plan, to trace over.</summary>
+    [RelayCommand] private async Task ImportReferenceAsync()
+    {
+        try
+        {
+            if (ActiveIndex < 0 || CurrentLevel is not { } l) return;
+            if (await Dialogs.PickOpenAsync("Modèle de référence (.obj, .glb)", "*.obj;*.glb") is not { } path) return;
+            Actions.AddReference(l.Id, ReferenceImport.FromFile(path)); Status = "Modèle de référence ajouté (verrouillé)"; OnLog?.Invoke($"Reference model {Path.GetFileName(path)}"); Refresh(); ViewFitRequested?.Invoke();
+        }
+        catch (Exception ex) { await Fail("importer le modèle", ex); }
+    }
+
     [RelayCommand] private async Task ExportAsync(string format)
     {
         if (ActiveIndex < 0) return;
