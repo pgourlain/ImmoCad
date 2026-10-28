@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><RootNamespace>ImmoCad.Core</RootNamespace></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Magick.NET-Q8-AnyCPU" Version="15.0.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Catalog/*.json" LogicalName="catalog/%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\ImmoCad.Plan\ImmoCad.Plan.csproj" />
+    <ProjectReference Include="..\ImmoCad.Scene\ImmoCad.Scene.csproj" />
+  </ItemGroup>
+</Project>

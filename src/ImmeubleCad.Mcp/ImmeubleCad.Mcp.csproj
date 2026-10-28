@@ -1,7 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <ItemGroup>
-    <PackageReference Include="ModelContextProtocol" Version="2.3.0" />
-    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.0" />
-    <ProjectReference Include="..\ImmeubleCad.Core\ImmeubleCad.Core.csproj" />
-  </ItemGroup>
-</Project>

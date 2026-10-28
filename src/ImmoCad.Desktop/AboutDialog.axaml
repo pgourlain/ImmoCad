@@ -1,0 +1,11 @@
+<Window xmlns:vm="using:ImmoCad.Desktop" xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="ImmoCad.Desktop.AboutDialog" vm:L.Title="about.title" Width="460" SizeToContent="Height" CanResize="False" WindowStartupLocation="CenterOwner">
+  <StackPanel Margin="24" Spacing="12" HorizontalAlignment="Center">
+    <Image Source="avares://ImmoCad/Assets/icon.png" Width="96" Height="96" />
+    <TextBlock vm:L.Text="app.name" FontSize="26" FontWeight="Light" HorizontalAlignment="Center" />
+    <TextBlock x:Name="Info" TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" Opacity="0.75" />
+    <TextBlock vm:L.Text="about.license" HorizontalAlignment="Center" Opacity="0.75" />
+    <TextBlock vm:L.Text="about.data" HorizontalAlignment="Center" Opacity="0.75" TextWrapping="Wrap" TextAlignment="Center" />
+    <Button x:Name="Ok" vm:L.Content="btn.ok" HorizontalAlignment="Center" IsDefault="True" Margin="0,8,0,0" />
+  </StackPanel>
+</Window>

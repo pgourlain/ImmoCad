@@ -1,0 +1,18 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ImmoCad.Core/ImmoCad.Core.csproj" />
+    <Project Path="src/ImmoCad.Desktop/ImmoCad.Desktop.csproj" />
+    <Project Path="src/ImmoCad.Geo/ImmoCad.Geo.csproj" />
+    <Project Path="src/ImmoCad.Mcp/ImmoCad.Mcp.csproj" />
+    <Project Path="src/ImmoCad.Plan/ImmoCad.Plan.csproj" />
+    <Project Path="src/ImmoCad.Scene/ImmoCad.Scene.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ImmoCad.Core.Tests/ImmoCad.Core.Tests.csproj" />
+    <Project Path="tests/ImmoCad.Desktop.Tests/ImmoCad.Desktop.Tests.csproj" />
+    <Project Path="tests/ImmoCad.Geo.Tests/ImmoCad.Geo.Tests.csproj" />
+    <Project Path="tests/ImmoCad.Mcp.Tests/ImmoCad.Mcp.Tests.csproj" />
+    <Project Path="tests/ImmoCad.Plan.Tests/ImmoCad.Plan.Tests.csproj" />
+    <Project Path="tests/ImmoCad.Scene.Tests/ImmoCad.Scene.Tests.csproj" />
+  </Folder>
+</Solution>

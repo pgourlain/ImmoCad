@@ -1,4 +1,4 @@
-# immeubleCAD — Roadmap
+# ImmoCad — Roadmap
 
 Goal: a desktop application, simple enough for a beginner, to model a building (house or apartment block) from its floor plans and lay out its networks: heating pipes, hot and cold water, drainage. It runs natively on **macOS, Linux and Windows**.
 
@@ -12,15 +12,15 @@ The application skeleton, conventions and quality bar follow **CinnabarSharp** (
 
 - Same stack as CinnabarSharp, so the shell, dialogs, menus (native on macOS), settings, packaging and CI can be copied from it.
 - 2D plan view: custom Avalonia `Control` (like CinnabarSharp's `CanvasView`), drawing with Avalonia's `DrawingContext`.
-- 3D view: `OpenGlControlBase` + `Silk.NET.OpenGL`. Meshes are generated in pure C# (see `ImmeubleCad.Scene`), so the 3D view only uploads buffers and draws. Fall back to a simple software preview in headless tests.
+- 3D view: `OpenGlControlBase` + `Silk.NET.OpenGL`. Meshes are generated in pure C# (see `ImmoCad.Scene`), so the 3D view only uploads buffers and draws. Fall back to a simple software preview in headless tests.
 - Wall detection is **copied** from CinnabarSharp (`LineExtraction` from `CinnabarSharp.Core/Photo`, `MaskTracer` from `CinnabarSharp.Vector`) to keep the project autonomous. See Phase 3.
 
 ## Architecture rules (also copy them into CLAUDE.md)
 
 - **Units:** every length in the model is an `int` in **millimetres**. No floating point in the model; floats only for rendering. Snapping, equality and tests become exact.
 - **Axes:** X east, Y north on the plan, Z up. A level has an altitude (Z of its finished floor) and a height.
-- **`ImmeubleCad.Core` is non-visual:** document model, history, tools (with UI-independent pointer input), import, exports. Forbidden: Avalonia, SkiaSharp, Silk.NET, `System.Drawing`, dispatchers, dialogs, P/Invoke. Allowed: BCL, `Microsoft.Extensions.*`, Magick.NET (image decoding only). Enforced by `CoreArchitectureTests`.
-- **`ImmeubleCad.Plan` and `ImmeubleCad.Scene` are BCL only** (no Core, no Magick.NET, no UI). Enforced by architecture tests.
+- **`ImmoCad.Core` is non-visual:** document model, history, tools (with UI-independent pointer input), import, exports. Forbidden: Avalonia, SkiaSharp, Silk.NET, `System.Drawing`, dispatchers, dialogs, P/Invoke. Allowed: BCL, `Microsoft.Extensions.*`, Magick.NET (image decoding only). Enforced by `CoreArchitectureTests`.
+- **`ImmoCad.Plan` and `ImmoCad.Scene` are BCL only** (no Core, no Magick.NET, no UI). Enforced by architecture tests.
 - **`BuildingActions` is the only way to edit a building.** Each action changes the model and pushes one `IHistoryItem`. `HistoryTests.Actions` must list every action and checks that undo restores the model exactly.
 - **Core talks to the UI through events** (`IBuildingEventsService`, observable, like CinnabarSharp's `IDocumentEventsService`). Tests assert the exact ordered sequence of events.
 - **The 2D plan is the main view.** 3D (solid, X-ray, wireframe) is one key away and never loses context. Plan view and 3D view are two separate controls sharing one **`ViewState`** (Core, non-visual): current level, visible levels, selection, look-at point (mm), zoom scale, render mode, cut above current level. Neither view owns this state; switching views only changes which control is shown.
@@ -34,19 +34,19 @@ The application skeleton, conventions and quality bar follow **CinnabarSharp** (
 
 | Project | Contents |
 |---|---|
-| `ImmeubleCad.Core` | Building model, history, actions, tools, file format, import pipeline, exports. Non-visual. |
-| `ImmeubleCad.Plan` | Copied and adapted wall detection: `LineExtraction` (mask), `MaskTracer` (outlines), plus `WallFitter` (outlines → wall segments). BCL only. |
-| `ImmeubleCad.Scene` | Pure C# mesh generation: wall extrusion, slabs, pipe cylinders, fittings, equipment boxes; picking (ray/mesh). BCL only. |
-| `ImmeubleCad.Geo` | Phase 12: geocoding, cadastre and map tiles over HTTP (IGN Géoplateforme), disk cache. No UI. |
-| `ImmeubleCad.Mcp` | MCP server (official C# SDK `ModelContextProtocol`), Core only. Hosted by the desktop executable with `--mcp`. |
-| `ImmeubleCad.Desktop` | Avalonia 12 app (MVVM): plan view, elevation view, 3D view, panels. Executable named `ImmeubleCad`. |
-| `ImmeubleCad.Core.Tests` | xunit v3. Model, history, actions, tools, import, exports, `CoreArchitectureTests`. |
-| `ImmeubleCad.Plan.Tests` | xunit v3. Detection on synthetic plans, pinned checksums. |
-| `ImmeubleCad.Scene.Tests` | xunit v3. Mesh generation, picking, pinned checksums. |
-| `ImmeubleCad.Desktop.Tests` | Avalonia.Headless + Skia, xunit v3. Drives the real window, saves screenshots per OS. |
-| `ImmeubleCad.Mcp.Tests` | xunit v3. Starts `ImmeubleCad --mcp` and drives it over stdio. |
+| `ImmoCad.Core` | Building model, history, actions, tools, file format, import pipeline, exports. Non-visual. |
+| `ImmoCad.Plan` | Copied and adapted wall detection: `LineExtraction` (mask), `MaskTracer` (outlines), plus `WallFitter` (outlines → wall segments). BCL only. |
+| `ImmoCad.Scene` | Pure C# mesh generation: wall extrusion, slabs, pipe cylinders, fittings, equipment boxes; picking (ray/mesh). BCL only. |
+| `ImmoCad.Geo` | Phase 12: geocoding, cadastre and map tiles over HTTP (IGN Géoplateforme), disk cache. No UI. |
+| `ImmoCad.Mcp` | MCP server (official C# SDK `ModelContextProtocol`), Core only. Hosted by the desktop executable with `--mcp`. |
+| `ImmoCad.Desktop` | Avalonia 12 app (MVVM): plan view, elevation view, 3D view, panels. Executable named `ImmoCad`. |
+| `ImmoCad.Core.Tests` | xunit v3. Model, history, actions, tools, import, exports, `CoreArchitectureTests`. |
+| `ImmoCad.Plan.Tests` | xunit v3. Detection on synthetic plans, pinned checksums. |
+| `ImmoCad.Scene.Tests` | xunit v3. Mesh generation, picking, pinned checksums. |
+| `ImmoCad.Desktop.Tests` | Avalonia.Headless + Skia, xunit v3. Drives the real window, saves screenshots per OS. |
+| `ImmoCad.Mcp.Tests` | xunit v3. Starts `ImmoCad --mcp` and drives it over stdio. |
 
-Root solution: `ImmeubleCad.slnx`.
+Root solution: `ImmoCad.slnx`.
 
 ## How to validate each phase
 
@@ -56,10 +56,10 @@ Every phase ends with a **Validation** checklist. Run it on macOS (Apple Silicon
 
 ## Phase 0 — Foundation
 
-- [x] Create `ImmeubleCad.slnx` with all projects of the table above (empty where needed), targeting `net10.0`.
+- [x] Create `ImmoCad.slnx` with all projects of the table above (empty where needed), targeting `net10.0`.
 - [x] `Directory.Build.props`: nullable, implicit usings, warnings as errors for nullable, `LangVersion latest`.
 - [x] `CoreArchitectureTests`: fail if Core references Avalonia, SkiaSharp, Silk.NET or `System.Drawing`. `PlanArchitectureTests` and `SceneArchitectureTests`: BCL only.
-- [x] DI entry point `ServiceExtensions.AddImmeubleCadServices()` in Core.
+- [x] DI entry point `ServiceExtensions.AddImmoCadServices()` in Core.
 - [x] CI `.github/workflows/ci.yml`: matrix `windows-latest`, `macos-latest`, `ubuntu-latest`, `dotnet build` + `dotnet test`, upload screenshots.
 - [x] `CLAUDE.md` with goal, architecture rules, projects, commands (copy CinnabarSharp's layout).
 - [x] `README.md`, `LICENSE` (MIT), `CHANGELOG.md`.
@@ -70,7 +70,7 @@ Every phase ends with a **Validation** checklist. Run it on macOS (Apple Silicon
 
 ## Phase 1 — Avalonia shell
 
-- [x] `ImmeubleCad.Desktop` (Avalonia 12, CommunityToolkit.Mvvm), composition root `AppServices.Build()` shared by `App` and the UI tests.
+- [x] `ImmoCad.Desktop` (Avalonia 12, CommunityToolkit.Mvvm), composition root `AppServices.Build()` shared by `App` and the UI tests.
 - [x] Main window: menu bar, toolbar with a **2D / 3D / Wireframe** segmented control, left tool strip, **level bar** (vertical, elevator-style buttons, top level first) next to the view, center view area showing the plan view by default (3D and elevation views are placeholders for now), right panels (Networks, Properties), status bar (tool, cursor position in metres, current level, zoom, **contextual hint** of what to do next). *(2D / Élévation / 3D / Filaire buttons rather than a segmented control; status bar shows the hint and the cursor position)*
 - [x] `ViewState` in Core with `ViewStateChanged` events; `MainViewModel` exposes it to both views. *(not yet wired to the views)*
 - [x] Menus defined once as `MenuSpec` records, turned into a `NativeMenu` on macOS and an in-window `Menu` elsewhere (copy CinnabarSharp). Later features bound to a disabled `NotYetImplemented` command. *(disabled `NotYetImplementedCommand` entry for the guided tour)*
@@ -80,9 +80,9 @@ Every phase ends with a **Validation** checklist. Run it on macOS (Apple Silicon
 
 **Log file (from the first phase, so every later bug leaves a trace)**
 
-- [x] `AppLog` (Desktop): `ILoggerProvider` writing to `log.txt` in the per-OS app-data folder (`%LOCALAPPDATA%\ImmeubleCad`, `~/Library/Application Support/ImmeubleCad`, `~/.local/share/ImmeubleCad`). Line format: ISO timestamp, level, category, message, exception with stack trace. Writes are buffered on a background queue and flushed on error and on exit. *(partial: file provider + global handlers; no env-var levels/stderr mirror)*
+- [x] `AppLog` (Desktop): `ILoggerProvider` writing to `log.txt` in the per-OS app-data folder (`%LOCALAPPDATA%\ImmoCad`, `~/Library/Application Support/ImmoCad`, `~/.local/share/ImmoCad`). Line format: ISO timestamp, level, category, message, exception with stack trace. Writes are buffered on a background queue and flushed on error and on exit. *(partial: file provider + global handlers; no env-var levels/stderr mirror)*
 - [x] Rolling: new file when `log.txt` exceeds 5 MB, keep the last 5 (`log.1.txt`…); old files deleted at startup.
-- [x] Levels: Information by default, Debug with `IMMEUBLECAD_LOG=debug` or a setting; also mirror to stderr with `IMMEUBLECAD_LOG=1`.
+- [x] Levels: Information by default, Debug with `IMMOCAD_LOG=debug` or a setting; also mirror to stderr with `IMMOCAD_LOG=1`.
 - [x] Global handlers log everything that escapes: `AppDomain.CurrentDomain.UnhandledException`, `TaskScheduler.UnobservedTaskException`, `Dispatcher.UIThread.UnhandledException`, Avalonia's own warnings/errors (log sink). Errors shown in dialogs are logged too. *(Avalonia's own log sink still goes to Trace only)*
 - [x] Startup line with app version, build date, OS, architecture, .NET version, GPU/OpenGL info once the 3D view starts; one line per opened/saved file (path) and per long operation (import, detection, export) with its duration. *(GPU/OpenGL line will come with the OpenGL view)*
 - [x] Help › Open Log Folder (application menu on macOS) and Help › Copy System Info (version, OS, last 200 log lines) for bug reports. *(no macOS application-menu entry)*
@@ -117,10 +117,10 @@ Every phase ends with a **Validation** checklist. Run it on macOS (Apple Silicon
 
 **3a — Copy detection code from CinnabarSharp**
 
-- [x] Copy `LineExtraction` (and `SuggestThickness`) from `CinnabarSharp.Core/Photo` and `MaskTracer` from `CinnabarSharp.Vector` into `ImmeubleCad.Plan`. Replace any CinnabarSharp type (`ColorBgra`, `VectorPath`, selection mask…) with small local types: input is a grayscale `byte[]` + width/height, output is polygons in pixels. *(done from the local CinnabarSharp checkout)*
+- [x] Copy `LineExtraction` (and `SuggestThickness`) from `CinnabarSharp.Core/Photo` and `MaskTracer` from `CinnabarSharp.Vector` into `ImmoCad.Plan`. Replace any CinnabarSharp type (`ColorBgra`, `VectorPath`, selection mask…) with small local types: input is a grayscale `byte[]` + width/height, output is polygons in pixels. *(done from the local CinnabarSharp checkout)*
 - [x] Copy the matching tests and synthetic plans from `CinnabarSharp.Core.Tests` / `CinnabarSharp.Vector.Tests`; keep pinned checksums. *(not copied: new synthetic tests written; checksums pinned on them)* *(ported: same plan, same pinned SHA-256; the selection and SVG-render tests were replaced since those types are not copied)*
 - [x] `PROVENANCE.md`: source repository, commit hash, list of copied files and what was changed. Keep license headers (and Pinta's, if any copied file has them) and add a `THIRD-PARTY-NOTICES.txt` entry.
-- [x] Interface in Core: `IWallDetector { WallDetectionResult Detect(GrayImage image, WallDetectionOptions options, CancellationToken ct); }`, implemented by `PlanWallDetector` (adapter over `ImmeubleCad.Plan`). Core decodes the JPG with Magick.NET and passes pixels; `ImmeubleCad.Plan` never sees a file. *(returns `List<WallOutline>` = outline + holes, not `WallDetectionResult`)*
+- [x] Interface in Core: `IWallDetector { WallDetectionResult Detect(GrayImage image, WallDetectionOptions options, CancellationToken ct); }`, implemented by `PlanWallDetector` (adapter over `ImmoCad.Plan`). Core decodes the JPG with Magick.NET and passes pixels; `ImmoCad.Plan` never sees a file. *(returns `List<WallOutline>` = outline + holes, not `WallDetectionResult`)*
 
 **3b — Import wizard (one level at a time)**
 
@@ -218,7 +218,7 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 
 ## Phase 5 — 3D view
 
-- [x] `ImmeubleCad.Scene`: `MeshBuilder` producing vertex/index buffers (float positions in metres, normals, color per network/category): wall extrusion from footprint polygon and height, floor slab per level (from the outer outline or a bounding polygon), pipe cylinders, fittings (torus segment for elbows, simple tee), equipment boxes. Deterministic; pinned checksum test. *(cylinders with normals, elbows as bent cylinders, tee/reducer as boxes, slabs under each level; no per-vertex colour buffer: colour is per object)*
+- [x] `ImmoCad.Scene`: `MeshBuilder` producing vertex/index buffers (float positions in metres, normals, color per network/category): wall extrusion from footprint polygon and height, floor slab per level (from the outer outline or a bounding polygon), pipe cylinders, fittings (torus segment for elbows, simple tee), equipment boxes. Deterministic; pinned checksum test. *(cylinders with normals, elbows as bent cylinders, tee/reducer as boxes, slabs under each level; no per-vertex colour buffer: colour is per object)*
 - [x] `Picking`: ray vs meshes → id of the wall, equipment, node or segment under the mouse. Unit-tested.
 - [x] `Viewport3D` control (Avalonia `OpenGlControlBase` + Silk.NET.OpenGL): orbit (left drag), pan (right or middle drag), zoom (wheel), "fit all", top/front/side/isometric presets. Simple lighting (one directional light + ambient). *(`GlViewport3D` written with Silk.NET; on this Mac no GL context is created so it falls back to the software viewport automatically — the GL path has not been run on Windows/Linux)*
 - [x] Render modes: **Solid**, **X-ray** (walls translucent, networks opaque), **Wireframe** (wall edges + networks in color). `Scene` produces an edge list per mesh for wireframe.
@@ -260,7 +260,7 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 
 - [x] Palette panel (left, collapsible) with categories: **Structure** (wall, partition, door, window, slab, stairs, service shaft), **Networks** (pipe, riser, riser templates), **Valves & fittings** (shut-off valve, thermostatic valve, balancing valve, air vent, check valve, pressure reducer, meter), **Equipment** (radiator, boiler, hot-water tank, manifold, circulator pump), **Sanitary** (washbasin, sink, WC, shower, bathtub). Search box, "Recent" section at the top, large icons with labels (beginner friendly). *(search + categories as list; not collapsible, no Recent section shown, no large icons)*
 - [x] Two kinds of entries: **drawing tools** (wall, partition, pipe, riser: clicking the entry activates the tool) and **objects to drop** (everything else: drag onto the view, or click the entry then click in the view, using the hybrid input). *(click entry then click in view; no drag-and-drop)*
-- [x] Object catalog as JSON in resources (`catalog/*.json`, source-generated deserialization): id, category, name (translated), parameters with defaults (width, height, diameter…), **2D symbol** (simple vector path, standard plumbing/heating symbols), **3D shape** (combination of boxes and cylinders built by `ImmeubleCad.Scene`), typed **ports** (network type + diameter + position/direction). Catalog test: every entry loads, has a symbol, a shape and valid ports. *(17 entries in `catalog/*.json`; names fr/en; parameters, 2D symbol paths, 3D boxes/cylinders, typed ports; test loads every entry)*
+- [x] Object catalog as JSON in resources (`catalog/*.json`, source-generated deserialization): id, category, name (translated), parameters with defaults (width, height, diameter…), **2D symbol** (simple vector path, standard plumbing/heating symbols), **3D shape** (combination of boxes and cylinders built by `ImmoCad.Scene`), typed **ports** (network type + diameter + position/direction). Catalog test: every entry loads, has a symbol, a shape and valid ports. *(17 entries in `catalog/*.json`; names fr/en; parameters, 2D symbol paths, 3D boxes/cylinders, typed ports; test loads every entry)*
 - [x] Drop rules (`PlacementRules` in Core, unit-tested): doors/windows snap into walls; radiators and sanitary objects snap against a wall face at a default height (radiator 150 mm above floor), oriented along the wall; **inline components (valves, meters, pumps) only drop onto a pipe**: they snap to it, split the segment, align with its axis and take its diameter. In the network graph an inline component is a **node with a `Component`**; it is counted in the bill of materials. *(valves/meters snap onto pipes and split them; radiators snap to wall faces, default height from the catalog)*
 - [x] Preview while dragging: ghost of the object, green when the placement is valid, red with a hint when not ("A valve must be placed on a pipe"). *(ghost follows the cursor; green/red + hint)*
 - [x] User objects (later): duplicate a catalog entry, change its parameters, save it in the user's catalog folder. *(Core: duplicate, change parameters, save/load in a folder; no UI to create them yet)*
@@ -319,7 +319,7 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 - [x] **IFC 4** (`.ifc`), the BIM standard, priority export: building → storeys (`IfcBuildingStorey` per level) → `IfcWall` (extruded footprints), `IfcSlab`, `IfcDoor`/`IfcWindow`, networks as `IfcDistributionSystem` with `IfcPipeSegment`, `IfcPipeFitting` (elbows, tees from `FittingResolver`), `IfcValve`, `IfcSpaceHeater`, `IfcBoiler`…, colors per network, geographic placement (`IfcSite` with the Lambert 93 anchor once Phase 12 exists). Opens in FreeCAD (BIM workbench), Revit, ArchiCAD, BlenderBIM/Bonsai, online IFC viewers. Library: evaluate xBIM Essentials and GeometryGym IFC (check licenses and AOT compatibility before choosing; write an ADR in `docs/adr/`). *(partial: hierarchy, walls, pipe segments only; no geometry/fittings/colors)*
 - [x] **FreeCAD macro** (`.FCMacro` / `.py`): a generated Python script that rebuilds the building as **native, editable FreeCAD objects** (BIM/Arch walls on levels, pipes as swept profiles or BIM pipes, equipment as parametric boxes, one group per network with its color). Best fidelity for FreeCAD users; no FreeCAD dependency at build time (text generation only).
 - [x] **DXF** (`.dxf`): 2D plans per level, one layer per category and per network (AutoCAD, LibreCAD, DraftSight, QCAD). Library: netDxf (check license) or a minimal hand-written DXF R12 writer. *(partial: LINE entities per layer; no R12 header/units)*
-- [x] **glTF** (`.glb`) and **OBJ**: 3D meshes from `ImmeubleCad.Scene` for Blender, SketchUp, web viewers, 3D printing; one node per level and per network so they can be hidden in the target tool. *(OBJ + GLB in Core/MCP; no UI menu entry for GLB yet)*
+- [x] **glTF** (`.glb`) and **OBJ**: 3D meshes from `ImmoCad.Scene` for Blender, SketchUp, web viewers, 3D printing; one node per level and per network so they can be hidden in the target tool. *(OBJ + GLB in Core/MCP; no UI menu entry for GLB yet)*
 - [x] **SVG / PDF**: printable plans per level and per network (title block with level name, scale, north arrow, legend). *(SVG per level in Core; PDF only for the bill of materials; no title block / north arrow)*
 - [x] **CSV / PDF**: bill of materials (above).
 - [x] Export dialog: format, levels to include, networks to include, units (mm/m), with a short line explaining which tool each format is for (beginner friendly). *(File › Export…; quick-export entries kept)*
@@ -339,11 +339,11 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 
 ## Phase 10 — MCP server
 
-- [x] `ImmeubleCad.Mcp` (official C# SDK), Core only, hosted by the app: `ImmeubleCad --mcp` (headless, stdio) and `--mcp --attach` (relay to the running app over a Unix domain socket, File › Allow AI Agents, off by default). Copy the design from `CinnabarSharp.Mcp` (dispatcher, `McpContext.Run`, allowed folders, `overwrite`/`discardChanges`). *(partial: stdio only; no `--attach`)*
+- [x] `ImmoCad.Mcp` (official C# SDK), Core only, hosted by the app: `ImmoCad --mcp` (headless, stdio) and `--mcp --attach` (relay to the running app over a Unix domain socket, File › Allow AI Agents, off by default). Copy the design from `CinnabarSharp.Mcp` (dispatcher, `McpContext.Run`, allowed folders, `overwrite`/`discardChanges`). *(partial: stdio only; no `--attach`)*
 - [x] Tools: open/new/save/close building, list levels, add level, import plan with detection parameters, list walls, add riser (network, XY, level range), add pipe run (list of points), connect equipment, bill of materials, export glTF/SVG/CSV, undo/redo. *(partial: add level/wall/riser/pipe run, save, export, undo/redo, BOM; no open/import)*
-- [x] Resources: `immeuble://buildings`, `immeuble://buildings/{id}/networks`, `immeuble://equipment-library`.
+- [x] Resources: `immocad://buildings`, `immocad://buildings/{id}/networks`, `immocad://equipment-library`.
 - [x] `docs/mcp.md` with `claude mcp add` setup and examples ("add a hot and cold water riser from RDC to R+5 in the corner of the bathroom").
-- [x] `ImmeubleCad.Mcp.Tests`: start the real app with `--mcp` and drive it end to end.
+- [x] `ImmoCad.Mcp.Tests`: start the real app with `--mcp` and drive it end to end.
 
 **Validation**
 
@@ -367,7 +367,7 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 Place the building on its real plot, using French open data (IGN Géoplateforme, Licence Ouverte 2.0).
 
 - [x] Georeferencing in the model: `Building.Site` = anchor point in **Lambert 93 (EPSG:2154, metric)** + rotation (true north) + optional altitude. Model coordinates stay in mm relative to the anchor; conversions WGS84 ↔ Lambert 93 only at the import/export boundary (`Lambert93` helper in Core, pure C#, tested against reference points).
-- [x] Interfaces in Core: `IGeocoder` (address → coordinates), `ICadastreService` (parcel and building footprints around a point, GeoJSON), `IMapTileSource` (WMTS tiles: orthophoto, IGN plan, cadastral parcels). Implementations in a separate `ImmeubleCad.Geo` project (HttpClient, no UI); fakes in tests. Tiles and GeoJSON cached on disk so the app works offline once loaded. *(Geo project with disk cache; no HTTP integration test against the real service in CI)*
+- [x] Interfaces in Core: `IGeocoder` (address → coordinates), `ICadastreService` (parcel and building footprints around a point, GeoJSON), `IMapTileSource` (WMTS tiles: orthophoto, IGN plan, cadastral parcels). Implementations in a separate `ImmoCad.Geo` project (HttpClient, no UI); fakes in tests. Tiles and GeoJSON cached on disk so the app works offline once loaded. *(Geo project with disk cache; no HTTP integration test against the real service in CI)*
 - [x] **Site level** in the level bar, below the lowest level: shows the chosen background (orthophoto, IGN plan or cadastre) under the building footprint, with parcel boundaries and cadastral buildings as vector outlines. *(map tiles, cadastral buildings, the building through its anchor, attribution; pan with the left button, wheel zooms)*
 - [x] Place the building: type an address → zoom on the plot → click two corners of the building on the plan and the matching corners of the cadastral footprint → anchor and rotation computed. One history step. Or pick the cadastral footprint directly to start a new building from it (outer walls pre-drawn).
 **Cadastre-assisted geometry (the cadastral footprint as a guide for angles and dimensions)**

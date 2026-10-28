@@ -1,0 +1,332 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:ImmoCad.Desktop"
+        x:Class="ImmoCad.Desktop.MainWindow" x:DataType="vm:MainViewModel"
+        Icon="avares://ImmoCad/Assets/icon.png" Title="{Binding Title}" Width="1280" Height="820" MinWidth="800" MinHeight="500">
+  <Window.Styles>
+    <Style Selector="Button.tool, ToggleButton.tool">
+      <Setter Property="Width" Value="44" /><Setter Property="Height" Value="44" /><Setter Property="Margin" Value="0,0,0,4" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" /><Setter Property="CornerRadius" Value="8" /><Setter Property="FontSize" Value="18" />
+    </Style>
+    <Style Selector="Button.level">
+      <Setter Property="HorizontalAlignment" Value="Stretch" /><Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="Padding" Value="8,3" /><Setter Property="Margin" Value="0,0,0,2" /><Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.level.current"><Setter Property="Background" Value="{DynamicResource SystemAccentColor}" /><Setter Property="Foreground" Value="White" /></Style>
+    <Style Selector="TabItem"><Setter Property="FontSize" Value="12" /><Setter Property="Padding" Value="8,4" /><Setter Property="MinHeight" Value="26" /></Style>
+    <Style Selector="Border.bar"><Setter Property="Background" Value="{DynamicResource SystemChromeLowColor}" /></Style>
+    <Style Selector="TextBlock.caption"><Setter Property="Opacity" Value="0.65" /><Setter Property="FontSize" Value="11" /></Style>
+  </Window.Styles>
+  <DockPanel>
+    <ContentControl x:Name="MenuHost" DockPanel.Dock="Top" />
+    <!-- document tabs -->
+    <Border DockPanel.Dock="Top" Classes="bar" Padding="8,4,8,0" IsVisible="{Binding HasDocument}">
+      <ItemsControl ItemsSource="{Binding Tabs}">
+        <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="2" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:TabItem">
+            <Border CornerRadius="6,6,0,0" Padding="10,5,4,5" Classes.active="{Binding IsActive}" Background="{DynamicResource SystemChromeMediumColor}">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <Button Padding="0" Background="Transparent" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).SwitchTabCommand}" CommandParameter="{Binding Index}">
+                  <TextBlock Text="{Binding Title}" FontWeight="{Binding IsActive, Converter={x:Static vm:Converters.BoldIf}}" />
+                </Button>
+                <TextBlock Text="●" IsVisible="{Binding IsDirty}" FontSize="9" VerticalAlignment="Center" Foreground="OrangeRed" />
+                <Button Content="✕" Padding="4,0" FontSize="10" Background="Transparent" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).CloseTabCommand}" CommandParameter="{Binding Index}" />
+              </StackPanel>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </Border>
+
+    <!-- status bar -->
+    <Border DockPanel.Dock="Bottom" Classes="bar" Padding="12,6">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock Text="{Binding Hint}" Classes="caption" VerticalAlignment="Center" />
+        <TextBlock Grid.Column="1" Text="{Binding Status}" VerticalAlignment="Center" />
+      </Grid>
+    </Border>
+
+    <!-- tool strip -->
+    <Border DockPanel.Dock="Left" Classes="bar" Padding="8,8,4,8">
+      <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="0,0,4,0">
+        <ToggleButton Classes="tool" Content="↖" vm:L.Tip="tip.select" IsChecked="{Binding IsSelectTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Select" />
+        <ToggleButton Classes="tool" Content="▭" vm:L.Tip="tip.drawwall" IsChecked="{Binding IsDrawTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="DrawWall" />
+        <ToggleButton Classes="tool" Content="◎" vm:L.Tip="tip.riser" IsChecked="{Binding IsRiserTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Riser" />
+        <ToggleButton Classes="tool" Content="╋" vm:L.Tip="tip.pipe" IsChecked="{Binding IsPipeTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="DrawPipe" />
+        <ToggleButton Classes="tool" Content="⌷" vm:L.Tip="tip.door" IsChecked="{Binding IsDoorTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Door" />
+        <ToggleButton Classes="tool" Content="⊟" vm:L.Tip="tip.window" IsChecked="{Binding IsWindowTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Window" />
+        <ToggleButton Classes="tool" Content="▢" vm:L.Tip="tip.space" IsChecked="{Binding IsSpaceTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Space" />
+        <ToggleButton Classes="tool" Content="№" vm:L.Tip="tip.number" IsChecked="{Binding IsNumberTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="NumberCellars" />
+        <ToggleButton Classes="tool" Content="⟷" vm:L.Tip="tip.measure" IsChecked="{Binding IsMeasureTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Measure" />
+        <ToggleButton Classes="tool" Content="⟋" vm:L.Tip="tip.straighten" IsChecked="{Binding IsStraightenTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Straighten" />
+        <ToggleButton Classes="tool" Content="⇔" vm:L.Tip="tip.stretch" IsChecked="{Binding IsStretchTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Stretch" />
+        <ToggleButton Classes="tool" Content="⌖" vm:L.Tip="tip.align" IsChecked="{Binding IsAlignTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Align" />
+        <Separator Margin="0,6" />
+        <Button Classes="tool" Content="⤒" vm:L.Tip="tip.moveup" Command="{Binding MoveSelectionUpCommand}" />
+        <Button Classes="tool" Content="⤓" vm:L.Tip="tip.movedown" Command="{Binding MoveSelectionDownCommand}" />
+        <Button Classes="tool" Content="⧉" vm:L.Tip="tip.copysel" Command="{Binding CopySelectionToAllLevelsCommand}" />
+        <Button Classes="tool" Content="✕" vm:L.Tip="tip.delete" Command="{Binding DeleteSelectionCommand}" />
+      </StackPanel></ScrollViewer>
+    </Border>
+
+    <!-- side panels -->
+    <Border DockPanel.Dock="Left" Classes="bar" Width="270" Padding="8" BorderBrush="{DynamicResource SystemBaseLowColor}" BorderThickness="1,0,0,0">
+      <TabControl>
+        <TabItem vm:L.Header="tab.palette">
+          <DockPanel>
+            <TextBox DockPanel.Dock="Top" vm:L.Watermark="wm.search" Text="{Binding Search}" Margin="0,4,0,6" />
+            <ScrollViewer>
+              <ItemsControl ItemsSource="{Binding Palette}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:PaletteItem">
+                    <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Margin="0,0,0,3" Padding="8,6"
+                            Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).SelectPaletteCommand}" CommandParameter="{Binding Id}">
+                      <StackPanel Orientation="Horizontal" Spacing="10">
+                        <TextBlock Text="{Binding Glyph}" FontSize="20" Width="26" />
+                        <StackPanel><TextBlock Text="{Binding Name}" FontWeight="SemiBold" /><TextBlock Text="{Binding Category}" Classes="caption" /></StackPanel>
+                      </StackPanel>
+                    </Button>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </DockPanel>
+        </TabItem>
+        <TabItem vm:L.Header="tab.options">
+          <ScrollViewer><StackPanel Spacing="6" Margin="0,6">
+            <TextBlock vm:L.Text="opt.riser" Classes="caption" />
+            <ComboBox ItemsSource="{Binding RiserTemplates}" SelectedItem="{Binding RiserTemplate}" HorizontalAlignment="Stretch"><ComboBox.ItemTemplate><DataTemplate x:DataType="x:String"><TextBlock Text="{Binding, Converter={x:Static vm:Converters.Loc}}" /></DataTemplate></ComboBox.ItemTemplate></ComboBox>
+            <ComboBox ItemsSource="{Binding NetworkTypes}" SelectedItem="{Binding RiserType}" HorizontalAlignment="Stretch"><ComboBox.ItemTemplate><DataTemplate x:DataType="x:Object"><TextBlock Text="{Binding, Converter={x:Static vm:Converters.EnumName}}" /></DataTemplate></ComboBox.ItemTemplate></ComboBox>
+            <NumericUpDown Value="{Binding RiserDiameter}" Minimum="8" Maximum="200" vm:L.Format="fmt.mm" />
+            <NumericUpDown Value="{Binding RiserSpacing}" Minimum="50" Maximum="1000" vm:L.Format="fmt.spacing" />
+            <CheckBox vm:L.Content="site.wholebuilding" IsChecked="{Binding RiserWholeBuilding}" />
+            <CheckBox vm:L.Content="align.movewalls" IsChecked="{Binding AlignMoveWalls}" />
+            <Separator />
+            <TextBlock vm:L.Text="opt.straighten" Classes="caption" />
+            <NumericUpDown Value="{Binding StraightenTolerance}" Minimum="0" Maximum="300" vm:L.Format="fmt.tolerance" />
+            <NumericUpDown Value="{Binding StraightenAngle}" Minimum="0" Maximum="20" vm:L.Format="fmt.angle" />
+            <Button vm:L.Content="straighten.rect" Command="{Binding MakeRectangularCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+            <Separator />
+            <TextBlock vm:L.Text="opt.pipe" Classes="caption" />
+            <ComboBox ItemsSource="{Binding NetworkTypes}" SelectedItem="{Binding PipeType}" HorizontalAlignment="Stretch"><ComboBox.ItemTemplate><DataTemplate x:DataType="x:Object"><TextBlock Text="{Binding, Converter={x:Static vm:Converters.EnumName}}" /></DataTemplate></ComboBox.ItemTemplate></ComboBox>
+            <NumericUpDown Value="{Binding PipeDiameter}" Minimum="8" Maximum="200" vm:L.Format="fmt.mm" />
+            <NumericUpDown Value="{Binding PipeElevation}" Minimum="0" Maximum="6000" Increment="50" vm:L.Format="fmt.height" />
+          </StackPanel></ScrollViewer>
+        </TabItem>
+        <TabItem vm:L.Header="tab.networks">
+          <ScrollViewer>
+            <ItemsControl ItemsSource="{Binding Networks}" Margin="0,6">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:NetworkItem">
+                  <Grid ColumnDefinitions="Auto,*,Auto,Auto" Margin="0,0,0,4">
+                    <Border Width="12" Height="12" CornerRadius="6" Background="{Binding ColorHex}" Margin="0,0,8,0" VerticalAlignment="Center" />
+                    <StackPanel Grid.Column="1"><TextBlock Text="{Binding Name}" /><TextBlock Text="{Binding Type}" Classes="caption" /><TextBlock Text="{Binding Where}" Classes="caption" TextWrapping="Wrap" /></StackPanel>
+                    <Button Grid.Column="2" Content="{Binding Visible}" ContentTemplate="{x:Null}" Padding="6,2" vm:L.Tip="tip.togglenet"
+                            Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ToggleNetworkCommand}" CommandParameter="{Binding Id}" />
+                    <Button Grid.Column="3" Content="{Binding Locked}" Padding="6,2" Margin="4,0,0,0" vm:L.Tip="tip.lock"
+                            Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).LockNetworkCommand}" CommandParameter="{Binding Id}" />
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+        </TabItem>
+        <TabItem vm:L.Header="tab.history">
+          <ScrollViewer>
+            <ItemsControl ItemsSource="{Binding HistoryRows}" Margin="0,6">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:HistoryRow">
+                  <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="8,4" Margin="0,0,0,2" Background="Transparent"
+                          Opacity="{Binding IsFuture, Converter={x:Static vm:Converters.DimIf}}"
+                          Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).JumpToCommand}" CommandParameter="{Binding Index}">
+                    <TextBlock Text="{Binding Name}" FontWeight="{Binding IsCurrent, Converter={x:Static vm:Converters.BoldIf}}" />
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+        </TabItem>
+        <TabItem vm:L.Header="tab.site">
+          <ScrollViewer><StackPanel Spacing="6" Margin="0,6">
+            <TextBox vm:L.Watermark="wm.address" Text="{Binding SiteAddress}" />
+            <Button vm:L.Content="site.search" Command="{Binding SearchAddressCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+            <ComboBox ItemsSource="{Binding MapLayers}" SelectedIndex="{Binding MapLayer}" HorizontalAlignment="Stretch" />
+            <TextBlock Text="{Binding SiteMessage}" TextWrapping="Wrap" Classes="caption" />
+            <TextBlock vm:L.Text="site.buildings" Classes="caption" />
+            <ItemsControl ItemsSource="{Binding FootprintItems}">
+              <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:FootprintItem">
+                <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Background="Transparent" Padding="8,3" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).PickFootprintCommand}" CommandParameter="{Binding Index}">
+                  <TextBlock Text="{Binding Text}" /></Button>
+              </DataTemplate></ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <Button vm:L.Content="site.create" Command="{Binding CreateFromFootprintCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+            <Button vm:L.Content="site.place" Command="{Binding BeginPlacementCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+            <Separator />
+            <TextBlock vm:L.Text="site.checks" Classes="caption" />
+            <CheckBox vm:L.Content="site.showfootprint" IsChecked="{Binding ShowFootprint}" />
+            <CheckBox vm:L.Content="site.straighten.cadastre" IsChecked="{Binding StraightenWithCadastre}" />
+            <Button vm:L.Content="site.fitwalls" Command="{Binding FitOuterWallsCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+            <Button vm:L.Content="site.checkscale" Command="{Binding CheckScaleCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+            <TextBlock Text="{Binding ScaleText}" TextWrapping="Wrap" Classes="caption" />
+            <Button vm:L.Content="site.applyscale" Command="{Binding ApplyScaleCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+            <Button vm:L.Content="site.checkangles" Command="{Binding CheckAnglesCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+            <ItemsControl ItemsSource="{Binding AngleIssues}">
+              <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:MainViewModel+CornerItem">
+                <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Background="Transparent" Padding="8,3" Content="{Binding Text}" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).FocusCornerCommand}" CommandParameter="{Binding At}" />
+              </DataTemplate></ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock vm:L.Text="site.guide" TextWrapping="Wrap" Classes="caption" />
+          </StackPanel></ScrollViewer>
+        </TabItem>
+        <TabItem vm:L.Header="tab.spaces">
+          <DockPanel>
+            <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,6">
+              <TextBlock vm:L.Text="cellar.numbering" Classes="caption" />
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6"><TextBox Text="{Binding CellarPrefix}" /><NumericUpDown Grid.Column="1" Value="{Binding CellarStart}" Minimum="0" Width="100" /></Grid>
+              <ComboBox ItemsSource="{Binding SpaceKinds}" SelectedItem="{Binding NewSpaceKind}" HorizontalAlignment="Stretch"><ComboBox.ItemTemplate><DataTemplate x:DataType="x:Object"><TextBlock Text="{Binding, Converter={x:Static vm:Converters.EnumName}}" /></DataTemplate></ComboBox.ItemTemplate></ComboBox>
+            </StackPanel>
+            <ScrollViewer>
+              <ItemsControl ItemsSource="{Binding SpaceItems}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:SpaceItem">
+                    <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="8,4" Margin="0,0,0,2" Background="Transparent"
+                            Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).FocusSpaceCommand}" CommandParameter="{Binding Id}">
+                      <Grid ColumnDefinitions="*,Auto"><StackPanel><TextBlock Text="{Binding Name}" FontWeight="SemiBold" /><TextBlock Text="{Binding Kind}" Classes="caption" /></StackPanel>
+                        <TextBlock Grid.Column="1" Text="{Binding Area}" VerticalAlignment="Center" Classes="caption" /></Grid>
+                    </Button>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </DockPanel>
+        </TabItem>
+        <TabItem vm:L.Header="tab.properties">
+          <StackPanel Spacing="6" Margin="0,6">
+            <TextBlock Text="{Binding SelectionText}" FontWeight="SemiBold" />
+            <TextBox vm:L.Watermark="wm.label" Text="{Binding PropLabel}" />
+            <NumericUpDown Value="{Binding PropHeight}" Minimum="0" Maximum="10000" Increment="50" vm:L.Format="fmt.height.level" />
+            <NumericUpDown Value="{Binding PropThickness}" Minimum="0" Maximum="1000" Increment="10" vm:L.Format="fmt.thickness" />
+            <Button vm:L.Content="prop.apply.thickness" Command="{Binding ApplyThicknessCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+            <Separator />
+            <TextBlock vm:L.Text="extent.title" Classes="caption" />
+            <TextBlock Text="{Binding ExtentInfo}" Classes="caption" />
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="6"><ComboBox ItemsSource="{Binding LevelNames}" SelectedIndex="{Binding ExtentFrom}" HorizontalAlignment="Stretch" /><ComboBox Grid.Column="1" ItemsSource="{Binding LevelNames}" SelectedIndex="{Binding ExtentTo}" HorizontalAlignment="Stretch" /></Grid>
+            <Button vm:L.Content="extent.apply" Command="{Binding ApplyExtentCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+            <Separator />
+            <TextBlock vm:L.Text="eq.title" Classes="caption" />
+            <TextBlock Text="{Binding EqInfo}" TextWrapping="Wrap" Classes="caption" />
+            <TextBox vm:L.Watermark="wm.label.eq" Text="{Binding EqLabel}" />
+            <NumericUpDown Value="{Binding EqWidth}" Minimum="50" Maximum="4000" Increment="50" vm:L.Format="fmt.width" />
+            <NumericUpDown Value="{Binding EqDepth}" Minimum="50" Maximum="2000" Increment="10" vm:L.Format="fmt.depth" />
+            <NumericUpDown Value="{Binding EqHeight}" Minimum="50" Maximum="3000" Increment="50" vm:L.Format="fmt.height" />
+            <NumericUpDown Value="{Binding EqElevation}" Minimum="0" Maximum="3000" Increment="50" vm:L.Format="fmt.mounting" />
+            <NumericUpDown Value="{Binding EqRotation}" Minimum="0" Maximum="359" Increment="90" vm:L.Format="fmt.rotation" />
+            <Button vm:L.Content="eq.apply" Command="{Binding ApplyEquipmentCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+            <Separator />
+            <TextBlock vm:L.Text="bg.title" Classes="caption" />
+            <CheckBox vm:L.Content="bg.show" IsChecked="{Binding BgVisible}" />
+            <Slider Minimum="0" Maximum="1" Value="{Binding BgOpacity}" vm:L.Tip="tip.opacity" />
+            <CheckBox vm:L.Content="bg.difference" IsChecked="{Binding BgDifference}" />
+            <NumericUpDown Value="{Binding ImgScaleX}" Increment="0.01" vm:L.Format="fmt.scalex" />
+            <NumericUpDown Value="{Binding ImgScaleY}" Increment="0.01" vm:L.Format="fmt.scaley" />
+            <NumericUpDown Value="{Binding ImgRotation}" Increment="0.1" vm:L.Format="fmt.rotation3" />
+            <NumericUpDown Value="{Binding ImgOffsetX}" Increment="1" vm:L.Format="fmt.offx" />
+            <NumericUpDown Value="{Binding ImgOffsetY}" Increment="1" vm:L.Format="fmt.offy" />
+            <Button vm:L.Content="bg.apply" Command="{Binding ApplyImageFieldsCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+            <Separator />
+            <Button vm:L.Content="btn.apply" Command="{Binding ApplyPropertiesCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+          </StackPanel>
+        </TabItem>
+      </TabControl>
+    </Border>
+
+    <!-- level bar: scrolls, so 30+ levels fit -->
+    <Border DockPanel.Dock="Right" Classes="bar" Width="132" Padding="8">
+      <DockPanel>
+        <TextBlock DockPanel.Dock="Top" vm:L.Text="levelbar.title" Classes="caption" Margin="0,0,0,6" />
+        <Button DockPanel.Dock="Bottom" vm:L.Content="level.add" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Margin="0,6,0,0" Command="{Binding AddLevelCommand}" />
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <ItemsControl ItemsSource="{Binding Levels}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:LevelItem">
+                <Button Classes="level" Classes.current="{Binding IsCurrent}" ToolTip.Tip="{Binding Tooltip}"
+                        Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).SelectLevelCommand}" CommandParameter="{Binding Id}">
+                  <Button.ContextMenu>
+                    <ContextMenu>
+                      <MenuItem vm:L.Header="menu.level.addabove" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).AddLevelAboveCommand}" CommandParameter="{Binding Id}" />
+                      <MenuItem vm:L.Header="menu.level.addbelow" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).AddLevelBelowCommand}" CommandParameter="{Binding Id}" />
+                      <MenuItem vm:L.Header="menu.level.rename" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).RenameLevelCommand}" CommandParameter="{Binding Id}" />
+                      <MenuItem vm:L.Header="menu.level.geometry" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).SetLevelGeometryCommand}" CommandParameter="{Binding Id}" />
+                      <MenuItem vm:L.Header="menu.level.kind.basement" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).SetLevelKindCommand}" CommandParameter="{Binding BasementSpec}" />
+                      <MenuItem vm:L.Header="menu.level.kind.ground" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).SetLevelKindCommand}" CommandParameter="{Binding GroundSpec}" />
+                      <MenuItem vm:L.Header="menu.level.kind.standard" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).SetLevelKindCommand}" CommandParameter="{Binding StandardSpec}" />
+                    </ContextMenu>
+                  </Button.ContextMenu>
+                  <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                    <TextBlock Grid.Column="1" Text="{Binding Altitude}" FontSize="10" Opacity="0.7" VerticalAlignment="Center" Margin="8,0,0,0" />
+                  </Grid>
+                </Button>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </DockPanel>
+    </Border>
+
+    <!-- view switch -->
+    <Border DockPanel.Dock="Top" Classes="bar" Padding="12,6">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <StackPanel Orientation="Horizontal" Spacing="4">
+          <Button Content="↶" Command="{Binding UndoCommand}" vm:L.Tip="tip.undo" />
+          <Button Content="↷" Command="{Binding RedoCommand}" vm:L.Tip="tip.redo" />
+        </StackPanel>
+        <TextBlock Grid.Column="1" Text="{Binding SelectionText}" HorizontalAlignment="Center" VerticalAlignment="Center" Classes="caption" />
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
+          <Button vm:L.Content="view.2d" Command="{Binding SetModeCommand}" CommandParameter="Plan" />
+          <ToggleButton Content="⫴" vm:L.Tip="tip.sidebyside" IsChecked="{Binding SideBySide}" />
+          <Button vm:L.Content="view.elevation" Command="{Binding ShowElevationCommand}" vm:L.Tip="tip.elevation" />
+          <Button vm:L.Content="view.3d" Command="{Binding SetModeCommand}" CommandParameter="Solid" />
+          <Button vm:L.Content="view.wire" Command="{Binding SetModeCommand}" CommandParameter="Wireframe" />
+          <ToggleButton vm:L.Content="view.xray" IsChecked="{Binding XRay, Mode=OneWay}" Command="{Binding ToggleXRayCommand}" IsVisible="{Binding Is3D}" />
+          <ToggleButton vm:L.Content="view.cut" IsChecked="{Binding CutAbove, Mode=OneWay}" Command="{Binding ToggleCutCommand}" IsVisible="{Binding Is3D}" vm:L.Tip="tip.cut" />
+          <Button vm:L.Content="view.levels" Command="{Binding CycleLevelFilterCommand}" IsVisible="{Binding Is3D}" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <Grid>
+      <Border x:Name="Welcome" ZIndex="10" IsVisible="{Binding ShowWelcome}" Background="{DynamicResource SystemRegionColor}">
+        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="14" Width="360">
+          <TextBlock vm:L.Text="app.name" FontSize="34" FontWeight="Light" />
+          <TextBlock vm:L.Text="welcome.tagline" TextWrapping="Wrap" Opacity="0.7" />
+          <Button vm:L.Content="welcome.new" Command="{Binding NewDocumentCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Classes="accent" />
+          <Button vm:L.Content="welcome.open" Command="{Binding OpenCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+          <Button vm:L.Content="welcome.sample" Command="{Binding OpenSampleCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+          <TextBlock vm:L.Text="welcome.recent" Classes="caption" Margin="0,10,0,0" />
+          <ItemsControl ItemsSource="{Binding RecentFiles}">
+            <ItemsControl.ItemTemplate><DataTemplate x:DataType="x:String">
+              <Button Content="{Binding}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Background="Transparent"
+                      Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).OpenRecentCommand}" CommandParameter="{Binding}" />
+            </DataTemplate></ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
+      <Border ZIndex="20" IsVisible="{Binding TourActive}" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,16,0,0" Padding="18,14" CornerRadius="10" MaxWidth="560"
+              Background="{DynamicResource SystemChromeMediumColor}" BorderBrush="{DynamicResource SystemAccentColor}" BorderThickness="2">
+        <StackPanel Spacing="8">
+          <Grid ColumnDefinitions="*,Auto"><TextBlock Text="{Binding TourTitle}" FontSize="17" FontWeight="SemiBold" /><TextBlock Grid.Column="1" Text="{Binding TourProgress}" Opacity="0.6" /></Grid>
+          <TextBlock Text="{Binding TourBody}" TextWrapping="Wrap" />
+          <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right"><Button vm:L.Content="tour.skip" Command="{Binding TourSkipCommand}" /><Button vm:L.Content="wiz.next" Classes="accent" Command="{Binding TourNextCommand}" /></StackPanel>
+        </StackPanel>
+      </Border>
+      <UniformGrid Rows="1">
+        <vm:PlanView x:Name="Plan" IsVisible="{Binding ShowPlan}" />
+        <Grid x:Name="View3DHost" IsVisible="{Binding Show3D}" />
+      </UniformGrid>
+      <vm:SiteView x:Name="SiteMap" IsVisible="{Binding IsSite}" />
+      <vm:ElevationView x:Name="Elev" IsVisible="{Binding IsElevation}" Focusable="True" />
+    </Grid>
+  </DockPanel>
+</Window>

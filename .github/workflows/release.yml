@@ -19,7 +19,7 @@ jobs:
       - shell: bash
         run: packaging/package.sh ${{ matrix.rid }} "${GITHUB_REF_NAME#v}"
       - uses: actions/upload-artifact@v4
-        with: { name: ${{ matrix.rid }}, path: "artifacts/${{ matrix.rid }}/ImmeubleCad-*" }
+        with: { name: ${{ matrix.rid }}, path: "artifacts/${{ matrix.rid }}/ImmoCad-*" }
   release:
     needs: package
     runs-on: ubuntu-latest

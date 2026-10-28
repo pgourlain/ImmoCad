@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=ImmoCad
+Exec=ImmoCad %f
+Icon=immocad
+Categories=Graphics;Engineering;
+MimeType=application/x-immeuble;

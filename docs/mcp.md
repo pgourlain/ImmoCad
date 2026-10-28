@@ -1,13 +1,13 @@
-# ImmeubleCad MCP server
+# ImmoCad MCP server
 
-The desktop executable hosts an MCP server over stdio: `ImmeubleCad --mcp` (headless, no window). Logs go to the log file and stderr only; stdout is the protocol.
+The desktop executable hosts an MCP server over stdio: `ImmoCad --mcp` (headless, no window). Logs go to the log file and stderr only; stdout is the protocol.
 
 ## Setup with Claude Code
 
 ```bash
-claude mcp add immeublecad -- /path/to/ImmeubleCad --mcp
+claude mcp add immocad -- /path/to/ImmoCad --mcp
 # from source
-claude mcp add immeublecad -- dotnet run --project src/ImmeubleCad.Desktop -- --mcp
+claude mcp add immocad -- dotnet run --project src/ImmoCad.Desktop -- --mcp
 ```
 
 ## Tools
@@ -26,7 +26,7 @@ Files are only read/written inside the allowed folders (temp folder and the user
 
 ## Resources
 
-`immeuble://buildings`, `immeuble://buildings/{id}/networks`, `immeuble://equipment-library`.
+`immocad://buildings`, `immocad://buildings/{id}/networks`, `immocad://equipment-library`.
 
 ## Example prompts
 

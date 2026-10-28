@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>ImmoCad</AssemblyName>
+    <RootNamespace>ImmoCad.Desktop</RootNamespace>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ApplicationIcon>..\..\packaging\icon\icon.ico</ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup><InternalsVisibleTo Include="ImmoCad.Desktop.Tests" /></ItemGroup>
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.4" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <PackageReference Include="Silk.NET.OpenGL" Version="2.23.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.0" />
+    <ProjectReference Include="..\ImmoCad.Core\ImmoCad.Core.csproj" />
+    <ProjectReference Include="..\ImmoCad.Mcp\ImmoCad.Mcp.csproj" />
+    <ProjectReference Include="..\ImmoCad.Geo\ImmoCad.Geo.csproj" />
+  </ItemGroup>
+</Project>
