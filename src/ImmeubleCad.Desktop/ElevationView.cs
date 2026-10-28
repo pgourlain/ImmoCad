@@ -79,7 +79,7 @@ public class ElevationView : Control
     public override void Render(DrawingContext ctx)
     {
         var dark = ActualThemeVariant == Avalonia.Styling.ThemeVariant.Dark;
-        ctx.FillRectangle(new SolidColorBrush(dark ? Color.FromRgb(30, 32, 36) : Color.FromRgb(250, 250, 248)), new Rect(Bounds.Size));
+        ctx.FillRectangle(Tokens.Brush(this, "PlanBackground", dark ? Color.FromRgb(30, 32, 36) : Color.FromRgb(250, 250, 248)), new Rect(Bounds.Size));
         if (Vm?.Plane is not { } plane) return;
         if (_fit) Fit();
         var b = Vm.Building; var txt = dark ? Brushes.Gainsboro : Brushes.DimGray;

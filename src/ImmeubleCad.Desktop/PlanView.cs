@@ -488,7 +488,7 @@ public class PlanView : Control
     public override void Render(DrawingContext ctx)
     {
         var dark = ActualThemeVariant == Avalonia.Styling.ThemeVariant.Dark;
-        ctx.FillRectangle(new SolidColorBrush(dark ? Color.FromRgb(30, 32, 36) : Color.FromRgb(250, 250, 248)), new Rect(Bounds.Size));
+        ctx.FillRectangle(Tokens.Brush(this, "PlanBackground", dark ? Color.FromRgb(30, 32, 36) : Color.FromRgb(250, 250, 248)), new Rect(Bounds.Size));
         if (!_fitted) FitAll();
         DrawGrid(ctx, dark);
         if (Vm?.CurrentLevel is not { } l) return;
@@ -515,10 +515,10 @@ public class PlanView : Control
             using (ctx.PushRenderOptions(new RenderOptions { BitmapBlendingMode = Vm.BgDifference ? BitmapBlendingMode.Difference : BitmapBlendingMode.SourceOver }))
                 ctx.DrawImage(bbg, new Rect(bbg.PixelSize.ToSize(1)));
         }
-        if (below != null && Vm.GhostBelow) DrawWalls(ctx, below, new SolidColorBrush(Color.FromArgb(55, 60, 140, 255)), null, null);
+        if (below != null && Vm.GhostBelow) DrawWalls(ctx, below, new SolidColorBrush(Color.FromArgb(55, Tokens.Get(this, "GhostBelow", Color.FromRgb(60, 140, 255)).R, Tokens.Get(this, "GhostBelow", Color.FromRgb(60, 140, 255)).G, Tokens.Get(this, "GhostBelow", Color.FromRgb(60, 140, 255)).B)), null, null);
         var above = Vm.Building.Levels.FirstOrDefault(x => x.AltitudeMm > l.AltitudeMm);
         if (above != null && Vm.GhostAbove) DrawWalls(ctx, above, new SolidColorBrush(Color.FromArgb(45, 255, 150, 40)), null, null);
-        var wallFill = new SolidColorBrush(dark ? Color.FromRgb(190, 192, 198) : Color.FromRgb(70, 72, 78));
+        var wallFill = Tokens.Brush(this, "WallFill", dark ? Color.FromRgb(190, 192, 198) : Color.FromRgb(70, 72, 78));
         var sel = new SolidColorBrush(Color.FromRgb(255, 140, 0));
         DrawWalls(ctx, l, wallFill, new Pen(new SolidColorBrush(dark ? Colors.Black : Colors.Black), 0.8), null, Vm.SelectedWalls, sel);
         foreach (var rm in l.References)   // locked reference mesh: horizontal section 1 m above the floor, to trace over
@@ -575,7 +575,7 @@ public class PlanView : Control
     private void DrawGrid(DrawingContext ctx, bool dark)
     {
         var step = Scale * 1000; if (step < 8) return;
-        var minor = new Pen(new SolidColorBrush(dark ? Color.FromRgb(44, 47, 52) : Color.FromRgb(236, 236, 232)), 1);
+        var minor = new Pen(Tokens.Brush(this, "PlanGrid", dark ? Color.FromRgb(44, 47, 52) : Color.FromRgb(236, 236, 232)), 1);
         for (var x = Offset.X % step; x < Bounds.Width; x += step) ctx.DrawLine(minor, new(x, 0), new(x, Bounds.Height));
         for (var y = (Bounds.Height - Offset.Y) % step; y < Bounds.Height; y += step) ctx.DrawLine(minor, new(0, y), new(Bounds.Width, y));
     }

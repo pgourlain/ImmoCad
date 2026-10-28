@@ -35,7 +35,7 @@ public class Viewport3D : Control, IViewport3D
     public override void Render(DrawingContext ctx)
     {
         var dark = ActualThemeVariant == Avalonia.Styling.ThemeVariant.Dark;
-        ctx.FillRectangle(new SolidColorBrush(dark ? Color.FromRgb(30, 32, 36) : Color.FromRgb(246, 247, 249)), new Rect(Bounds.Size));
+        ctx.FillRectangle(Tokens.Brush(this, "Viewport3DBackground", dark ? Color.FromRgb(30, 32, 36) : Color.FromRgb(246, 247, 249)), new Rect(Bounds.Size));
         if (Controller.Objects.Count == 0) return;
         var half = Math.Min(Bounds.Width, Bounds.Height) / 2; var cam = Controller.Camera;
         Point S(float x, float y, float z) { var (px, py, _) = cam.Project(x, y, z); return new(Bounds.Width / 2 + px * half, Bounds.Height / 2 - py * half); }

@@ -8,5 +8,6 @@
   <key>CFBundleDocumentTypes</key><array><dict>
     <key>CFBundleTypeExtensions</key><array><string>immeuble</string></array>
     <key>CFBundleTypeRole</key><string>Editor</string></dict></array>
+  <key>CFBundleIconFile</key><string>icon</string>
   <key>NSHighResolutionCapable</key><true/>
 </dict></plist>

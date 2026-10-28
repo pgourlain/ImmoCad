@@ -15,6 +15,9 @@ public sealed class AppSettings
     public bool AnimateTransitions { get; set; } = true;
     public bool ShowGhostBelow { get; set; } = true;
     public string Language { get; set; } = "fr";
+    /// <summary>auto | light | dark</summary>
+    public string Theme { get; set; } = "auto";
+    public bool TourDone { get; set; }
     public List<string> RecentFiles { get; set; } = new();
     public List<RiserTemplate> RiserTemplates { get; set; } = new();
 

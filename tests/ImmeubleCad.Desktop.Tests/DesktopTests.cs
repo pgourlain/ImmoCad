@@ -370,7 +370,8 @@ public class ShellTests
         var save = specs[0].Items.First(i => i.Header == "Enregistrer"); Assert.Equal(Avalonia.Input.Key.S, save.Key); Assert.True(save.UseCommandKey);
         Assert.NotEqual(Avalonia.Input.KeyModifiers.None, MenuFactory.CommandModifiers);
         Assert.NotNull(MenuFactory.ToNativeMenu(specs));
-        Assert.Contains(specs[4].Items, i => i.Header.StartsWith("Visite") && !i.Command!.CanExecute(null));            // later features: disabled NotYetImplemented command
+        Assert.Contains(specs[4].Items, i => i.Header.StartsWith("Visite") && i.Command!.CanExecute(null));
+        Assert.False(new NotYetImplementedCommand().CanExecute(null));                                                  // later features bind to a disabled command
     }, CancellationToken.None);
 
     [Fact] public Task Drag_and_drop_style_open_and_display_toggles() => f.Session.Dispatch(() =>
@@ -760,5 +761,41 @@ public class ImportExportUiTests
         var w = new MainWindow { DataContext = vm, Width = 1000, Height = 700 }; w.Show(); w.UpdateLayout(); Assert.NotNull(w.CaptureRenderedFrame());
         dlg.OpenAnswers.Enqueue(Path.Combine(tmp, "missing.ifc")); await vm.ImportIfcCommand.ExecuteAsync(null); Assert.Single(dlg.Errors);          // a missing file is reported, not thrown
         Directory.Delete(tmp, true); w.Close();
+    }, CancellationToken.None);
+}
+
+public class ThemeAndTourTests
+{
+    private readonly HeadlessFixture f = new();
+
+    [Fact] public Task Light_and_dark_tokens_differ_theme_is_persisted_and_drawn() => f.Session.Dispatch(() =>
+    {
+        var path = Path.Combine(Path.GetTempPath(), "theme" + Guid.NewGuid().ToString("N"), "settings.json");
+        var vm = new MainViewModel { Settings = new(), SettingsPath = path }; var w = new MainWindow { DataContext = vm, Width = 900, Height = 700 }; w.Show(); w.UpdateLayout();
+        byte[] Px() { using var ms = new MemoryStream(); w.CaptureRenderedFrame()!.Save(ms); return ms.ToArray(); }
+        vm.ApplyTheme("light"); w.UpdateLayout(); var plan = w.FindControl<PlanView>("Plan")!; var lightBg = Tokens.Get(plan, "PlanBackground", Avalonia.Media.Colors.Magenta); var light = Px();
+        vm.ApplyTheme("dark"); w.UpdateLayout(); var darkBg = Tokens.Get(plan, "PlanBackground", Avalonia.Media.Colors.Magenta); var dark = Px();
+        Assert.NotEqual(Avalonia.Media.Colors.Magenta, lightBg); Assert.NotEqual(lightBg, darkBg); Assert.True(lightBg.R > darkBg.R); Assert.NotEqual(light, dark);
+        Assert.Equal("dark", ImmeubleCad.Core.SettingsStore.Load(path).Theme); vm.ApplyTheme("auto"); Assert.Equal("auto", vm.Settings.Theme);
+        w.CaptureRenderedFrame()!.Save(Path.Combine(AppContext.BaseDirectory, "screenshots", "theme.png")); w.Close();
+    }, CancellationToken.None);
+
+    [Fact] public Task Guided_tour_walks_five_steps_selects_the_right_tools_and_is_remembered() => f.Session.Dispatch(() =>
+    {
+        var path = Path.Combine(Path.GetTempPath(), "tour" + Guid.NewGuid().ToString("N"), "settings.json");
+        var vm = new MainViewModel(startWithSample: false) { Settings = new(), SettingsPath = path };
+        Assert.False(vm.TourActive); vm.StartTourCommand.Execute(null); Assert.True(vm.HasDocument); Assert.True(vm.TourActive); Assert.Equal("1 / 5", vm.TourProgress); Assert.Contains("Importer", vm.TourTitle);
+        vm.TourNextCommand.Execute(null); vm.TourNextCommand.Execute(null); vm.TourNextCommand.Execute(null); Assert.Equal(3, vm.TourStep); Assert.Contains("colonne", vm.TourBody);
+        vm.TourNextCommand.Execute(null); Assert.True(vm.IsRiserTool); Assert.Equal(4, vm.TourStep);                       // step 4 → the riser tool is active
+        vm.TourNextCommand.Execute(null); Assert.False(vm.TourActive); Assert.True(vm.IsPipeTool); Assert.True(vm.Settings.TourDone); Assert.True(ImmeubleCad.Core.SettingsStore.Load(path).TourDone);
+        vm.StartTourCommand.Execute(null); vm.TourSkipCommand.Execute(null); Assert.False(vm.TourActive);
+        var w = new MainWindow { DataContext = vm, Width = 1280, Height = 820 }; w.Show(); vm.StartTourCommand.Execute(null); w.UpdateLayout(); w.CaptureRenderedFrame()!.Save(Path.Combine(AppContext.BaseDirectory, "screenshots", "tour.png")); w.Close();
+    }, CancellationToken.None);
+
+    [Fact] public Task About_dialog_shows_version_and_attribution_and_the_window_has_an_icon() => f.Session.Dispatch(() =>
+    {
+        var d = new AboutDialog(); d.Show(); Assert.Contains(".NET", d.FindControl<Avalonia.Controls.TextBlock>("Info")!.Text); d.Close();
+        var w = new MainWindow { DataContext = new MainViewModel() }; w.Show(); Assert.NotNull(w.Icon); w.Close();
+        Assert.True(File.Exists(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "packaging", "icon", "icon.ico")));
     }, CancellationToken.None);
 }

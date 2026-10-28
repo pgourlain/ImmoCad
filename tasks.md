@@ -352,11 +352,11 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 ## Phase 11 — Polish and packaging
 
 - [x] Settings persistence (JSON in the per-OS app-data folder): window, panels, last tool, snapping options, templates. *(window size, recent files; panels/last tool/snapping options not persisted yet)*
-- [ ] App icon, About dialog, light/dark themes (design tokens like CinnabarSharp's `Themes/`).
+- [x] App icon, About dialog, light/dark themes (design tokens like CinnabarSharp's `Themes/`). *(generated icon in all sizes + .ico; About dialog; design tokens in `Themes/Tokens.axaml` with Light/Dark; Auto/Light/Dark in the View menu, persisted)*
 - [x] `packaging/package.sh <rid> <version>`: self-contained, Native AOT, Windows zip, macOS `.app`/`.dmg` (single architecture), Linux tarball with `.desktop` file; `.immeuble` file association.
 - [x] Release workflow: pushing a `v*` tag packages win-x64, linux-x64, osx-arm64, osx-x64 and publishes a GitHub release.
 - [x] Unsaved work recovery (autosave every few minutes to the app-data folder, offered at next start after a crash); the crash itself is already in the log (Phase 1). *(autosave every 3 min, recovery after a crash)*
-- [ ] Onboarding: a sample building opened from the welcome screen, and a 5-step guided tour (import a plan, calibrate, detect, add a riser, extend a pipe).
+- [x] Onboarding: a sample building opened from the welcome screen, and a 5-step guided tour (import a plan, calibrate, detect, add a riser, extend a pipe). *(sample from the welcome screen; 5-step tour offered on first start and in Help)*
 
 **Validation**
 

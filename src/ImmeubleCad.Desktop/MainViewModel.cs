@@ -626,6 +626,39 @@ public partial class MainViewModel : ObservableObject
     public void NudgeImage(int dx, int dy) { if (CurrentLevel?.ImageTransform is { } m) SetImageTransform(ImageStretch.Nudge(ImageStretch.FromArray(m), dx, dy)); }
     [RelayCommand] private void ApplyImageFields() { if (CurrentLevel?.ImageTransform != null) SetImageTransform(ImageStretch.Compose(ImgScaleX, ImgScaleY, ImgRotation, ImgOffsetX, ImgOffsetY)); }
 
+    // ---- Theme and guided tour ----
+    public void ApplyTheme(string theme)
+    {
+        Settings.Theme = theme; if (SettingsPath != null) try { SettingsStore.Save(Settings, SettingsPath); } catch (IOException) { }
+        if (Avalonia.Application.Current is { } app) app.RequestedThemeVariant = theme switch { "light" => Avalonia.Styling.ThemeVariant.Light, "dark" => Avalonia.Styling.ThemeVariant.Dark, _ => Avalonia.Styling.ThemeVariant.Default };
+        Changed?.Invoke();
+    }
+    [RelayCommand] private void SetTheme(string theme) => ApplyTheme(theme);
+
+    public static readonly (string Title, string Body, string ToolOrAction)[] TourSteps =
+    [
+        ("1. Importer un plan", "Fichier › Importer un plan : choisissez la photo ou le scan d'un niveau.", "import"),
+        ("2. Étalonner", "Dans l'assistant, redressez le plan puis cliquez deux points dont vous connaissez la distance réelle.", "calibrate"),
+        ("3. Détecter les murs", "Réglez les curseurs jusqu'à ce que les murs soient en rouge, vérifiez, puis validez : tout s'ajoute en une seule étape annulable.", "detect"),
+        ("4. Poser une colonne", "Outil « colonne » : cliquez dans le plan pour poser une colonne d'eau ou de chauffage sur tous les niveaux.", "Riser"),
+        ("5. Prolonger un tuyau", "Tracez un tuyau, sélectionnez-le, puis tirez une poignée : prolongement, coude (Ctrl) ou té (milieu).", "DrawPipe"),
+    ];
+    [ObservableProperty] private int _tourStep = -1;
+    public bool TourActive => TourStep >= 0;
+    public string TourTitle => TourActive ? TourSteps[TourStep].Title : "";
+    public string TourBody => TourActive ? TourSteps[TourStep].Body : "";
+    public string TourProgress => TourActive ? $"{TourStep + 1} / {TourSteps.Length}" : "";
+    partial void OnTourStepChanged(int value) { OnPropertyChanged(nameof(TourActive)); OnPropertyChanged(nameof(TourTitle)); OnPropertyChanged(nameof(TourBody)); OnPropertyChanged(nameof(TourProgress)); }
+    [RelayCommand] private void StartTour() { if (ActiveIndex < 0) OpenSample(); TourStep = 0; }
+    [RelayCommand] private void TourNext()
+    {
+        if (!TourActive) return;
+        var action = TourSteps[TourStep].ToolOrAction; if (action is "Riser" or "DrawPipe") SetTool(action);
+        if (TourStep + 1 >= TourSteps.Length) EndTour(); else TourStep++;
+    }
+    [RelayCommand] private void TourSkip() => EndTour();
+    private void EndTour() { TourStep = -1; Settings.TourDone = true; if (SettingsPath != null) try { SettingsStore.Save(Settings, SettingsPath); } catch (IOException) { } }
+
     // ---- Display options ----
     [ObservableProperty] private bool _ghostBelow = true;
     [ObservableProperty] private bool _ghostAbove;

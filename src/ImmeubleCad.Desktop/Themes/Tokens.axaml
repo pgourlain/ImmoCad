@@ -1,0 +1,13 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- Design tokens: every custom-drawn colour comes from here, never from a literal in a control. -->
+  <ResourceDictionary.ThemeDictionaries>
+    <ResourceDictionary x:Key="Light">
+      <Color x:Key="PlanBackground">#FAFAF8</Color><Color x:Key="PlanGrid">#ECECE8</Color><Color x:Key="WallFill">#46484E</Color><Color x:Key="WallStroke">#000000</Color>
+      <Color x:Key="PlanText">#696969</Color><Color x:Key="GhostBelow">#3C8CFF</Color><Color x:Key="Viewport3DBackground">#F6F7F9</Color><Color x:Key="ImageCanvasBackground">#282A2E</Color>
+    </ResourceDictionary>
+    <ResourceDictionary x:Key="Dark">
+      <Color x:Key="PlanBackground">#1E2024</Color><Color x:Key="PlanGrid">#2C2F34</Color><Color x:Key="WallFill">#BEC0C6</Color><Color x:Key="WallStroke">#000000</Color>
+      <Color x:Key="PlanText">#DCDCDC</Color><Color x:Key="GhostBelow">#5AA0FF</Color><Color x:Key="Viewport3DBackground">#1E2024</Color><Color x:Key="ImageCanvasBackground">#16171A</Color>
+    </ResourceDictionary>
+  </ResourceDictionary.ThemeDictionaries>
+</ResourceDictionary>

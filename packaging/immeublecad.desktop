@@ -2,5 +2,6 @@
 Type=Application
 Name=ImmeubleCad
 Exec=ImmeubleCad %f
+Icon=immeublecad
 Categories=Graphics;Engineering;
 MimeType=application/x-immeuble;

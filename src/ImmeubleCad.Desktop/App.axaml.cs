@@ -32,12 +32,15 @@ public partial class App : Application
 
             var vm = new MainViewModel(startWithSample: false) { Settings = settings, SettingsPath = settingsPath };
             foreach (var f in settings.RecentFiles.Where(File.Exists)) vm.RecentFiles.Add(f);
+            vm.ApplyTheme(settings.Theme);
+            Translations.Language = settings.Language;
             var win = new MainWindow { DataContext = vm, Width = settings.WindowWidth, Height = settings.WindowHeight };
             win.Opened += (_, _) =>
             {
                 try
                 {
                     if (StartupFile != null && File.Exists(StartupFile)) vm.OpenFile(StartupFile);
+                    else if (!settings.TourDone && recovered == null) vm.StartTourCommand.Execute(null);   // first start: offer the guided tour once
                     else if (recovered != null) { vm.AdoptRecovered(recovered); log.LogWarning("Recovered an autosaved building after an unclean exit"); }
                 }
                 catch (Exception ex) { log.LogError(ex, "Cannot open the startup document"); }

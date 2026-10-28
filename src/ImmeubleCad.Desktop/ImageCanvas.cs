@@ -75,7 +75,7 @@ public class ImageCanvas : Control
 
     public override void Render(DrawingContext ctx)
     {
-        ctx.FillRectangle(new SolidColorBrush(Color.FromRgb(40, 42, 46)), new Rect(Bounds.Size));
+        ctx.FillRectangle(Tokens.Brush(this, "ImageCanvasBackground", Color.FromRgb(40, 42, 46)), new Rect(Bounds.Size));
         if (Picture == null) return;
         if (_fit && Bounds.Width > 10)
         {

@@ -77,6 +77,8 @@ public static class MenuFactory
                 new("3D plein", vm.SetModeCommand, "Solid", Key: Key.D3, UseCommandKey: true),
                 new("3D filaire", vm.SetModeCommand, "Wireframe"),
                 MenuItemSpec.Separator,
+                new("Thème", Children: [new("Automatique", vm.SetThemeCommand, "auto"), new("Clair", vm.SetThemeCommand, "light"), new("Sombre", vm.SetThemeCommand, "dark")]),
+                MenuItemSpec.Separator,
                 new("Niveau du dessous en fantôme", vm.ToggleGhostBelowCommand),
                 new("Niveau du dessus en fantôme", vm.ToggleGhostAboveCommand),
                 new("Parties communes seulement", vm.ToggleCommonOnlyCommand),
@@ -86,7 +88,7 @@ public static class MenuFactory
                 new("Ouvrir le dossier des journaux", new RelayAction(openLogs)),
                 new("Copier les informations système", new RelayAction(copyInfo)),
                 new("À propos", new RelayAction(about)),
-                new("Visite guidée (bientôt)", NotYet),
+                new("Visite guidée", vm.StartTourCommand),
             ]),
         };
     }

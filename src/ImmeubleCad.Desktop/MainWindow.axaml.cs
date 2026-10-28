@@ -126,5 +126,5 @@ public partial class MainWindow : Window
         Vm.Status = "Informations système copiées";
     }
 
-    private async void ShowAbout() => await Vm.Dialogs.ShowErrorAsync("À propos d'ImmeubleCad", AppLogProvider.SystemInfo() + "\n\nDonnées cartographiques : © IGN / DGFiP — Licence Ouverte 2.0");
+    private async void ShowAbout() => await new AboutDialog().ShowDialog(this);
 }
