@@ -116,6 +116,8 @@ public class LanguageTests
         var root = Root(); var keys = Translations.Keys.ToHashSet(); var missing = new List<string>();
         foreach (Match m in Regex.Matches(File.ReadAllText(Path.Combine(root, "src", "ImmoCad.Core", "History", "BuildingActions.cs")), "Edit(?:<[^>]*>)?\\(\"([^\"]+)\"")) if (!keys.Contains("action." + m.Groups[1].Value)) missing.Add("action." + m.Groups[1].Value);
         foreach (var c in ImmoCad.Core.Catalog.EquipmentCatalog.Default.Select(e => e.Category).Distinct()) if (!keys.Contains("cat." + c)) missing.Add("cat." + c);
+        foreach (var e in ImmoCad.Core.Catalog.EquipmentCatalog.Default) if (!keys.Contains("desc." + e.Id)) missing.Add("desc." + e.Id);                 // one plain sentence per object
+        foreach (var st in new[] { "plan", "rooms", "equip", "connect", "result" }) foreach (var p in new[] { "step.", "step.hint." }) if (!keys.Contains(p + st)) missing.Add(p + st);
         foreach (var t in new[] { typeof(ImmoCad.Core.Model.NetworkType), typeof(ImmoCad.Core.Model.SpaceKind), typeof(ImmoCad.Core.Model.LevelKind) })
             foreach (var v in Enum.GetValues(t)) if (!keys.Contains($"enum.{t.Name}.{v}")) missing.Add($"enum.{t.Name}.{v}");
         foreach (var id in new[] { "ifc", "freecad", "dxf", "glb", "obj", "svg", "csv", "bom_pdf" }) foreach (var p in new[] { "export.fmt.", "export.pur." }) if (!keys.Contains(p + id)) missing.Add(p + id);

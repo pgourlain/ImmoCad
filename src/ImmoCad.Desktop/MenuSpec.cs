@@ -54,6 +54,8 @@ public static class MenuFactory
             ]),
             new(T("menu.edit"),
             [
+                new(T("cmd.search"), vm.OpenCommandPaletteCommand, Key: Key.K, UseCommandKey: true),
+                MenuItemSpec.Separator,
                 new(T("tip.undo"), vm.UndoCommand, Key: Key.Z, UseCommandKey: true),
                 new(T("tip.redo"), vm.RedoCommand, Key: Key.Z, Extra: KeyModifiers.Shift, UseCommandKey: true),
                 MenuItemSpec.Separator,
@@ -91,6 +93,7 @@ public static class MenuFactory
                 new(T("menu.view.language"), Children: [new(T("lang.en"), vm.SetLanguageCommand, "en"), new(T("lang.fr"), vm.SetLanguageCommand, "fr")]),
                 new(T("menu.theme"), Children: [new(T("menu.theme.auto"), vm.SetThemeCommand, "auto"), new(T("menu.theme.light"), vm.SetThemeCommand, "light"), new(T("menu.theme.dark"), vm.SetThemeCommand, "dark")]),
                 MenuItemSpec.Separator,
+                new(T("expert.mode"), vm.ToggleExpertCommand),
                 new(T("menu.snapgrid"), vm.ToggleSnapToGridCommand, Key: Key.F9),
                 new(T("menu.northup"), vm.ToggleNorthUpCommand),
                 new(T("menu.ghost.below"), vm.ToggleGhostBelowCommand),

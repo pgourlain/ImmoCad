@@ -607,6 +607,50 @@ public class RoomToolsTests
         w.Close();
     }, CancellationToken.None);
 
+    [Fact] public Task Each_step_shows_its_tools_and_panel_and_expert_mode_shows_everything() => f.Session.Dispatch(() =>
+    {
+        var vm = Basement(); vm.ExpertMode = false; vm.SetStepCommand.Execute("Plan");
+        Assert.True(vm.ShowPlanTools && vm.ShowWallTools); Assert.False(vm.ShowRiserTool || vm.ShowPipeTool || vm.ShowRoomTools); Assert.Equal(6, vm.PanelTab);
+        vm.NextStepCommand.Execute(null); Assert.Equal(WorkStep.Rooms, vm.Step); Assert.True(vm.ShowRoomTools); Assert.Equal(5, vm.PanelTab);
+        vm.SetStepCommand.Execute("Equip"); Assert.True(vm.ShowRiserTool); Assert.False(vm.ShowPipeTool); Assert.Equal(0, vm.PanelTab);
+        Assert.All(vm.Palette, p => Assert.False(string.IsNullOrWhiteSpace(p.Description), p.Id));                                      // every object explains itself in one sentence
+        vm.SetStepCommand.Execute("Connect"); Assert.True(vm.ShowPipeTool); Assert.Equal(2, vm.PanelTab); Assert.Equal(ImmoCad.Core.Translations.T("cat.Valves"), vm.Palette[0].Category);   // valves first while connecting
+        Assert.Equal(3, vm.Steps.Count(s => s.IsDone)); Assert.True(vm.Steps.Single(s => s.IsCurrent).Step == WorkStep.Connect);
+        vm.ExpertMode = true; Assert.True(vm.ShowPlanTools && vm.ShowWallTools && vm.ShowRoomTools && vm.ShowRiserTool && vm.ShowPipeTool && vm.ShowExpertActions);
+        vm.ExpertMode = false; vm.SetStepCommand.Execute("Result"); Assert.Equal(ViewMode.Solid, vm.Mode); Assert.False(vm.HasNextStep);
+        vm.SetStepCommand.Execute("Rooms"); Assert.Equal(ViewMode.Plan, vm.Mode);
+    }, CancellationToken.None);
+
+    [Fact] public Task The_command_palette_finds_tools_objects_and_menu_commands_and_runs_them() => f.Session.Dispatch(() =>
+    {
+        ImmoCad.Core.Translations.Language = "fr";
+        var vm = Basement(); var w = new MainWindow { DataContext = vm, Width = 1280, Height = 820 }; w.Show(); w.UpdateLayout();
+        w.KeyPress(Avalonia.Input.Key.K, Avalonia.Input.RawInputModifiers.Meta, Avalonia.Input.PhysicalKey.K, null);
+        if (!vm.CommandPaletteOpen) w.KeyPress(Avalonia.Input.Key.K, Avalonia.Input.RawInputModifiers.Control, Avalonia.Input.PhysicalKey.K, null);
+        Assert.True(vm.CommandPaletteOpen);
+        vm.CommandQuery = "vanne arret"; Assert.Equal("Vanne d'arrêt", vm.CommandResults[0].Title);                                         // accents and word order do not matter
+        vm.CommandQuery = "vanne"; w.UpdateLayout(); w.CaptureRenderedFrame()!.Save(Path.Combine(AppContext.BaseDirectory, "screenshots", "command-palette.png")); vm.CommandQuery = "vanne arret";
+        vm.RunCommandCommand.Execute(null); Assert.False(vm.CommandPaletteOpen); Assert.Equal(ToolKind.Place, vm.Tool); Assert.Equal("shutoff-valve", vm.PaletteId);
+        vm.OpenCommandPaletteCommand.Execute(null); vm.CommandQuery = "decouper"; Assert.Contains(vm.CommandResults, c => c.Title == ImmoCad.Core.Translations.T("toolname.CutWall"));
+        vm.CommandQuery = ImmoCad.Core.Translations.T("tip.undo"); Assert.Contains(vm.CommandResults, c => c.Group == ImmoCad.Core.Translations.T("menu.edit"));   // menu commands are there too
+        vm.CommandQuery = "relier"; vm.RunCommandCommand.Execute(vm.CommandResults.First(c => c.Group == ImmoCad.Core.Translations.T("cmd.group.step"))); Assert.Equal(WorkStep.Connect, vm.Step);
+        w.Close();
+    }, CancellationToken.None);
+
+    [Fact] public Task The_action_bar_follows_the_selection() => f.Session.Dispatch(() =>
+    {
+        var vm = Basement(); var w = new MainWindow { DataContext = vm, Width = 1280, Height = 820 }; w.Show(); w.UpdateLayout();
+        Assert.False(vm.HasSelection);
+        vm.SelectWalls([vm.CurrentLevel!.Walls[0].Id], false); Assert.True(vm.HasSelection && vm.WallsSelected); Assert.False(vm.EquipmentSelected);
+        var eq = vm.Actions.AddEquipment(vm.CurrentLevel!.Id, "radiator", new(1000, 1000)); vm.SelectEquipment(eq.Id);
+        vm.SetStepCommand.Execute("Equip"); vm.SelectEquipment(eq.Id); w.UpdateLayout(); w.CaptureRenderedFrame()!.Save(Path.Combine(AppContext.BaseDirectory, "screenshots", "action-bar.png"));
+        Assert.True(vm.EquipmentSelected); Assert.False(vm.WallsSelected); Assert.Contains(ImmoCad.Core.Catalog.EquipmentCatalog.Find("radiator")!.Name, vm.SelectionText);
+        var rot = eq.RotationDeg; vm.RotateSelectedEquipmentCommand.Execute(null); Assert.Equal((rot + 90) % 360, vm.Building.Equipment.First(e => e.Id == eq.Id).RotationDeg);
+        vm.ShowPropertiesCommand.Execute(null); Assert.Equal(6, vm.PanelTab);
+        vm.DeleteSelectionCommand.Execute(null); Assert.False(vm.HasSelection); Assert.DoesNotContain(vm.Building.Equipment, e => e.Id == eq.Id);
+        w.Close();
+    }, CancellationToken.None);
+
     [Fact] public Task Changing_the_view_plane_turns_about_the_model_centre_or_the_canvas_middle() => f.Session.Dispatch(() =>
     {
         var vm = Basement(); var w = new MainWindow { DataContext = vm, Width = 1280, Height = 820 }; w.Show(); w.UpdateLayout(); w.CaptureRenderedFrame();

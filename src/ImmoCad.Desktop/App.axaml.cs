@@ -36,7 +36,7 @@ public partial class App : Application
             var recovered = Autosave.HasRecovery ? Autosave.Recover() : null;
             Autosave.MarkStarted();
 
-            var vm = new MainViewModel(startWithSample: false) { Settings = settings, SettingsPath = settingsPath };
+            var vm = new MainViewModel(startWithSample: false) { Settings = settings, SettingsPath = settingsPath }; vm.ExpertMode = settings.ExpertMode;
             foreach (var f in settings.RecentFiles.Where(File.Exists)) vm.RecentFiles.Add(f);
             vm.ApplyTheme(settings.Theme);
             // map data: IGN Géoplateforme over HTTP with a disk cache, so a site already seen still shows offline

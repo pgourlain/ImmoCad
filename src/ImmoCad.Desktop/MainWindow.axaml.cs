@@ -75,6 +75,7 @@ public partial class MainWindow : Window
                 case Avalonia.Input.Key.O: Vm.OpenCommand.Execute(null); break;
                 case Avalonia.Input.Key.W: Vm.CloseTabCommand.Execute(-1); break;
                 case Avalonia.Input.Key.E: Vm.ExportCommand.Execute("ask"); break;
+                case Avalonia.Input.Key.K: Vm.OpenCommandPaletteCommand.Execute(null); break;
                 default: return;
             }
             e.Handled = true; return;
@@ -145,6 +146,8 @@ public partial class MainWindow : Window
             Vm.TransitionHandler = HandleTransition;
             Vm.PlanZoomRequested += how => Plan.Zoom(how);
             KeyDown += OnWindowKey;
+            Vm.MenuCommands = () => MainViewModel.FromMenus(MenuFactory.Build(Vm, OpenLogFolder, CopySystemInfo, ShowAbout));
+            Vm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(MainViewModel.CommandPaletteOpen) && Vm.CommandPaletteOpen) Avalonia.Threading.Dispatcher.UIThread.Post(() => CommandBox.Focus()); };
             BuildMenus(); Plan.Invalidate();
         };
         AddHandler(DragDrop.DropEvent, OnDrop);
@@ -202,6 +205,23 @@ public partial class MainWindow : Window
         if (Clipboard != null) await Clipboard.SetTextAsync(text);
         Vm.Status = T("sysinfo.copied");
     }
+
+    // ---- command palette (⌘K): typing filters, ↑↓ choose, Enter runs, Esc or a click outside closes ----
+    private void OnCommandKey(object? s, KeyEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case Key.Down: Vm.MoveCommandIndex(+1); break;
+            case Key.Up: Vm.MoveCommandIndex(-1); break;
+            case Key.Enter: Vm.RunCommandCommand.Execute(null); Plan.Focus(); break;
+            case Key.Escape: Vm.CloseCommandPaletteCommand.Execute(null); Plan.Focus(); break;
+            default: return;
+        }
+        e.Handled = true;
+    }
+    private void OnCommandTapped(object? s, Avalonia.Input.TappedEventArgs e) { if ((s as Control)?.DataContext is CommandEntry c) { Vm.RunCommandCommand.Execute(c); Plan.Focus(); } }
+    private void OnPaletteBackdrop(object? s, PointerPressedEventArgs e) => Vm.CloseCommandPaletteCommand.Execute(null);
+    private void OnPaletteInside(object? s, PointerPressedEventArgs e) => e.Handled = true;
 
     private async void ShowAbout() => await new AboutDialog().ShowDialog(this);
 }

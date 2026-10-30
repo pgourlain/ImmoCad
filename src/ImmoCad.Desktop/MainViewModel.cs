@@ -37,7 +37,7 @@ public sealed record TabItem(int Index, string Title, bool IsActive, bool IsDirt
 public sealed record HistoryRow(int Index, string Name, bool IsCurrent, bool IsFuture);
 public sealed record SpaceItem(Guid LevelId, Guid Id, string Name, string Number, string Kind, string Lot, string Area, bool IsCommon, PointMm Center);
 public sealed record NetworkItem(Guid Id, string Name, string Type, bool Visible, bool Locked, string ColorHex, string Where = "");
-public sealed record PaletteItem(string Id, string Category, string Name, string Glyph);
+public sealed record PaletteItem(string Id, string Category, string Name, string Glyph, string Description = "");
 public sealed record LevelItem(Guid Id, string Name, string Altitude, bool IsCurrent, int WallCount, string Tooltip = "", bool Hidden = false)
 {
     public string BasementSpec => $"{Id}:Basement"; public string GroundSpec => $"{Id}:Ground"; public string StandardSpec => $"{Id}:Standard";
@@ -228,7 +228,7 @@ public partial class MainViewModel : ObservableObject
     // ---- Pipe selection (handles) ----
     public (Guid NetworkId, Guid SegmentId)? SelectedSegment { get; private set; }
     public void SelectSegment(Guid networkId, Guid segmentId) { SelectedSpaceId = null; SelectedOpening = null; SelectedWalls.Clear(); SelectedEquipmentId = null; SelectedSegment = (networkId, segmentId); RefreshExtent(); Status = T("pipe.selected.hint"); OnPropertyChanged(nameof(SelectionText)); Changed?.Invoke(); }
-    public void ClearSegment() { SelectedSegment = null; }
+    public void ClearSegment() { if (SelectedSegment == null) return; SelectedSegment = null; OnPropertyChanged(nameof(SelectionText)); }
     public int Snapper_GridMm() => 50;
     /// <summary>Snap to the visible grid (View › Snap to grid, F9).</summary>
     public bool SnapToGrid { get; private set; } = true;
@@ -257,8 +257,10 @@ public partial class MainViewModel : ObservableObject
     private void RebuildPalette()
     {
         Palette.Clear();
-        foreach (var e in EquipmentCatalog.Default.Where(e => Search.Length == 0 || e.Name.Contains(Search, StringComparison.OrdinalIgnoreCase) || T("cat." + e.Category).Contains(Search, StringComparison.OrdinalIgnoreCase)))
-            Palette.Add(new PaletteItem(e.Id, T("cat." + e.Category), e.Name, e.Inline ? "⊗" : e.Category == "Sanitary" ? "◍" : "▤"));
+        // the objects of the current step come first: valves while connecting, equipment and sanitary while equipping
+        int Rank(string category) => Step == WorkStep.Connect ? (category == "Valves" ? 0 : 1) : category == "Valves" ? 1 : 0;
+        foreach (var e in EquipmentCatalog.Default.Where(e => Search.Length == 0 || e.Name.Contains(Search, StringComparison.OrdinalIgnoreCase) || T("cat." + e.Category).Contains(Search, StringComparison.OrdinalIgnoreCase)).OrderBy(e => Rank(e.Category)))
+            Palette.Add(new PaletteItem(e.Id, T("cat." + e.Category), e.Name, e.Inline ? "⊗" : e.Category == "Sanitary" ? "◍" : "▤", Has("desc." + e.Id, Language) ? T("desc." + e.Id) : ""));
     }
 
     // ---- Elevation view ----
@@ -701,14 +703,14 @@ public partial class MainViewModel : ObservableObject
     public bool IsNumberTool => Tool == ToolKind.NumberCellars;
     public bool IsStraightenTool => Tool == ToolKind.Straighten;
     public bool IsStretchTool => Tool == ToolKind.Stretch;
-    public string SelectionText => SelectedSpaceId != null ? T("space.selected") : SelectedOpening != null ? T("opening.selected") : SelectedSegment != null ? T("pipe.selected") : SelectedWalls.Count == 0 ? T("no.selection") : T("walls.selected", SelectedWalls.Count);
+    public string SelectionText => SelectedEquipment is { } se ? T("eq.selected", EquipmentCatalog.Find(se.CatalogId)?.Name ?? se.CatalogId) : SelectedSpaceId != null ? T("space.selected") : SelectedOpening != null ? T("opening.selected") : SelectedSegment != null ? T("pipe.selected") : SelectedWalls.Count == 0 ? T("no.selection") : T("walls.selected", SelectedWalls.Count);
 
     public MainViewModel() : this(startWithSample: true) { }
 
     /// <summary>startWithSample=false shows the welcome screen (New / Open / Recent) until a document exists.</summary>
     public MainViewModel(bool startWithSample)
     {
-        RebuildPalette(); Translations.LanguageChanged += OnLanguageChanged;
+        RebuildPalette(); RebuildSteps(); Translations.LanguageChanged += OnLanguageChanged;
         if (startWithSample) { AddDoc(new Doc { Building = SampleBuilding.Create().Building }); }
         else Refresh();
     }
@@ -913,7 +915,7 @@ public partial class MainViewModel : ObservableObject
     private void OnLanguageChanged()
     {
         Hint = Tool switch { ToolKind.DrawWall => T("hint.draw.wall"), ToolKind.DrawPipe => T("hint.draw.pipe"), ToolKind.Riser => T("hint.riser"), ToolKind.Place => T("hint.place"), ToolKind.Align => T("hint.align"), ToolKind.Door => T("hint.door"), ToolKind.Window => T("hint.window"), ToolKind.Space => T("hint.space"), ToolKind.Measure => T("hint.measure"), ToolKind.NumberCellars => T("hint.number"), ToolKind.Straighten => T("hint.straighten"), ToolKind.Stretch => T("hint.stretch"), ToolKind.CutWall => T("hint.cutwall"), ToolKind.MergeRegion => T("hint.mergeregion"), _ => T("hint.select") };
-        Status = T("ready"); RebuildPalette(); OnPropertyChanged(nameof(MapLayers)); OnPropertyChanged(nameof(RiserTemplates)); OnPropertyChanged(nameof(Title)); OnPropertyChanged(nameof(SelectionText));
+        Status = T("ready"); RebuildPalette(); RebuildSteps(); OnPropertyChanged(nameof(MapLayers)); OnPropertyChanged(nameof(RiserTemplates)); OnPropertyChanged(nameof(Title)); OnPropertyChanged(nameof(SelectionText));
         OnPropertyChanged(nameof(TourTitle)); OnPropertyChanged(nameof(TourBody)); OnPropertyChanged(nameof(NetworkTypes)); OnPropertyChanged(nameof(SpaceKinds)); OnPropertyChanged(nameof(WallDisplayLabel));
         if (SelectedEquipment != null) SelectEquipment(SelectedEquipmentId);
         Refresh(); LanguageRefreshed?.Invoke();

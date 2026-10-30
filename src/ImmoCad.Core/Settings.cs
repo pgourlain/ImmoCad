@@ -18,6 +18,8 @@ public sealed class AppSettings
     /// <summary>auto | light | dark</summary>
     public string Theme { get; set; } = "auto";
     public bool TourDone { get; set; }
+    /// <summary>Every tool visible whatever the step of the guided path.</summary>
+    public bool ExpertMode { get; set; }
     public List<string> RecentFiles { get; set; } = new();
     public List<RiserTemplate> RiserTemplates { get; set; } = new();
 
