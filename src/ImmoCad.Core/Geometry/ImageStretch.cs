@@ -1,14 +1,18 @@
 namespace ImmoCad.Core.Geometry;
 
-public enum StretchHandle { TopLeft, Top, TopRight, Right, BottomRight, Bottom, BottomLeft, Left, Move, Rotate }
+public enum StretchHandle { TopLeft, Top, TopRight, Right, BottomRight, Bottom, BottomLeft, Left, Move, Rotate, Shear }
 
 /// <summary>
 /// Manual stretch of the background picture, like a picture in an image editor: 8 handles + move + rotate.
 /// Works on the picture's 2×3 transform (pixels → mm). Corner handles scale both axes (Shift keeps the ratio), side handles one axis only
-/// (length or width), always about the opposite corner/side so it stays put.
+/// (length or width), always about the opposite corner/side so it stays put. The shear handle (right edge, just under the top-right corner) slides the
+/// picture sideways in proportion to the height above its bottom edge: the bottom stays put, the top follows the mouse (a trapezoid-like correction, no rotation).
 /// </summary>
 public static class ImageStretch
 {
+    /// <summary>Where the shear handle sits on the right edge, as a fraction of the picture height from the top.</summary>
+    public const double ShearAt = 0.12;
+
     public static Affine FromArray(double[]? m) => m is { Length: 6 } ? new(m[0], m[1], m[2], m[3], m[4], m[5]) : Affine.Identity;
 
     /// <summary>Corners of the picture in mm: TL, TR, BR, BL (image Y goes down, plan Y up, handled by the transform itself).</summary>
@@ -19,7 +23,7 @@ public static class ImageStretch
     {
         StretchHandle.TopLeft => t.Apply(0, 0), StretchHandle.Top => t.Apply(w / 2.0, 0), StretchHandle.TopRight => t.Apply(w, 0), StretchHandle.Right => t.Apply(w, h / 2.0),
         StretchHandle.BottomRight => t.Apply(w, h), StretchHandle.Bottom => t.Apply(w / 2.0, h), StretchHandle.BottomLeft => t.Apply(0, h), StretchHandle.Left => t.Apply(0, h / 2.0),
-        StretchHandle.Rotate => t.Apply(w / 2.0, -Math.Max(h, w) * 0.06), _ => t.Apply(w / 2.0, h / 2.0),
+        StretchHandle.Rotate => t.Apply(w / 2.0, -Math.Max(h, w) * 0.06), StretchHandle.Shear => t.Apply(w, h * ShearAt), _ => t.Apply(w / 2.0, h / 2.0),
     };
 
     /// <summary>The transform after dragging <paramref name="handle"/> from <paramref name="from"/> to <paramref name="to"/> (mm).</summary>
@@ -31,6 +35,12 @@ public static class ImageStretch
         if (handle == StretchHandle.Rotate)
         {
             var a0 = Math.Atan2(from.Y - centre.Y, from.X - centre.X); var a1 = Math.Atan2(to.Y - centre.Y, to.X - centre.X); return RotateAbout(t, centre, a1 - a0);
+        }
+        if (handle == StretchHandle.Shear)
+        {
+            var d0 = t.A * t.D - t.B * t.C; if (Math.Abs(d0) < 1e-12) return t;
+            var k = (dx * t.D - dy * t.B) / d0 / (h * (1 - ShearAt));                       // pixels of sideways slide per pixel above the bottom row
+            return new(t.A, t.B - k * t.A, t.Tx + t.A * k * h, t.C, t.D - k * t.C, t.Ty + t.C * k * h);
         }
         // local axes of the picture in mm (columns of the linear part)
         double ux = t.A, uy = t.C, vx = t.B, vy = t.D;                         // image x axis, image y axis

@@ -25,7 +25,11 @@ public class ImageCanvas : Control
     public event Action<int>? OutlineClicked;
     private double _scale = 1; private Point _offset; private Point? _pan; private bool _fit = true; private bool _space; private Point? _cursor;
 
-    public ImageCanvas() { Focusable = true; ClipToBounds = true; }
+    public ImageCanvas()
+    {
+        Focusable = true; ClipToBounds = true;
+        AddHandler(PointerTouchPadGestureMagnifyEvent, (_, e) => { ZoomAt(e.GetPosition(this), Math.Exp(e.Delta.X)); e.Handled = true; });   // trackpad pinch, as in the plan
+    }
     public double Zoom => _scale;
 
     internal void PixelClicked_ForTest(double x, double y) => PixelClicked?.Invoke((x, y));
@@ -77,10 +81,10 @@ public class ImageCanvas : Control
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         _cursor = e.GetPosition(this);
-        if (_pan is not { } l) { if (Guides) InvalidateVisual(); return; }
+        if (_pan is not { } l) return;
         var p = e.GetPosition(this); _offset += p - l; _pan = p; InvalidateVisual();
     }
-    protected override void OnPointerExited(PointerEventArgs e) { _cursor = null; if (Guides) InvalidateVisual(); }
+    protected override void OnPointerExited(PointerEventArgs e) { _cursor = null; }
     protected override void OnPointerReleased(PointerReleasedEventArgs e) { _pan = null; e.Pointer.Capture(null); }
     protected override void OnKeyDown(KeyEventArgs e)
     {
@@ -93,7 +97,7 @@ public class ImageCanvas : Control
     protected override void OnLostFocus(FocusChangedEventArgs e) { _space = false; Cursor = null; base.OnLostFocus(e); }
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
     {
-        if (OperatingSystem.IsMacOS() && !e.KeyModifiers.HasFlag(KeyModifiers.Meta)) { _offset += new Vector(e.Delta.X * 40, e.Delta.Y * 40); InvalidateVisual(); e.Handled = true; return; }   // trackpad: two fingers pan
+        if (OperatingSystem.IsMacOS() && !e.KeyModifiers.HasFlag(MenuFactory.CommandModifiers)) { _offset += new Vector(e.Delta.X * 40, e.Delta.Y * 40); InvalidateVisual(); e.Handled = true; return; }   // trackpad: two fingers pan
         ZoomAt(e.GetPosition(this), Math.Pow(1.15, Math.Clamp(e.Delta.Y, -3, 3)));
     }
 
@@ -131,10 +135,11 @@ public class ImageCanvas : Control
                 }
                 ctx.DrawGeometry(rej ? new SolidColorBrush(Color.FromArgb(60, 120, 120, 120)) : new SolidColorBrush(Color.FromArgb(40, 50, 205, 50)), pen, g);
             }
-        if (Guides && _cursor is { } cur)
-        {
-            var g = new Pen(new SolidColorBrush(Color.FromArgb(200, 0, 200, 255)), 1, DashStyle.Dash);
-            ctx.DrawLine(g, new Point(0, cur.Y), new Point(Bounds.Width, cur.Y)); ctx.DrawLine(g, new Point(cur.X, 0), new Point(cur.X, Bounds.Height));
+        if (Guides)
+        {   // fixed horizontal/vertical lines over the plan: a wall edge that is parallel to them is straight (0.1° = 1 px drift per 570 px)
+            var g = new Pen(new SolidColorBrush(Color.FromArgb(110, 0, 200, 255)), 1); const double step = 60;
+            for (var x = step; x < Bounds.Width; x += step) ctx.DrawLine(g, new Point(x, 0), new Point(x, Bounds.Height));
+            for (var y = step; y < Bounds.Height; y += step) ctx.DrawLine(g, new Point(0, y), new Point(Bounds.Width, y));
         }
         for (var i = 0; i < RefPoints.Count; i++)
         {

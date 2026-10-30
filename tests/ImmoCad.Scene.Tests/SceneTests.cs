@@ -80,6 +80,13 @@ public class SceneBuilderTests
         Assert.Null(MeshBuilder.Pick(m, (0.3f, 0.2f, 0.5f), (-1, 0, 0)));
     }
 
+    [Fact] public void A_level_switched_off_with_the_eye_leaves_the_scene()
+    {
+        var inp = Input(); var cur = inp.Levels[1].Id; var off = new HashSet<Guid> { inp.Levels[0].Id };
+        var objs = SceneBuilder.Build(inp, new(cur, LevelFilter.WholeBuilding, CutAboveCurrent: false, HiddenLevels: off));
+        Assert.Equal(2, objs.Count(s => s.Kind == SceneKind.Wall)); Assert.DoesNotContain(objs, s => s.Kind == SceneKind.Slab && s.Id == inp.Levels[0].Id);
+    }
+
     [Fact] public void Level_filters_and_cut_above_current()
     {
         var inp = Input(); var cur = inp.Levels[1].Id;
@@ -166,5 +173,32 @@ public class UnprojectTests
         Assert.Equal(id, hit!.Value.Id);
         var (mx, my, _) = c.Project(9, 9, 0); var (o2, d2) = c.Unproject(mx, my);
         Assert.Null(SceneBuilder.Pick(objs, ((float)o2.X, (float)o2.Y, (float)o2.Z), ((float)d2.X, (float)d2.Y, (float)d2.Z)));
+    }
+}
+
+public class TriangulatorTests
+{
+    private static double TriArea(List<(int X, int Y)> p, List<int> t) { double a = 0; for (var i = 0; i < t.Count; i += 3) a += Math.Abs(Triangulator.Area2([p[t[i]], p[t[i + 1]], p[t[i + 2]]])) / 2.0; return a; }
+
+    [Fact] public void Concave_outline_is_filled_exactly()
+    {   // an L shape: a fan from the first vertex would cover the notch
+        (int, int)[] l = [(0, 0), (4000, 0), (4000, 1000), (1000, 1000), (1000, 4000), (0, 4000)];
+        var (p, t) = Triangulator.Triangulate(l); Assert.Equal(7_000_000, TriArea(p, t), 3);
+    }
+
+    [Fact] public void Holes_are_left_open_and_the_orientation_does_not_matter()
+    {
+        (int, int)[] outer = [(0, 0), (10000, 0), (10000, 10000), (0, 10000)];
+        (int, int)[] h1 = [(1000, 1000), (3000, 1000), (3000, 3000), (1000, 3000)], h2 = [(6000, 6000), (6000, 9000), (9000, 9000), (9000, 6000)];
+        var (p, t) = Triangulator.Triangulate(outer.Reverse().ToArray(), [h1, h2]); Assert.Equal(100_000_000 - 4_000_000 - 9_000_000, TriArea(p, t), 3);
+        var m = MeshBuilder.ExtrudeWall(outer, 0, 2700, null, [h1, h2]); Assert.True(m.VertexCount > 0);
+    }
+
+    [Fact] public void Comb_with_many_teeth_and_a_hole_between_teeth()
+    {
+        var comb = new List<(int, int)> { (0, 0) }; for (var i = 0; i < 20; i++) { comb.Add((i * 1000 + 500, 0)); comb.Add((i * 1000 + 500, 3000)); comb.Add((i * 1000 + 900, 3000)); comb.Add((i * 1000 + 900, 0)); }
+        comb.Add((20000, 0)); comb.Add((20000, -1000)); comb.Add((0, -1000));
+        var area = Math.Abs(Triangulator.Area2(comb)) / 2.0; var hole = new (int, int)[] { (2000, -800), (4000, -800), (4000, -200), (2000, -200) };
+        var (p, t) = Triangulator.Triangulate(comb, [hole]); Assert.Equal(area - 2000.0 * 600, TriArea(p, t), 3);
     }
 }

@@ -14,7 +14,7 @@ public sealed record SceneFitting(Guid NetworkId, Guid NodeId, string Kind, (int
 public sealed record SceneBox(Guid Id, Guid LevelId, string Name, int X, int Y, int Z, int W, int D, int H, (float R, float G, float B) Color, int Radius = 0);
 public sealed record SceneInput(IReadOnlyList<SceneLevel> Levels, IReadOnlyList<SceneWall> Walls, IReadOnlyList<ScenePipe> Pipes, IReadOnlyList<SceneFitting> Fittings, IReadOnlyList<SceneBox> Boxes);
 
-public sealed record SceneOptions(Guid? CurrentLevel, LevelFilter Filter = LevelFilter.WholeBuilding, bool CutAboveCurrent = true, bool XRay = false, bool Slabs = true, ISet<Guid>? Selection = null);
+public sealed record SceneOptions(Guid? CurrentLevel, LevelFilter Filter = LevelFilter.WholeBuilding, bool CutAboveCurrent = true, bool XRay = false, bool Slabs = true, ISet<Guid>? Selection = null, ISet<Guid>? HiddenLevels = null);
 
 public static class SceneBuilder
 {
@@ -26,6 +26,7 @@ public static class SceneBuilder
         var cur = input.Levels.FirstOrDefault(l => l.Id == o.CurrentLevel);
         bool LevelVisible(int index)
         {
+            if (o.HiddenLevels is { Count: > 0 } && input.Levels.FirstOrDefault(x => x.Index == index) is { } lv && o.HiddenLevels.Contains(lv.Id)) return false;     // switched off with the eye in the level list
             if (cur == null) return true;
             if (o.CutAboveCurrent && index > cur.Index) return false;
             return o.Filter switch { LevelFilter.CurrentOnly => index == cur.Index, LevelFilter.CurrentAndBelow => index <= cur.Index, _ => true };
@@ -33,15 +34,16 @@ public static class SceneBuilder
         var wallAlpha = o.XRay ? 0.28f : 1f;
         foreach (var w in input.Walls.Where(w => LevelVisible(w.LevelIndex)))
         {
-            var m = MeshBuilder.ExtrudeWall(w.Footprint, w.BaseZ, w.Height);
+            var m = MeshBuilder.ExtrudeWall(w.Footprint, w.BaseZ, w.Height, null, w.Holes);
             foreach (var h in w.Holes) MeshBuilder.ExtrudeSides(h, w.BaseZ, w.Height, m);
             m.ComputeNormals(); res.Add(new SceneObject(w.Id, SceneKind.Wall, "wall", m, WallColor, wallAlpha, o.Selection?.Contains(w.Id) == true));
         }
         if (o.Slabs)
             foreach (var l in input.Levels.Where(l => LevelVisible(l.Index)))
             {
-                var pts = input.Walls.Where(w => w.LevelIndex == l.Index).SelectMany(w => w.Footprint).ToList(); if (pts.Count < 3) continue;
-                var m = MeshBuilder.Slab(pts, l.AltitudeMm); m.ComputeNormals(); res.Add(new SceneObject(l.Id, SceneKind.Slab, "slab", m, SlabColor, o.XRay ? 0.15f : 1f));
+                var walls = input.Walls.Where(w => w.LevelIndex == l.Index && w.Footprint.Count >= 3).ToList(); if (walls.Count == 0) continue;
+                var m = new Mesh(); foreach (var w in walls) MeshBuilder.ExtrudeWall(w.Footprint, l.AltitudeMm - 200, 200, m);   // under what the walls enclose (rooms included), not the bounding box of the level
+                m.ComputeNormals(); res.Add(new SceneObject(l.Id, SceneKind.Slab, "slab", m, SlabColor, o.XRay ? 0.15f : 1f));
             }
         bool ZVisible(int z) => cur == null || !o.CutAboveCurrent || z <= cur.AltitudeMm + cur.HeightMm;
         foreach (var p in input.Pipes.Where(p => p.Visible && ZVisible(Math.Min(p.A.Z, p.B.Z))))

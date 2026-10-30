@@ -43,10 +43,12 @@ public sealed class Mesh
 
 public static class MeshBuilder
 {
-    /// <summary>Extrude a closed footprint (mm) from z0 to z0+height (mm): sides plus fan caps (convex-safe for wall rectangles).</summary>
-    public static Mesh ExtrudeWall(IReadOnlyList<(int X, int Y)> footprint, int z0Mm, int heightMm, Mesh? into = null)
+    /// <summary>Extrude a closed footprint (mm) from z0 to z0+height (mm): sides plus triangulated caps (concave outlines and holes are handled).</summary>
+    public static Mesh ExtrudeWall(IReadOnlyList<(int X, int Y)> footprint, int z0Mm, int heightMm, Mesh? into = null, IReadOnlyList<IReadOnlyList<(int X, int Y)>>? holes = null)
     {
         var m = into ?? new Mesh(); const float k = 0.001f;
+        if (footprint.Count < 3) return m;
+        if (Triangulator.Area2(footprint) < 0) footprint = footprint.Reverse().ToList();   // counter-clockwise: sides and caps face outwards
         var n = footprint.Count; var bottom = new int[n]; var top = new int[n];
         for (var i = 0; i < n; i++)
         {
@@ -54,14 +56,19 @@ public static class MeshBuilder
             top[i] = m.Add(footprint[i].X * k, footprint[i].Y * k, (z0Mm + heightMm) * k);
         }
         for (var i = 0; i < n; i++) { var j = (i + 1) % n; m.Quad(bottom[i], bottom[j], top[j], top[i]); }
-        for (var i = 1; i < n - 1; i++) { m.Indices.AddRange([top[0], top[i], top[i + 1]]); m.Indices.AddRange([bottom[0], bottom[i + 1], bottom[i]]); }
+        var (pts, tris) = Triangulator.Triangulate(footprint, holes);   // caps get their own vertices (flat shading)
+        var capTop = new int[pts.Count]; var capBottom = new int[pts.Count];
+        for (var i = 0; i < pts.Count; i++) { capTop[i] = m.Add(pts[i].X * k, pts[i].Y * k, (z0Mm + heightMm) * k); capBottom[i] = m.Add(pts[i].X * k, pts[i].Y * k, z0Mm * k); }
+        for (var t = 0; t + 2 < tris.Count; t += 3) { m.Indices.AddRange([capTop[tris[t]], capTop[tris[t + 1]], capTop[tris[t + 2]]]); m.Indices.AddRange([capBottom[tris[t]], capBottom[tris[t + 2]], capBottom[tris[t + 1]]]); }
         return m;
     }
 
-    /// <summary>Inner faces of a hole (room) of a wall group: sides only, no caps.</summary>
+    /// <summary>Inner faces of a hole (room) of a wall group: sides only, no caps; they face into the room.</summary>
     public static Mesh ExtrudeSides(IReadOnlyList<(int X, int Y)> ring, int z0Mm, int heightMm, Mesh? into = null)
     {
-        var m = into ?? new Mesh(); const float k = 0.001f; var n = ring.Count; var b = new int[n]; var t = new int[n];
+        var m = into ?? new Mesh(); const float k = 0.001f;
+        if (Triangulator.Area2(ring) > 0) ring = ring.Reverse().ToList();   // clockwise: the sides look towards the inside of the hole
+        var n = ring.Count; var b = new int[n]; var t = new int[n];
         for (var i = 0; i < n; i++) { b[i] = m.Add(ring[i].X * k, ring[i].Y * k, z0Mm * k); t[i] = m.Add(ring[i].X * k, ring[i].Y * k, (z0Mm + heightMm) * k); }
         for (var i = 0; i < n; i++) { var j = (i + 1) % n; m.Quad(b[i], b[j], t[j], t[i]); }
         return m;

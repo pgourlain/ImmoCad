@@ -298,9 +298,9 @@ public class HandleUiTests
         w.MouseDown(At(3000, 3000), Avalonia.Input.MouseButton.Left); w.MouseMove(At(3500, 3000)); w.MouseMove(At(4000, 3000)); w.MouseUp(At(4000, 3000), Avalonia.Input.MouseButton.Left);
         Assert.Equal(4000, vm.Building.Networks[^1].Nodes.Max(n => n.Position.X)); Assert.Equal(steps + 1, vm.History.Items.Count);
 
-        // drag the same handle straight up → elbow
+        // drag the same handle straight up → the pipe turns oblique (one segment, free end)
         w.MouseDown(At(4000, 3000), Avalonia.Input.MouseButton.Left); w.MouseMove(At(4000, 3600)); w.MouseMove(At(4000, 4500)); w.MouseUp(At(4000, 4500), Avalonia.Input.MouseButton.Left);
-        Assert.Equal(2, vm.Building.Networks[^1].Segments.Count); Assert.Equal(steps + 2, vm.History.Items.Count);
+        Assert.Single(vm.Building.Networks[^1].Segments); Assert.Contains(vm.Building.Networks[^1].Nodes, n => Math.Abs(n.Position.Y - 4500) <= 300); Assert.Equal(steps + 2, vm.History.Items.Count);
         w.CaptureRenderedFrame()!.Save(Path.Combine(AppContext.BaseDirectory, "screenshots", "handles.png"));
         vm.UndoCommand.Execute(null); vm.UndoCommand.Execute(null); Assert.Equal(2000, vm.Building.Networks[^1].Nodes.Max(n => n.Position.X) - 1000);
         w.Close();
@@ -567,6 +567,129 @@ public class RoomToolsTests
             foreach (var tool in Enum.GetValues<ToolKind>().Where(t => t != ToolKind.Select)) Assert.NotEqual("toolname." + tool, ImmoCad.Core.Translations.T("toolname." + tool));
         }
         ImmoCad.Core.Translations.Language = "fr";
+    }, CancellationToken.None);
+
+    [Fact] public void Wizard_calibration_can_be_skipped_with_a_default_scale()
+    {
+        var w = new ImportWizardViewModel(WizardTests.PlanPng()); Assert.False(w.IsCalibrated);
+        w.UseDefaultCalibration(); Assert.True(w.IsCalibrated); Assert.Equal(0.1, w.Calibration!.Value.PxPerMmX);
+    }
+
+    [Fact] public void Wizard_calibrates_from_the_printed_scale_and_the_scan_resolution()
+    {
+        Assert.Equal(0.1181, ImmoCad.Core.Import.PlanImport.PxPerMmFromScale(300, 100), 4);          // 300 dpi at 1:100: 8.47 mm per pixel
+        var w = new ImportWizardViewModel(WizardTests.PlanPng()) { ScaleDenominator = 50, Dpi = 254 }; Assert.False(w.IsCalibrated);
+        w.ApplyPrintedScale(); Assert.True(w.IsCalibrated); Assert.Equal(0.2, w.Calibration!.Value.PxPerMmX, 6);   // 254 dpi = 10 px/mm on paper, /50
+    }
+
+    [Fact] public Task Side_view_can_show_only_the_current_level() => f.Session.Dispatch(() =>
+    {
+        var vm = Basement(); var l = vm.CurrentLevel!; vm.ShowSideCommand.Execute("East");
+        Assert.True(vm.ElevationLevelOnly); Assert.Equal((l.AltitudeMm, l.AltitudeMm + l.HeightMm), vm.ElevationRange());
+        vm.ElevationLevelOnly = false; var all = vm.Building.Levels; Assert.Equal((all.Min(x => x.AltitudeMm), all.Max(x => x.AltitudeMm + x.HeightMm)), vm.ElevationRange());
+    }, CancellationToken.None);
+
+    [Fact] public Task The_measure_tool_works_on_the_side_views_in_along_and_height() => f.Session.Dispatch(() =>
+    {
+        var vm = Basement(); var w = new MainWindow { DataContext = vm, Width = 1280, Height = 820 }; w.Show();
+        foreach (var plane in new[] { "XZ", "YZ" })
+        {
+            vm.SetViewPlaneCommand.Execute(plane); w.UpdateLayout(); w.CaptureRenderedFrame(); vm.SetToolCommand.Execute("Measure");
+            var view = w.FindControl<PlanView>("Plan")!; Avalonia.Point At(int u, int z) => view.TranslatePoint(view.ToScreenForTest(new(u, z)), w)!.Value;
+            var pl = vm.SidePlaneModel(); var u0 = (int)vm.Building.Levels.SelectMany(l => l.Walls.SelectMany(q => q.Footprint)).Min(q => pl.ProjectU(q)) + 500; var z0 = vm.CurrentLevel!.AltitudeMm + 500;
+            w.MouseDown(At(u0, z0), Avalonia.Input.MouseButton.Left); w.MouseUp(At(u0, z0), Avalonia.Input.MouseButton.Left);
+            w.MouseDown(At(u0 + 2000, z0 + 1500), Avalonia.Input.MouseButton.Left); w.MouseUp(At(u0 + 2000, z0 + 1500), Avalonia.Input.MouseButton.Left);
+            Assert.Equal(2, vm.MeasurePoints.Count); var (a, b) = (vm.MeasurePoints[0], vm.MeasurePoints[1]);
+            Assert.InRange(Math.Abs(b.X - a.X), 1900, 2100); Assert.InRange(Math.Abs(b.Y - a.Y), 1400, 1600);          // along × height of the view, not plan coordinates
+            Assert.NotEqual(Math.Sqrt(Math.Pow(b.X - a.X, 2) + Math.Pow(b.Y - a.Y, 2)), 0);
+            vm.SetViewPlaneCommand.Execute("XY"); Assert.Empty(vm.MeasurePoints);                                        // points of another plane are dropped
+        }
+        w.Close();
+    }, CancellationToken.None);
+
+    [Fact] public Task Changing_the_view_plane_turns_about_the_model_centre_or_the_canvas_middle() => f.Session.Dispatch(() =>
+    {
+        var vm = Basement(); var w = new MainWindow { DataContext = vm, Width = 1280, Height = 820 }; w.Show(); w.UpdateLayout(); w.CaptureRenderedFrame();
+        var plan = w.FindControl<PlanView>("Plan")!; var pts = vm.Building.Levels.SelectMany(l => l.Walls.SelectMany(q => q.Footprint)).ToList();
+        var (mx, my) = ((pts.Min(q => q.X) + pts.Max(q => q.X)) / 2, (pts.Min(q => q.Y) + pts.Max(q => q.Y)) / 2);
+        var mz = (vm.Building.Levels.Min(l => l.AltitudeMm) + vm.Building.Levels.Max(l => l.AltitudeMm + l.HeightMm)) / 2;
+        // whole building in view: the model centre keeps its pixel, whatever the plane, and so does the zoom
+        plan.FitAll(); w.CaptureRenderedFrame(); var scale = plan.Scale; var pixel = plan.ToScreenForTest(new(mx, my));
+        vm.SetViewPlaneCommand.Execute("XZ"); w.UpdateLayout(); w.CaptureRenderedFrame();
+        Assert.Equal(scale, plan.Scale, 9); var plane = vm.SidePlaneModel(); var p1 = plan.ToScreenForTest(new((int)Math.Round(plane.ProjectU(new(mx, my))), mz));
+        Assert.InRange(p1.X - pixel.X, -2, 2); Assert.InRange(p1.Y - pixel.Y, -2, 2);
+        vm.SetViewPlaneCommand.Execute("YZ"); w.UpdateLayout(); w.CaptureRenderedFrame(); plane = vm.SidePlaneModel(); var p2 = plan.ToScreenForTest(new((int)Math.Round(plane.ProjectU(new(mx, my))), mz));
+        Assert.Equal(scale, plan.Scale, 9); Assert.InRange(p2.X - pixel.X, -2, 2); Assert.InRange(p2.Y - pixel.Y, -2, 2);
+        vm.SetViewPlaneCommand.Execute("XY"); w.UpdateLayout(); w.CaptureRenderedFrame(); var p3 = plan.ToScreenForTest(new(mx, my)); Assert.InRange(p3.X - pixel.X, -2, 2); Assert.InRange(p3.Y - pixel.Y, -2, 2);
+        // zoomed on a corner (model centre off screen): the point in the middle of the canvas stays in the middle instead
+        var corner = new PointMm(pts.Min(q => q.X) + 300, pts.Min(q => q.Y) + 300); plan.Scale = scale * 8; plan.CenterOn(corner); w.CaptureRenderedFrame();
+        var middle = new Avalonia.Point(plan.Bounds.Width / 2, plan.Bounds.Height / 2); var zoom = plan.Scale;
+        vm.SetViewPlaneCommand.Execute("XZ"); w.UpdateLayout(); w.CaptureRenderedFrame(); plane = vm.SidePlaneModel();
+        Assert.Equal(zoom, plan.Scale, 9); Assert.InRange(plan.ToMm(middle).X - plane.ProjectU(corner), -5, 5);
+        Assert.InRange(plan.ToMm(middle).Y - vm.CurrentLevel!.AltitudeMm, -5, 5);                                       // the floor of the level is on the pivot line
+        vm.SetViewPlaneCommand.Execute("XY"); w.UpdateLayout(); w.CaptureRenderedFrame(); var back = plan.ToMm(middle); Assert.InRange(back.X - corner.X, -10, 10); Assert.InRange(back.Y - corner.Y, -10, 10);
+        w.Close();
+    }, CancellationToken.None);
+
+    [Fact] public Task The_plan_canvas_works_on_the_XZ_plane_with_selection_and_pipes() => f.Session.Dispatch(() =>
+    {
+        var vm = Basement(); var w = new MainWindow { DataContext = vm, Width = 1280, Height = 820 }; w.Show();
+        vm.SetViewPlaneCommand.Execute("XZ"); Assert.True(vm.IsSidePlane); w.UpdateLayout(); w.CaptureRenderedFrame();
+        var plan = w.FindControl<PlanView>("Plan")!; Avalonia.Point At(int u, int z) => plan.TranslatePoint(plan.ToScreenForTest(new(u, z)), w)!.Value;
+        var pts = vm.Building.Levels.SelectMany(l => l.Walls.SelectMany(q => q.Footprint)).ToList(); var u0 = pts.Min(q => q.X); var alt = vm.CurrentLevel!.AltitudeMm;
+        // a pipe drawn on the side view lands inside the building at the chosen height
+        vm.CommitPipeSide([new(u0 + 500, alt + 1500), new(u0 + 2500, alt + 1500)]);
+        var net = vm.Building.Networks[^1]; Assert.All(net.Nodes, n => Assert.Equal(alt + 1500, n.Position.Z));
+        w.CaptureRenderedFrame()!.Save(Path.Combine(AppContext.BaseDirectory, "screenshots", "side-xz.png"));
+        // select tool: click the pipe, then a wall; Delete removes the pipe
+        vm.SetToolCommand.Execute("Select");
+        w.MouseDown(At(u0 + 1500, alt + 1500), Avalonia.Input.MouseButton.Left); w.MouseUp(At(u0 + 1500, alt + 1500), Avalonia.Input.MouseButton.Left);
+        Assert.NotNull(vm.SelectedSegment); var nets = vm.Building.Networks.Count; vm.DeleteSelectionCommand.Execute(null); Assert.Equal(nets - 1, vm.Building.Networks.Count);
+        vm.FlipPlaneViewCommand.Execute(null); Assert.Equal(ImmoCad.Core.Geometry.ViewSide.North, vm.PlaneSide);
+        vm.SetViewPlaneCommand.Execute("XY"); Assert.False(vm.IsSidePlane); w.Close();
+    }, CancellationToken.None);
+
+    [Fact] public Task The_2D_cube_chooses_the_plane_and_walls_can_be_wireframe_or_hidden() => f.Session.Dispatch(() =>
+    {
+        var vm = Basement(); var w = new MainWindow { DataContext = vm, Width = 1280, Height = 820 }; w.Show(); w.UpdateLayout(); w.CaptureRenderedFrame();
+        var cube = w.FindControl<ViewCube>("Cube2D")!; Assert.True(cube.IsVisible);
+        Avalonia.Point Face(ViewCube.Face face) => Enumerable.Range(0, 112).SelectMany(y => Enumerable.Range(0, 112).Select(x => new Avalonia.Point(x, y))).First(q => cube.FaceAt(q) == face);
+        cube.Click(Face(ViewCube.Face.Front)); Assert.Equal(ViewPlane.XZ, vm.ViewPlane); Assert.False(vm.PlaneFlip);
+        cube.Click(Face(ViewCube.Face.Right)); Assert.Equal(ViewPlane.YZ, vm.ViewPlane);
+        cube.Click(Face(ViewCube.Face.Top)); Assert.Equal(ViewPlane.XY, vm.ViewPlane);
+        w.CaptureRenderedFrame()!.Save(Path.Combine(AppContext.BaseDirectory, "screenshots", "cube2d.png"));
+        Assert.Equal(WallDisplay.Solid, vm.WallDisplay); vm.CycleWallDisplayCommand.Execute(null); Assert.Equal(WallDisplay.Wireframe, vm.WallDisplay);
+        w.CaptureRenderedFrame()!.Save(Path.Combine(AppContext.BaseDirectory, "screenshots", "wireframe2d.png"));
+        vm.CycleWallDisplayCommand.Execute(null); Assert.Equal(WallDisplay.Hidden, vm.WallDisplay); w.CaptureRenderedFrame();
+        var plan = w.FindControl<PlanView>("Plan")!; var wall = vm.CurrentLevel!.Walls[0]; var c = wall.Footprint[0];
+        vm.SetToolCommand.Execute("Select"); var pt = plan.TranslatePoint(plan.ToScreenForTest(new(c.X + 10, c.Y + 10)), w)!.Value;
+        w.MouseDown(pt, Avalonia.Input.MouseButton.Left); w.MouseUp(pt, Avalonia.Input.MouseButton.Left); Assert.Empty(vm.SelectedWalls);       // hidden walls cannot be picked
+        w.Close();
+    }, CancellationToken.None);
+
+    [Fact] public Task Pipe_handles_work_on_the_side_views_and_pipes_look_like_tubes_from_above() => f.Session.Dispatch(() =>
+    {
+        var vm = Basement(); var w = new MainWindow { DataContext = vm, Width = 1280, Height = 820 }; w.Show();
+        vm.PipeType = ImmoCad.Core.Model.NetworkType.ColdWater; vm.PipeDiameter = 100; vm.PipeElevation = 1500; vm.RiserDiameter = 100; vm.RiserTemplate = "tpl.simple";
+        var alt = vm.CurrentLevel!.AltitudeMm; vm.CommitPipe([new(1000, 1000), new(3000, 1000)]); vm.PlaceRiser(new(4000, 2000));
+        var plan = w.FindControl<PlanView>("Plan")!; w.UpdateLayout(); w.CaptureRenderedFrame();
+        plan.Scale = 0.25; plan.Offset = (200, 100); w.CaptureRenderedFrame()!.Save(Path.Combine(AppContext.BaseDirectory, "screenshots", "tubes-top.png"));
+        vm.SetViewPlaneCommand.Execute("XZ"); w.UpdateLayout(); w.CaptureRenderedFrame(); plan.FitAll(); w.CaptureRenderedFrame();   // the view keeps its zoom across planes, so fit explicitly
+        Avalonia.Point At(int u, int z) => plan.TranslatePoint(plan.ToScreenForTest(new(u, z)), w)!.Value;
+        var plane = vm.SidePlaneModel(); int U(int x, int y) => (int)Math.Round(plane.ProjectU(new(x, y)));
+        var net = vm.Building.Networks.First(n => n.Segments.Count == 1 && n.Nodes.All(q => q.Position.Z == alt + 1500)); var seg = net.Segments[0];
+        vm.SetToolCommand.Execute("Select"); var u0 = U(1000, 1000); var u1 = U(3000, 1000);
+        w.MouseDown(At((u0 + u1) / 2, alt + 1500), Avalonia.Input.MouseButton.Left); w.MouseUp(At((u0 + u1) / 2, alt + 1500), Avalonia.Input.MouseButton.Left); Assert.NotNull(vm.SelectedSegment);
+        w.CaptureRenderedFrame()!.Save(Path.Combine(AppContext.BaseDirectory, "screenshots", "side-handles.png"));
+        var steps = vm.History.Items.Count;
+        // drag the right end 1 m further along the pipe: extended in one step
+        w.MouseDown(At(u1, alt + 1500), Avalonia.Input.MouseButton.Left); w.MouseMove(At(u1 + 500, alt + 1500)); w.MouseMove(At(u1 + 1000, alt + 1500)); w.MouseUp(At(u1 + 1000, alt + 1500), Avalonia.Input.MouseButton.Left);
+        Assert.Equal(steps + 1, vm.History.Items.Count); var us = vm.Building.Networks.First(n => n.Id == net.Id).Nodes.Select(q => plane.ProjectU(new(q.Position.X, q.Position.Y))).ToList(); Assert.Equal(3000, us.Max() - us.Min(), 0);   // 2 m + the 1 m dragged
+        // drag the same end up by 80 cm: the pipe turns oblique (one segment, the end really higher)
+        var uEnd = (int)Math.Round(us.Max()); steps = vm.History.Items.Count;
+        w.MouseDown(At(uEnd, alt + 1500), Avalonia.Input.MouseButton.Left); w.MouseMove(At(uEnd, alt + 1900)); w.MouseMove(At(uEnd, alt + 2300)); w.MouseUp(At(uEnd, alt + 2300), Avalonia.Input.MouseButton.Left);
+        Assert.Equal(steps + 1, vm.History.Items.Count); Assert.Single(net.Segments); Assert.Contains(net.Nodes, q => q.Position.Z > alt + 2000);
+        w.Close();
     }, CancellationToken.None);
 
     [Fact] public Task Placement_previews_for_risers_palette_objects_and_rooms_change_nothing() => f.Session.Dispatch(() =>
@@ -900,6 +1023,74 @@ public class SiteUiTests
         geo = new FakeGeo(); var vm = new MainViewModel(startWithSample: false) { Settings = new() }; vm.Geo = new SiteData(geo, geo, geo); vm.NewDocumentCommand.Execute(null); return vm;
     }
 
+    [Fact] public Task Several_selected_parcels_make_one_building_with_one_anchor() => f.Session.RunAsync(async () =>
+    {
+        var vm = Make(out _); vm.SiteAddress = "1 place Bellecour, Lyon"; await vm.SearchAddressCommand.ExecuteAsync(null);
+        var c = vm.Footprints[0]; var d = vm.Footprints[1];
+        vm.PickFootprintAt((c[0].E + c[2].E) / 2, (c[0].N + c[2].N) / 2); vm.PickFootprintAt((d[0].E + d[2].E) / 2, (d[0].N + d[2].N) / 2);
+        Assert.Equal(2, vm.SelectedCount); Assert.Equal(0, vm.SelectedFootprint);
+        vm.PickFootprintAt((d[0].E + d[2].E) / 2, (d[0].N + d[2].N) / 2); Assert.Equal(1, vm.SelectedCount);                          // a second click on it deselects
+        vm.PickFootprintAt((d[0].E + d[2].E) / 2, (d[0].N + d[2].N) / 2); vm.CreateFromFootprintCommand.Execute(null);
+        var site = vm.Building.Site!; Assert.Single(site.ExtraFootprints); Assert.Empty(site.Neighbours); Assert.Equal(8, vm.CurrentLevel!.Walls.Count);   // outer walls for both parcels
+        Assert.Single(vm.ExtraFootprintModels()); Assert.True(vm.InBuilding(1)); Assert.Empty(vm.PartyWallEdges());
+        vm.SelectFootprint(1); vm.RemoveParcelCommand.Execute(null); Assert.Empty(vm.Building.Site!.ExtraFootprints); Assert.Single(vm.Building.Site.Neighbours);
+        vm.AddParcelCommand.Execute(null); Assert.Single(vm.Building.Site!.ExtraFootprints); Assert.Equal(site.EastM, vm.Building.Site.EastM);
+        vm.UndoCommand.Execute(null); Assert.Empty(vm.Building.Site!.ExtraFootprints);
+    }, CancellationToken.None);
+
+    [Fact] public Task Merge_the_selected_fragments_and_cut_a_spike_with_the_tool() => f.Session.RunAsync(async () =>
+    {
+        var vm = Make(out _); var l = vm.CurrentLevel!.Id; await Task.CompletedTask;
+        foreach (var x in new[] { 0, 1000, 2000 }) vm.Actions.AddWall(l, [new(x, 0), new(x + 997, 0), new(x + 997, 200), new(x, 200)]);
+        vm.SelectedWalls.Clear(); vm.MergeSelectedWallsCommand.Execute(null); Assert.Equal(3, vm.CurrentLevel!.Walls.Count);              // nothing selected: nothing happens
+        foreach (var w in vm.CurrentLevel.Walls) vm.SelectedWalls.Add(w.Id);
+        vm.MergeSelectedWallsCommand.Execute(null); Assert.Single(vm.CurrentLevel!.Walls); Assert.Single(vm.SelectedWalls);
+        vm.UndoCommand.Execute(null); Assert.Equal(3, vm.CurrentLevel!.Walls.Count);
+        vm.SelectedWalls.Clear(); vm.SetToolCommand.Execute("CutWall"); Assert.True(vm.IsCutWallTool);
+        vm.CutWallClick(new(1500, -500)); vm.CutWallClick(new(1500, 500)); vm.CutWallFinish(); Assert.True(vm.CutAwaitSide); vm.CutWallClick(new(2500, 100));        // segment on x = 1500, the right side goes
+        Assert.Equal(3, vm.CurrentLevel!.Walls.Count); Assert.Equal(1500, vm.CurrentLevel.Walls[1].Footprint.Max(p => p.X)); Assert.Equal(2997, vm.CurrentLevel.Walls[2].Footprint.Max(p => p.X)); Assert.Empty(vm.CutPoints);   // only the walls the drawn segment touches are cut
+    }, CancellationToken.None);
+
+    [Fact] public Task Cut_tool_with_three_points_or_more_removes_what_is_inside_the_zone() => f.Session.RunAsync(async () =>
+    {
+        var vm = Make(out _); var l = vm.CurrentLevel!.Id; await Task.CompletedTask;
+        vm.Actions.AddWall(l, [new(0, 0), new(60000, 0), new(60000, 200), new(0, 200)]);                                                  // one long wall
+        vm.SelectedWalls.Clear(); vm.SetToolCommand.Execute("CutWall");
+        vm.CutWallClick(new(20000, -500)); vm.CutWallClick(new(30000, -500)); vm.CutWallClick(new(30000, 700)); Assert.False(vm.CutAwaitSide); Assert.Equal(3, vm.CutPoints.Count);
+        vm.CutWallClick(new(20000, 700)); vm.CutWallFinish();
+        Assert.Equal(2, vm.CurrentLevel!.Walls.Count); Assert.Empty(vm.CutPoints); Assert.Equal(0, vm.CurrentLevel.Walls[0].Footprint.Min(p => p.X)); Assert.Equal(60000, vm.CurrentLevel.Walls[1].Footprint.Max(p => p.X));   // the far ends are untouched
+        vm.UndoCommand.Execute(null); Assert.Single(vm.CurrentLevel!.Walls);
+    }, CancellationToken.None);
+
+    [Fact] public Task The_eye_in_the_level_list_hides_a_level_without_touching_the_history() => f.Session.RunAsync(async () =>
+    {
+        var vm = Make(out _); await Task.CompletedTask; vm.Actions.AddLevelNextTo(vm.CurrentLevel!.Id, true, "Etage"); vm.Refresh();
+        var other = vm.Building.Levels[1].Id; var steps = vm.History.Items.Count;
+        Assert.All(vm.Levels.Where(x => x.Id != MainViewModel.SiteLevelId), x => Assert.False(x.Hidden));
+        vm.ToggleLevelVisibilityCommand.Execute(other); Assert.True(vm.Levels.First(x => x.Id == other).Hidden); Assert.Contains(other, vm.HiddenLevels); Assert.Equal(steps, vm.History.Items.Count);
+        vm.ToggleLevelVisibilityCommand.Execute(other); Assert.False(vm.Levels.First(x => x.Id == other).Hidden);
+    }, CancellationToken.None);
+
+    [Fact] public Task A_lassoed_region_merges_only_the_fragments_it_reaches() => f.Session.RunAsync(async () =>
+    {
+        var vm = Make(out _); var l = vm.CurrentLevel!.Id; await Task.CompletedTask;
+        foreach (var x in new[] { 0, 1000, 2000 }) vm.Actions.AddWall(l, [new(x, 0), new(x + 997, 0), new(x + 997, 200), new(x, 200)]);
+        vm.Actions.AddWall(l, [new(0, 5000), new(1000, 5000), new(1000, 5200), new(0, 5200)]);                                          // a wall elsewhere, not reached
+        vm.SetToolCommand.Execute("MergeRegion"); Assert.True(vm.IsMergeRegionTool);
+        vm.MergeRegion([new(-100, -300), new(3100, -300), new(3100, 600), new(-100, 600)]);
+        Assert.Equal(2, vm.CurrentLevel!.Walls.Count); Assert.InRange(vm.CurrentLevel.Walls[0].Footprint.Max(p => p.X), 2995, 2999); Assert.Equal(5000, vm.CurrentLevel.Walls[1].Footprint.Min(p => p.Y));
+        vm.MergeRegion([new(-100, 4000), new(1100, 4000), new(1100, 6000)]); Assert.Equal(2, vm.CurrentLevel.Walls.Count);              // a single wall in the region: nothing to merge
+    }, CancellationToken.None);
+
+    [Fact] public Task First_visit_to_the_map_frames_the_building_parcels() => f.Session.RunAsync(async () =>
+    {
+        var vm = Make(out _); vm.SiteAddress = "1 place Bellecour, Lyon"; await vm.SearchAddressCommand.ExecuteAsync(null);
+        var c = vm.Footprints[0]; vm.PickFootprintAt((c[0].E + c[2].E) / 2, (c[0].N + c[2].N) / 2); vm.CreateFromFootprintCommand.Execute(null);
+        vm.MapCenter = (0, 0); vm.RequestMode(ImmoCad.Desktop.ViewMode.Site);
+        Assert.Equal(c.Average(p => p.E), vm.MapCenter.E, 3); Assert.Equal(c.Average(p => p.N), vm.MapCenter.N, 3); Assert.NotNull(vm.PendingSiteFit);
+        vm.MapCenter = (1, 1); vm.RequestMode(ImmoCad.Desktop.ViewMode.Plan); vm.RequestMode(ImmoCad.Desktop.ViewMode.Site); Assert.Equal((1, 1), vm.MapCenter);   // only the first time
+    }, CancellationToken.None);
+
     [Fact] public Task Search_address_loads_cadastral_buildings_and_creates_a_building_from_a_footprint() => f.Session.RunAsync(async () =>
     {
         var vm = Make(out var geo); vm.SiteAddress = "1 place Bellecour, Lyon"; await vm.SearchAddressCommand.ExecuteAsync(null);
@@ -918,14 +1109,29 @@ public class SiteUiTests
         var vm = Make(out _); vm.SiteAddress = "Lyon"; await vm.SearchAddressCommand.ExecuteAsync(null); var l = vm.CurrentLevel!.Id;
         vm.Actions.ImportWalls(l, [new List<ImmoCad.Core.Model.PointMm> { new(0, 0), new(12000, 0), new(12000, 8000), new(0, 8000) }]); vm.Refresh();
         vm.PickFootprintAt(vm.Footprints[0][0].E + 1, vm.Footprints[0][0].N + 1); vm.BeginPlacementCommand.Execute(null); Assert.True(vm.Placing);
-        var anchor = new ImmoCad.Core.Site.SiteAnchor(vm.MapCenter.E, vm.MapCenter.N, 0); var ring = vm.Footprints[0]; var steps = vm.History.Items.Count;
+        var anchor = vm.PlacementAnchor; var ring = vm.Footprints[0]; var steps = vm.History.Items.Count;
         var c0 = anchor.ToLambert(0, 0); var c1 = anchor.ToLambert(12000, 0);
         vm.PlacementClick(c0.E, c0.N); vm.PlacementClick(ring[0].E, ring[0].N); vm.PlacementClick(c1.E, c1.N); vm.PlacementClick(ring[1].E, ring[1].N);
         Assert.False(vm.Placing); Assert.Equal(steps + 1, vm.History.Items.Count); Assert.Equal(17.19, vm.Building.Site!.RotationDeg, 2); Assert.Equal(ring[0].E, vm.Building.Site.EastM, 4);
         var model = vm.FootprintModel()!; Assert.Equal(0, model[0].X); Assert.Equal(12000, model[1].X); vm.UndoCommand.Execute(null); Assert.Null(vm.Building.Site);
-        vm.BeginPlacementCommand.Execute(null); vm.PickFootprintAt(ring[0].E + 1, ring[0].N + 1); vm.BeginPlacementCommand.Execute(null);
+        vm.BeginPlacementCommand.Execute(null); vm.SelectFootprint(0); vm.BeginPlacementCommand.Execute(null);
         vm.PlacementClick(c0.E, c0.N); vm.PlacementClick(ring[0].E, ring[0].N); vm.PlacementClick(c0.E, c0.N); vm.PlacementClick(ring[0].E, ring[0].N);   // same corner twice: degenerate
         Assert.Contains("trop proches", vm.SiteMessage); Assert.Null(vm.Building.Site);
+    }, CancellationToken.None);
+
+    [Fact] public Task Placement_by_hand_starts_on_the_footprint_moves_turns_about_the_centre_and_confirms_in_one_step() => f.Session.RunAsync(async () =>
+    {
+        var vm = Make(out _); vm.SiteAddress = "Lyon"; await vm.SearchAddressCommand.ExecuteAsync(null); var l = vm.CurrentLevel!.Id;
+        vm.Actions.ImportWalls(l, [new List<ImmoCad.Core.Model.PointMm> { new(0, 0), new(12000, 0), new(12000, 8000), new(0, 8000) }]); vm.Refresh();
+        vm.PickFootprintAt(vm.Footprints[0][0].E + 1, vm.Footprints[0][0].N + 1); vm.BeginPlacementCommand.Execute(null);
+        var ring = vm.Footprints[0]; var centre = vm.PlacementAnchor.ToLambert(6000, 4000);
+        Assert.Equal(ring.Average(p => p.E), centre.E, 3); Assert.Equal(ring.Average(p => p.N), centre.N, 3);   // centred on the chosen cadastral building
+        vm.MapScale *= 2; var still = vm.PlacementAnchor.ToLambert(6000, 4000); Assert.Equal(centre, still);   // zoom does not move it
+        vm.RotatePlacementCommand.Execute("90"); vm.RotatePlacementCommand.Execute("0.1"); var turned = vm.PlacementAnchor.ToLambert(6000, 4000);
+        Assert.Equal(centre.E, turned.E, 2); Assert.Equal(centre.N, turned.N, 2);                                  // turns about its centre
+        vm.MovePlacement(2, -1); var steps = vm.History.Items.Count; vm.ConfirmPlacementCommand.Execute(null);
+        Assert.False(vm.Placing); Assert.Equal(steps + 1, vm.History.Items.Count); Assert.Equal(90.1, vm.Building.Site!.RotationDeg, 6);
+        Assert.Equal(centre.E + 2, new ImmoCad.Core.Site.SiteAnchor(vm.Building.Site.EastM, vm.Building.Site.NorthM, 90.1).ToLambert(6000, 4000).E, 2);
     }, CancellationToken.None);
 
     [Fact] public Task Suggestions_fit_scale_and_angles_need_a_confirmation_and_are_single_undoable_steps() => f.Session.RunAsync(async () =>

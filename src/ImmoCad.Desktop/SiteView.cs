@@ -19,12 +19,18 @@ public class SiteView : Control
     private static readonly ILogger Log = App.Log.CreateLogger("SiteView");
     private MainViewModel? Vm => DataContext as MainViewModel;
     private readonly Dictionary<string, Bitmap?> _tiles = new(); private readonly HashSet<string> _loading = new();
-    private Point? _pan; private Point _down;
+    private Point? _pan; private Point _down; private bool _dragBuilding;
     public int TilesDrawn { get; private set; }
     internal int RenderCount { get; private set; }
     internal string LastTileInfo { get; private set; } = "";
 
-    public SiteView() { ClipToBounds = true; DataContextChanged += (_, _) => { if (Vm != null) Vm.SiteChanged += () => { InvalidateVisual(); }; }; }
+    private void ZoomAt(Point p, double factor)
+    {
+        var before = ToMap(p); Vm!.MapScale = Math.Clamp(Vm.MapScale * factor, 0.15, 40);
+        var after = ToMap(p); Vm.MapCenter = (Vm.MapCenter.E + before.E - after.E, Vm.MapCenter.N + before.N - after.N); InvalidateVisual();
+    }
+
+    public SiteView() { ClipToBounds = true; Focusable = true; AddHandler(PointerTouchPadGestureMagnifyEvent, (_, e) => { if (Vm != null) { ZoomAt(e.GetPosition(this), Math.Exp(e.Delta.X)); e.Handled = true; } }); DataContextChanged += (_, _) => { if (Vm != null) Vm.SiteChanged += () => { InvalidateVisual(); }; }; }
 
     private Point ToScreen(double e, double n) => new(Bounds.Width / 2 + (e - Vm!.MapCenter.E) * Vm.MapScale, Bounds.Height / 2 - (n - Vm.MapCenter.N) * Vm.MapScale);
     private (double E, double N) ToMap(Point p) => (Vm!.MapCenter.E + (p.X - Bounds.Width / 2) / Vm.MapScale, Vm.MapCenter.N - (p.Y - Bounds.Height / 2) / Vm.MapScale);
@@ -34,36 +40,67 @@ public class SiteView : Control
 
     private static string Layer(int i) => i switch { 0 => Geo.IgnTiles.Orthophoto, 1 => Geo.IgnTiles.PlanIgn, _ => Geo.IgnTiles.Cadastre };
 
-    protected override void OnPointerPressed(PointerPressedEventArgs e) { Focus(); _down = e.GetPosition(this); _pan = _down; e.Pointer.Capture(this); }
+    protected override void OnPointerPressed(PointerPressedEventArgs e)
+    {
+        Focus(); _down = e.GetPosition(this); _pan = _down; e.Pointer.Capture(this);
+        _dragBuilding = Vm is { Placing: true } && BuildingScreenBox() is { } box && box.Inflate(6).Contains(_down);   // drag inside the building moves it, elsewhere pans the map
+    }
+    /// <summary>Screen box of the building drawn while placing.</summary>
+    private Rect? BuildingScreenBox()
+    {
+        var pts = Vm!.PlacementWalls().SelectMany(w => w.Footprint).Select(p => { var (e, n) = Vm.PlacementAnchor.ToLambert(p.X, p.Y); return ToScreen(e, n); }).ToList();
+        if (pts.Count == 0) return null;
+        return new Rect(new Point(pts.Min(p => p.X), pts.Min(p => p.Y)), new Point(pts.Max(p => p.X), pts.Max(p => p.Y)));
+    }
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         if (_pan is not { } l || Vm == null) return; var p = e.GetPosition(this);
+        if (_dragBuilding) { Vm.MovePlacement((p.X - l.X) / Vm.MapScale, -(p.Y - l.Y) / Vm.MapScale); _pan = p; InvalidateVisual(); return; }
         Vm.MapCenter = (Vm.MapCenter.E - (p.X - l.X) / Vm.MapScale, Vm.MapCenter.N + (p.Y - l.Y) / Vm.MapScale); _pan = p; InvalidateVisual();
     }
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
-        _pan = null; e.Pointer.Capture(null); var p = e.GetPosition(this);
+        _pan = null; _dragBuilding = false; e.Pointer.Capture(null); var p = e.GetPosition(this);
         if (Vm == null || Math.Abs(p.X - _down.X) + Math.Abs(p.Y - _down.Y) > 4) return;
         var (me, mn) = ToMap(p);
         if (Vm.Placing) Vm.PlacementClick(me, mn); else Vm.PickFootprintAt(me, mn); InvalidateVisual();
     }
+    protected override void OnKeyDown(KeyEventArgs e)
+    {   // while placing: arrows move by 0.1 m (Shift: 1 m), Q / E turn by 1° (Shift: 0.1°), Enter keeps the position, Esc cancels
+        if (Vm is not { Placing: true } vm) { base.OnKeyDown(e); return; }
+        var shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift); var step = shift ? 1.0 : 0.1;
+        switch (e.Key)
+        {
+            case Key.Left: vm.MovePlacement(-step, 0); break; case Key.Right: vm.MovePlacement(step, 0); break;
+            case Key.Up: vm.MovePlacement(0, step); break; case Key.Down: vm.MovePlacement(0, -step); break;
+            case Key.Q: vm.RotatePlacementCommand.Execute(shift ? "0.1" : "1"); break; case Key.E: vm.RotatePlacementCommand.Execute(shift ? "-0.1" : "-1"); break;
+            case Key.Enter: vm.ConfirmPlacementCommand.Execute(null); break; case Key.Escape: vm.CancelPlacementCommand.Execute(null); break;
+            default: base.OnKeyDown(e); return;
+        }
+        InvalidateVisual(); e.Handled = true;
+    }
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
     {
-        if (Vm == null) return; var p = e.GetPosition(this); var before = ToMap(p); Vm.MapScale = Math.Clamp(Vm.MapScale * (e.Delta.Y > 0 ? 1.25 : 0.8), 0.15, 40);
-        var after = ToMap(p); Vm.MapCenter = (Vm.MapCenter.E + before.E - after.E, Vm.MapCenter.N + before.N - after.N); InvalidateVisual();
+        if (Vm == null) return;
+        if (OperatingSystem.IsMacOS() && !e.KeyModifiers.HasFlag(MenuFactory.CommandModifiers))
+        {   // trackpad: two-finger scroll pans (pinch zooms, ⌘+scroll zooms), as in the plan
+            Vm.MapCenter = (Vm.MapCenter.E - e.Delta.X * 40 / Vm.MapScale, Vm.MapCenter.N + e.Delta.Y * 40 / Vm.MapScale); InvalidateVisual(); e.Handled = true; return;
+        }
+        ZoomAt(e.GetPosition(this), e.Delta.Y > 0 ? 1.25 : 0.8);
     }
 
     public override void Render(DrawingContext ctx)
     {
         ctx.FillRectangle(new SolidColorBrush(Color.FromRgb(214, 218, 222)), new Rect(Bounds.Size));
         RenderCount++; if (Vm == null) return; TilesDrawn = 0;
+        if (Vm.PendingSiteFit is { } fit && Bounds.Width > 0) { Vm.MapScale = Math.Clamp(Math.Min(Bounds.Width, Bounds.Height) * 0.6 / Math.Max(fit, 20), 0.15, 40); Vm.PendingSiteFit = null; }   // frame the building's parcels
         DrawTiles(ctx);
         foreach (var (ring, i) in Vm.Footprints.Select((r, i) => (r, i)))
         {
-            var sel = i == Vm.SelectedFootprint; var g = Poly(ring.Select(p => ToScreen(p.E, p.N)).ToArray());
-            ctx.DrawGeometry(new SolidColorBrush(sel ? Color.FromArgb(70, 255, 140, 0) : Color.FromArgb(25, 40, 90, 200)), new Pen(sel ? Brushes.OrangeRed : Brushes.SteelBlue, sel ? 2.5 : 1.2), g);
+            var sel = Vm.IsSelected(i); var mine = Vm.InBuilding(i); var g = Poly(ring.Select(p => ToScreen(p.E, p.N)).ToArray());
+            ctx.DrawGeometry(new SolidColorBrush(sel ? Color.FromArgb(70, 255, 140, 0) : mine ? Color.FromArgb(45, 255, 140, 0) : Color.FromArgb(25, 40, 90, 200)), new Pen(sel ? Brushes.OrangeRed : mine ? Brushes.DarkOrange : Brushes.SteelBlue, sel ? 2.5 : mine ? 2 : 1.2), g);
         }
-        if (Vm.Building.Site is { } site)
+        if (Vm.Building.Site is { } site && !Vm.Placing)
         {   // the building through its anchor
             var anchor = new SiteAnchor(site.EastM, site.NorthM, site.RotationDeg, site.AltitudeM);
             foreach (var w in Vm.Building.Levels.SelectMany(l => l.Walls))
@@ -73,16 +110,16 @@ public class SiteView : Control
             }
         }
         foreach (var (pt, k) in Vm.PlacementMapPoints.Select((p, k) => (p, k))) { var s = ToScreen(pt.E, pt.N); ctx.DrawEllipse(Brushes.DeepPink, new Pen(Brushes.White, 2), s, 6, 6); ctx.DrawText(Txt((k + 1).ToString(), 12, Brushes.DeepPink), s + new Point(8, -16)); }
-        if (Vm.Placing && Vm.Building.Site == null) DrawProvisionalBuilding(ctx);
+        if (Vm.Placing) DrawProvisionalBuilding(ctx);
         // attribution and scale
         var att = Txt(MainViewModel.Attribution, 11, Brushes.Black); ctx.DrawRectangle(new SolidColorBrush(Color.FromArgb(190, 255, 255, 255)), null, new Rect(Bounds.Width - att.Width - 14, Bounds.Height - att.Height - 10, att.Width + 10, att.Height + 4)); ctx.DrawText(att, new Point(Bounds.Width - att.Width - 9, Bounds.Height - att.Height - 8));
         ctx.DrawText(Txt(Vm.SiteMessage, 12, Brushes.Black), new Point(12, 8)); DrawNorth(ctx);
     }
 
     private void DrawProvisionalBuilding(DrawingContext ctx)
-    {   // before the first placement the building is drawn at the map centre so its corners can be picked
-        var a = new SiteAnchor(Vm!.MapCenter.E, Vm.MapCenter.N, 0);
-        foreach (var w in Vm.Building.Levels.SelectMany(l => l.Walls)) { var pts = w.Footprint.Select(p => { var (e, n) = a.ToLambert(p.X, p.Y); return ToScreen(e, n); }).ToArray(); if (pts.Length >= 3) ctx.DrawGeometry(new SolidColorBrush(Color.FromArgb(120, 255, 100, 0)), new Pen(Brushes.OrangeRed, 1), Poly(pts)); }
+    {   // while placing, the building sits at its provisional anchor (fixed on the map), current level only
+        var a = Vm!.PlacementAnchor;
+        foreach (var w in Vm.PlacementWalls()) { var pts = w.Footprint.Select(p => { var (e, n) = a.ToLambert(p.X, p.Y); return ToScreen(e, n); }).ToArray(); if (pts.Length >= 3) ctx.DrawGeometry(new SolidColorBrush(Color.FromArgb(120, 255, 100, 0)), new Pen(Brushes.OrangeRed, 1), Poly(pts)); }
     }
 
     private void DrawNorth(DrawingContext ctx)

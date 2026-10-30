@@ -385,6 +385,15 @@ Place the building on its real plot, using French open data (IGN Géoplateforme,
 - [x] IFC export uses the anchor for `IfcSite` geographic placement.
 - [x] Attribution of the data sources shown on the map (IGN, DGFiP) and in exports.
 
+**Sites made of several buildings and parcels (e.g. two cadastral buildings, the space between them, and car parks underneath)**
+
+- [ ] Multi-footprint selection: Shift+click adds cadastral buildings to the site; they are merged into one reference outline, so snapping, scale/angle checks and "Fit outer walls to cadastre" work on the whole.
+- [ ] Parcel boundaries (not only buildings) are fetched and drawn in the plan as a dashed reference, with a warning when a wall goes outside the parcel(s); useful for car parks that extend beyond the building footprint.
+- [ ] One reference outline per level: ground floor = buildings + the space between them; basement = the car-park shape inside the parcel limits; the current level shows its own reference.
+- [ ] Map as an underlay of the plan (cadastre / aerial photo, with a toggle), so a level can be drawn straight on the map when no plan exists.
+- [ ] Guided placement: address → footprints/parcels → plan → two matching points on the plan and on the map (rotation, scale and position computed at once) → checks, with the result shown at each step.
+- [ ] Party walls: edges shared with a neighbouring building are marked automatically as party walls (thickness and stability set), for the bill of materials and co-ownership.
+
 **Validation**
 
 - [ ] The author's building placed from its address: the plan matches the cadastral footprint within 0.5 m.

@@ -20,6 +20,9 @@ public sealed class PipeHandleTool(BuildingActions actions, Guid networkId, Guid
     /// <summary>What the commit would do, for the overlay: the new/changed end and its live length (mm).</summary>
     public (PointMm3 From, PointMm3 To, int LengthMm)? Proposal { get; private set; }
     public bool Committed { get; private set; }
+    /// <summary>What an end drag does: extend along the axis (pointer on the axis), free move (oblique pipe), or elbow (Ctrl/Alt).</summary>
+    public enum EndMode { Extend, Elbow, Oblique }
+    public EndMode Mode { get; private set; }
     public string? Refused { get; private set; }
 
     private Network Net => actions.Building.Networks.First(n => n.Id == networkId);
@@ -42,8 +45,7 @@ public sealed class PipeHandleTool(BuildingActions actions, Guid networkId, Guid
             {
                 var endId = handle == PipeHandle.EndA ? seg.A : seg.B; var end = net.Nodes.First(n => n.Id == endId).Position;
                 var otherEnd = handle == PipeHandle.EndA ? PB : PA;
-                var onAxis = IsOnAxis(otherEnd, end, pr.To);
-                ok = onAxis ? actions.ExtendEnd(networkId, endId, pr.To) : actions.AddElbow(networkId, endId, pr.To) != null; break;
+                ok = Mode switch { EndMode.Elbow => actions.AddElbow(networkId, endId, pr.To) != null, EndMode.Oblique => actions.MoveEnd(networkId, endId, pr.To), _ => actions.ExtendEnd(networkId, endId, pr.To) }; break;
             }
             case PipeHandle.Mid: ok = actions.AddTeeBranch(networkId, segmentId, pr.From, pr.To) != null; break;
             case PipeHandle.Body: ok = actions.MoveRun(networkId, segmentId, pr.To.X - pr.From.X, pr.To.Y - pr.From.Y, 0); break;
@@ -63,16 +65,31 @@ public sealed class PipeHandleTool(BuildingActions actions, Guid networkId, Guid
             case PipeHandle.EndA or PipeHandle.EndB when horizontalSeg:
             {
                 var end = handle == PipeHandle.EndA ? a : b; var other = handle == PipeHandle.EndA ? b : a;
+                var oblique0 = a.X != b.X && a.Y != b.Y;                                   // already off both axes
                 var perp = alongX ? Math.Abs(pointer.Y - end.Y) : Math.Abs(pointer.X - end.X);
-                if (ForceElbow || perp > elbowThresholdMm)
+                var tol = gridMm > 0 ? gridMm / 2.0 : 30;
+                if (!ForceElbow && (oblique0 || perp > tol))
+                {   // free move of the end: the pipe may become oblique (typed length keeps the direction)
+                    Mode = EndMode.Oblique; var free = new PointMm3(px, py, z);
+                    if (TypedLengthMm is { } tf) { double vx = pointer.X - other.X, vy = pointer.Y - other.Y, vl = Math.Sqrt(vx * vx + vy * vy); if (vl > 0) free = new((int)Math.Round(other.X + vx / vl * tf), (int)Math.Round(other.Y + vy / vl * tf), z); }
+                    return free == end || free == other ? null : (end, free, Len(other, free));
+                }
+                if (ForceElbow)
                 {   // elbow: leave along the other plan axis
+                    Mode = EndMode.Elbow;
                     var to = alongX ? new PointMm3(end.X, py, z) : new PointMm3(px, end.Y, z);
                     if (TypedLengthMm is { } t) to = alongX ? new(end.X, end.Y + Math.Sign(pointer.Y - end.Y == 0 ? 1 : pointer.Y - end.Y) * t, z) : new(end.X + Math.Sign(pointer.X - end.X == 0 ? 1 : pointer.X - end.X) * t, end.Y, z);
                     return to == end ? null : (end, to, Len(end, to));
                 }
-                var ext = alongX ? new PointMm3(px, end.Y, z) : new PointMm3(end.X, py, z);
+                Mode = EndMode.Extend; var ext = alongX ? new PointMm3(px, end.Y, z) : new PointMm3(end.X, py, z);
                 if (TypedLengthMm is { } tl) { var dir = alongX ? Math.Sign(end.X - other.X) : Math.Sign(end.Y - other.Y); ext = alongX ? new(other.X + dir * tl, end.Y, z) : new(end.X, other.Y + dir * tl, z); }
                 return ext == end ? null : (end, ext, Len(other, ext));
+            }
+            case PipeHandle.Mid when horizontalSeg && a.X != b.X && a.Y != b.Y: return null;       // oblique: no tee
+            case PipeHandle.Body when horizontalSeg && a.X != b.X && a.Y != b.Y:
+            {   // oblique pipe: the run moves freely
+                var s0 = new PointMm3(Snap(Start.Mm.X), Snap(Start.Mm.Y), z); var to0 = new PointMm3(px, py, z);
+                return to0 == s0 ? null : (s0, to0, Len(s0, to0));
             }
             case PipeHandle.Mid when horizontalSeg:
             {   // branch perpendicular to the segment from the point on the segment nearest to the pointer

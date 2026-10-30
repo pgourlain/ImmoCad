@@ -35,7 +35,7 @@ public sealed class ViewportController
     public void Rebuild(MainViewModel? vm)
     {
         if (vm == null || vm.Building.Levels.Count == 0) { Objects = new(); return; }
-        Objects = SceneBuilder.Build(SceneMapper.Map(vm.Building), new SceneOptions(vm.CurrentLevel?.Id, Filter, CutAboveCurrent, XRay, true, vm.SelectedWalls));
+        Objects = SceneBuilder.Build(SceneMapper.Map(vm.Building), new SceneOptions(vm.CurrentLevel?.Id, Filter, CutAboveCurrent, XRay, true, vm.SelectedWalls, vm.HiddenLevels));
         var pts = Objects.Where(o => o.Kind == SceneKind.Wall).ToList();
         if (pts.Count > 0)
         {

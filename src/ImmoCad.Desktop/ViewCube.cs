@@ -17,6 +17,10 @@ public sealed class ViewCube : Control
     public ViewportController? Controller { get; set; }
     private Face? _hover; private Point? _drag; private bool _dragged;
 
+    // 2D mode: the cube chooses the plane of the canvas (top = XY, front/back = XZ, right/left = YZ); drag turns the cube only, the current face is tinted
+    public Func<Face>? Current { get; set; } public Action<Face>? FaceChosen { get; set; }
+    private bool Flat2D => FaceChosen != null; private double _yaw2 = 0.6, _pitch2 = 0.5;
+
     public ViewCube() { Width = 112; Height = 112; Focusable = false; ClipToBounds = false; }
 
     private static readonly (Face Face, (double X, double Y, double Z) N, (double X, double Y, double Z)[] Quad)[] Faces =
@@ -42,7 +46,7 @@ public sealed class ViewCube : Control
     private Point Centre => new(Bounds.Width / 2, Bounds.Height / 2 + 2);
     private Rect HomeRect => new(2, 2, 20, 20);
 
-    private OrbitCamera View() { var c = Controller?.Camera; return new OrbitCamera { Yaw = c?.Yaw ?? Math.PI / 4, Pitch = c?.Pitch ?? Math.PI / 5, Distance = 2, Target = (0, 0, 0) }; }
+    private OrbitCamera View() { if (Flat2D) return new OrbitCamera { Yaw = _yaw2, Pitch = _pitch2, Distance = 2, Target = (0, 0, 0) }; var c = Controller?.Camera; return new OrbitCamera { Yaw = c?.Yaw ?? Math.PI / 4, Pitch = c?.Pitch ?? Math.PI / 5, Distance = 2, Target = (0, 0, 0) }; }
     private Point S(OrbitCamera cam, (double X, double Y, double Z) v) { var (x, y, _) = cam.Project(v.X, v.Y, v.Z); return new(Centre.X + x * CubeScale, Centre.Y - y * CubeScale); }
 
     private List<(Face Face, Point[] Poly)> Visible()
@@ -69,12 +73,12 @@ public sealed class ViewCube : Control
     {
         var dark = ActualThemeVariant == Avalonia.Styling.ThemeVariant.Dark;
         var edge = new Pen(dark ? Brushes.Gainsboro : Brushes.DimGray, 1.2);
-        var fillOff = new SolidColorBrush(dark ? Color.FromRgb(58, 62, 70) : Color.FromRgb(236, 238, 242)); var fillOn = new SolidColorBrush(Color.FromRgb(255, 170, 70));
+        var fillOff = new SolidColorBrush(dark ? Color.FromRgb(58, 62, 70) : Color.FromRgb(236, 238, 242)); var fillOn = new SolidColorBrush(Color.FromRgb(255, 170, 70)); var fillCur = new SolidColorBrush(dark ? Color.FromRgb(120, 90, 50) : Color.FromRgb(255, 214, 160));
         var text = dark ? Brushes.White : Brushes.Black;
         foreach (var (face, poly) in Visible())
         {
             var g = new StreamGeometry(); using (var c = g.Open()) { c.BeginFigure(poly[0], true); foreach (var q in poly.Skip(1)) c.LineTo(q); c.EndFigure(true); }
-            ctx.DrawGeometry(_hover == face ? fillOn : fillOff, edge, g);
+            ctx.DrawGeometry(_hover == face ? fillOn : Current?.Invoke() == face ? fillCur : fillOff, edge, g);
             var cx = poly.Average(q => q.X); var cy = poly.Average(q => q.Y);
             var area = Math.Abs(poly.Select((q, i) => q.X * poly[(i + 1) % poly.Length].Y - poly[(i + 1) % poly.Length].X * q.Y).Sum()) / 2;
             if (area < 200) continue;                                                           // too foreshortened for a label
@@ -93,6 +97,7 @@ public sealed class ViewCube : Control
         if (_drag is { } l)
         {
             if (Math.Abs(p.X - l.X) + Math.Abs(p.Y - l.Y) > 1) _dragged = true;
+            if (Flat2D) { _yaw2 -= (p.X - l.X) * 0.012; _pitch2 = Math.Clamp(_pitch2 + (p.Y - l.Y) * 0.012, 0.05, 1.5); _drag = p; InvalidateVisual(); return; }
             Controller?.Camera.Orbit(-(p.X - l.X) * 0.012, (p.Y - l.Y) * 0.012); _drag = p; Controller?.Invalidate?.Invoke(); InvalidateVisual(); return;
         }
         var f = FaceAt(p); var h = f == null && HomeRect.Contains(p);
@@ -110,6 +115,7 @@ public sealed class ViewCube : Control
     /// <summary>Click on a face → look at it; on ⌂ → isometric view.</summary>
     public void Click(Point p)
     {
+        if (Flat2D) { if (FaceAt(p) is { } f2 && f2 != Face.Bottom) FaceChosen!(f2); else if (HomeRect.Contains(p)) FaceChosen!(Face.Top); InvalidateVisual(); return; }
         if (Controller is not { } c) return;
         if (FaceAt(p) is { } f) { var (yaw, pitch) = Look(f); c.LookFrom(f is Face.Top or Face.Bottom ? c.Camera.Yaw : yaw, pitch); }
         else if (HomeRect.Contains(p)) c.LookFrom(Math.PI / 4, Math.PI / 5);

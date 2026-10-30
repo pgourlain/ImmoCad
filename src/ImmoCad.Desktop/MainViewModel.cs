@@ -16,8 +16,10 @@ using ImmoCad.Core.Site;
 
 namespace ImmoCad.Desktop;
 
+public enum ViewPlane { XY, XZ, YZ }
+public enum WallDisplay { Solid, Wireframe, Hidden }
 public enum ViewMode { Plan, Solid, Wireframe, Elevation, Site }
-public enum ToolKind { Select, DrawWall, Align, Riser, DrawPipe, Place, Door, Window, Space, Measure, NumberCellars, Straighten, Stretch }
+public enum ToolKind { Select, DrawWall, Align, Riser, DrawPipe, Place, Door, Window, Space, Measure, NumberCellars, Straighten, Stretch, CutWall, MergeRegion }
 
 /// <summary>One button of the level bar.</summary>
 /// <summary>One open building with its own history, pictures and file.</summary>
@@ -36,7 +38,7 @@ public sealed record HistoryRow(int Index, string Name, bool IsCurrent, bool IsF
 public sealed record SpaceItem(Guid LevelId, Guid Id, string Name, string Number, string Kind, string Lot, string Area, bool IsCommon, PointMm Center);
 public sealed record NetworkItem(Guid Id, string Name, string Type, bool Visible, bool Locked, string ColorHex, string Where = "");
 public sealed record PaletteItem(string Id, string Category, string Name, string Glyph);
-public sealed record LevelItem(Guid Id, string Name, string Altitude, bool IsCurrent, int WallCount, string Tooltip = "")
+public sealed record LevelItem(Guid Id, string Name, string Altitude, bool IsCurrent, int WallCount, string Tooltip = "", bool Hidden = false)
 {
     public string BasementSpec => $"{Id}:Basement"; public string GroundSpec => $"{Id}:Ground"; public string StandardSpec => $"{Id}:Standard";
 }
@@ -274,9 +276,52 @@ public partial class MainViewModel : ObservableObject
         Side = null; Plane = new ElevationPlane(pa, pb, 50, side); Mode = ViewMode.Elevation; Hint = T("elev.hint");
     }
 
+    // ---- The plan canvas seen on another plane (XY = plan, XZ / YZ = side views, Z always up). Same tools and selection as the plan. ----
+    [ObservableProperty] private ViewPlane _viewPlane = ViewPlane.XY;
+    [ObservableProperty] private bool _planeFlip;                       // look from the opposite side (XZ: from the north, YZ: from the west)
+    public bool IsSidePlane => ViewPlane != ViewPlane.XY;
+    public bool ShowSideControls => IsSidePlane || IsElevation;
+    partial void OnViewPlaneChanged(ViewPlane value) { MeasurePoints.Clear(); OnPropertyChanged(nameof(IsSidePlane)); OnPropertyChanged(nameof(ShowSideControls)); ClearSelectionForPlane(); Changed?.Invoke(); }
+    partial void OnPlaneFlipChanged(bool value) { Changed?.Invoke(); }
+    public ViewSide PlaneSide => ViewPlane == ViewPlane.XZ ? (PlaneFlip ? ViewSide.North : ViewSide.South) : (PlaneFlip ? ViewSide.West : ViewSide.East);
+    /// <summary>Maps the side canvas to the building: u along the horizontal axis (grows to the viewer's right), pipes sit <see cref="ElevationDepth"/> inside the outer line.</summary>
+    public ElevationPlane SidePlaneModel() => ElevationPlane.ForSide(Building, PlaneSide, ElevationDepth);
+    private void ClearSelectionForPlane() { SelectedWalls.Clear(); SelectedSegment = null; SelectedOpening = null; SelectedSpaceId = null; SelectedEquipmentId = null; OnPropertyChanged(nameof(SelectionText)); }
+    [RelayCommand] private void SetViewPlane(string plane) { if (Mode != ViewMode.Plan) RequestMode(ViewMode.Plan); ViewPlane = Enum.Parse<ViewPlane>(plane); }
+    [RelayCommand] private void FlipPlaneView() => PlaneFlip = !PlaneFlip;
+    /// <summary>Plane chosen with the 2D view cube: top = XY, front/back = XZ, right/left = YZ.</summary>
+    public void ChoosePlane(ViewPlane plane, bool flip) { PlaneFlip = flip; if (Mode != ViewMode.Plan) RequestMode(ViewMode.Plan); ViewPlane = plane; }
+
+    // ---- How walls are drawn in the 2D views: solid, wireframe (outline only) or hidden, to lay pipes and equipment without the walls in the way ----
+    [ObservableProperty] private WallDisplay _wallDisplay = WallDisplay.Solid;
+    public string WallDisplayLabel => T("walls.display", T("walls.display." + WallDisplay));
+    partial void OnWallDisplayChanged(WallDisplay value) { OnPropertyChanged(nameof(WallDisplayLabel)); Status = WallDisplayLabel; Changed?.Invoke(); }
+    [RelayCommand] private void CycleWallDisplay() => WallDisplay = (WallDisplay)(((int)WallDisplay + 1) % 3);
+
+    /// <summary>Pipe drawn on a side view: canvas points are (u, Z).</summary>
+    public void CommitPipeSide(IReadOnlyList<PointMm> pts)
+    {
+        if (pts.Count < 2 || Building.Levels.Count == 0) return;
+        var plane = SidePlaneModel(); var net = Building.Networks.FirstOrDefault(n => n.Type == PipeType && !n.Locked) is { } ex ? ex : Actions.AddNetwork(PipeType.ToString(), PipeType);
+        Actions.AddPipeRun(net.Id, pts.Select(p => { var xy = plane.ToPlan(p.X); return new PointMm3(xy.X, xy.Y, p.Y); }).ToList(), PipeDiameter);
+        Status = T("pipe.segments", pts.Count - 1); Refresh();
+    }
+    /// <summary>Riser clicked on a side view: a vertical pipe over the whole building at that horizontal position.</summary>
+    public void PlaceRiserSide(double u)
+    {
+        if (Building.Levels.Count == 0) return;
+        Actions.AddVerticalPipe(SidePlaneModel(), u, RiserType, Building.Levels[0].AltitudeMm, Building.Levels[^1].AltitudeMm + Building.Levels[^1].HeightMm, RiserDiameter);
+        Status = T("elev.vertical"); Refresh();
+    }
+
     // whole-building side views (front / right / back / left), reached from the toolbar; the plan stays the top view
     public ViewSide? Side { get; private set; }
     [ObservableProperty] private int _elevationDepth = 500;
+    /// <summary>Side views show only the current level (its floor to its ceiling) when true, the whole building otherwise.</summary>
+    [ObservableProperty] private bool _elevationLevelOnly = true;
+    partial void OnElevationLevelOnlyChanged(bool value) => Changed?.Invoke();
+    public IEnumerable<Level> ElevationLevels() => ElevationLevelOnly && CurrentLevel is { } l ? [l] : Building.Levels;
+    public (int Bottom, int Top) ElevationRange() { var ls = ElevationLevels().ToList(); return ls.Count == 0 ? (0, 3000) : (ls.Min(x => x.AltitudeMm), ls.Max(x => x.AltitudeMm + x.HeightMm)); }
     /// <summary>How far from the viewing plane pipes are still drawn: only the ones on the selected wall face, or every pipe for a side view.</summary>
     public int ElevationReach => Side != null ? int.MaxValue / 4 : 600;
     partial void OnElevationDepthChanged(int value) { if (Side is { } s) { Plane = ElevationPlane.ForSide(Building, s, value); Changed?.Invoke(); } }
@@ -436,6 +481,18 @@ public partial class MainViewModel : ObservableObject
         CellarStart += ids.Count; Status = T("spaces.numbered", ids.Count); Refresh();
     }
 
+    /// <summary>Measured two points, typed the real distance: the whole level (plan and walls) is rescaled about the first point. One history step.</summary>
+    [RelayCommand] private async Task MeasureScaleAsync()
+    {
+        if (MeasurePoints.Count != 2 || CurrentLevel is not { } l) return;
+        var (a, b) = (MeasurePoints[0], MeasurePoints[1]); var measured = Math.Sqrt(Math.Pow(a.X - b.X, 2) + Math.Pow(a.Y - b.Y, 2)) / 1000;
+        if (measured < 0.01) return;
+        var text = await Dialogs.PromptAsync(T("measure.scale.title"), T("measure.scale.label", measured.ToString("0.00")), measured.ToString("0.00"));
+        if (text == null || !double.TryParse(text.Replace(',', '.'), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var real) || real <= 0.01) return;
+        var f = real / measured; Actions.ScaleLevel(l.Id, f, f, moveWalls: true, a.X, a.Y);
+        MeasurePoints.Clear(); Status = T("measure.scale.done", (f * 100).ToString("0.#")); Refresh();
+    }
+
     public void MeasureClick(PointMm p)
     {
         if (MeasurePoints.Count >= 2) MeasurePoints.Clear();
@@ -449,6 +506,17 @@ public partial class MainViewModel : ObservableObject
     // ---- Level context menu ----
     [RelayCommand] private void AddLevelAbove(Guid id) { var n = Actions.AddLevelNextTo(id, true, Token("level.n", Building.Levels.Count)); CurrentLevelId = n.Id; Refresh(); }
     [RelayCommand] private void AddLevelBelow(Guid id) { var n = Actions.AddLevelNextTo(id, false, Token("level.basement.n", Building.Levels.Count(l => l.AltitudeMm < 0) + 1)); CurrentLevelId = n.Id; Refresh(); }
+    /// <summary>Deletes a level with its walls, openings, spaces and background plan (undoable, one history step).</summary>
+    [RelayCommand] private void DeleteLevel(Guid id)
+    {
+        var l = Building.Levels.FirstOrDefault(x => x.Id == id); if (l == null) return;
+        var name = l.DisplayName; var next = Building.Levels.Where(x => x.Id != id).OrderBy(x => Math.Abs(x.AltitudeMm - l.AltitudeMm)).FirstOrDefault();
+        Actions.DeleteLevel(id); SelectedWalls.Clear(); SelectedSegment = null;
+        if (CurrentLevelId == id && next != null) CurrentLevelId = next.Id;
+        Status = T("level.deleted", name); Refresh();
+    }
+    [RelayCommand] private void DeleteCurrentLevel() { if (CurrentLevel is { } l) DeleteLevel(l.Id); }
+
     [RelayCommand] private async Task RenameLevelAsync(Guid id)
     {
         var l = Building.Levels.First(x => x.Id == id);
@@ -480,13 +548,17 @@ public partial class MainViewModel : ObservableObject
         _ => (new List<NetworkType> { RiserType }, 0),
     };
 
+    /// <summary>Quarter turns (counter-clockwise) of a multiple riser about the cursor: east, north, west, south. Space turns it while the riser tool is active.</summary>
+    public int RiserTurns { get; private set; }
+    public void TurnRiser() { RiserTurns = (RiserTurns + 1) % 4; Status = T("riser.turned", RiserTurns * 90); }
+
     /// <summary>The tubes a click would place at this point (snapped like the real placement): position, type and diameter of each.</summary>
     public List<(PointMm At, NetworkType Type, int DiameterMm)> RiserPreview(PointMm at)
     {
         if (Building.Levels.Count == 0) return [];
-        var p = RiserSnap.Snap(at, CurrentLevel?.Walls.Select(w => (IReadOnlyList<PointMm>)w.Footprint) ?? []);
-        var (types, spacing) = RiserTypes();
-        return types.Select((t, i) => (new PointMm(p.X + i * spacing, p.Y), t, RiserTemplate == "tpl.drain" ? Math.Max(RiserDiameter, 100) : RiserDiameter)).ToList();
+        var (types, spacing) = RiserTypes(); var dia = RiserTemplate == "tpl.drain" ? Math.Max(RiserDiameter, 100) : RiserDiameter;
+        var p = RiserSnap.SnapRow(at, spacing, types.Count, dia, CurrentLevel?.Walls.Select(w => (IReadOnlyList<PointMm>)w.Footprint) ?? [], quarterTurns: RiserTurns); var (sx, sy) = RiserSnap.RowStep(RiserTurns);
+        return types.Select((t, i) => (new PointMm(p.X + sx * i * spacing, p.Y + sy * i * spacing), t, dia)).ToList();
     }
 
     /// <summary>Places a riser (or a template of several) at the point, snapped 50 mm from wall faces. One history step.</summary>
@@ -494,12 +566,12 @@ public partial class MainViewModel : ObservableObject
     {
         if (Building.Levels.Count == 0) return;
         var polys = CurrentLevel?.Walls.Select(w => (IReadOnlyList<PointMm>)w.Footprint) ?? [];
-        var p = RiserSnap.Snap(at, polys);
+        var (types, spacing) = RiserTypes(); var dia = RiserTemplate == "tpl.drain" ? Math.Max(RiserDiameter, 100) : RiserDiameter;
+        var p = RiserSnap.SnapRow(at, spacing, types.Count, dia, polys, quarterTurns: RiserTurns);
         var lo = Math.Clamp(RiserFromIndex, 0, Building.Levels.Count - 1); var hi = Math.Clamp(RiserToIndex, 0, Building.Levels.Count - 1);
         var from = RiserWholeBuilding ? Building.Levels[0].AltitudeMm : Building.Levels[Math.Min(lo, hi)].AltitudeMm;
         var to = RiserWholeBuilding ? Building.Levels[^1].AltitudeMm + Building.Levels[^1].HeightMm : Building.Levels[Math.Max(lo, hi)].AltitudeMm + Building.Levels[Math.Max(lo, hi)].HeightMm;
-        var (types, spacing) = RiserTypes();
-        Actions.AddRiserTemplate(p, spacing, types, from, to, RiserTemplate == "tpl.drain" ? Math.Max(RiserDiameter, 100) : RiserDiameter);
+        Actions.AddRiserTemplate(p, spacing, types, from, to, dia, RiserTurns);
         Status = T("riser.placed", types.Count); Refresh();
     }
 
@@ -657,11 +729,11 @@ public partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(HasDocument)); OnPropertyChanged(nameof(ShowWelcome)); Refresh();
     }
 
-    partial void OnModeChanged(ViewMode value) { OnPropertyChanged(nameof(Is3D)); OnPropertyChanged(nameof(ShowPlan)); OnPropertyChanged(nameof(Show3D)); OnPropertyChanged(nameof(IsElevation)); OnPropertyChanged(nameof(IsPlan)); OnPropertyChanged(nameof(IsSite)); Changed?.Invoke(); }
+    partial void OnModeChanged(ViewMode value) { if (value == ViewMode.Site) FocusSite(); OnPropertyChanged(nameof(ShowSideControls)); OnPropertyChanged(nameof(Is3D)); OnPropertyChanged(nameof(ShowPlan)); OnPropertyChanged(nameof(Show3D)); OnPropertyChanged(nameof(IsElevation)); OnPropertyChanged(nameof(IsPlan)); OnPropertyChanged(nameof(IsSite)); Changed?.Invoke(); }
     partial void OnToolChanged(ToolKind value)
     {
-        OnPropertyChanged(nameof(IsSelectTool)); OnPropertyChanged(nameof(IsDrawTool)); OnPropertyChanged(nameof(IsAlignTool)); OnPropertyChanged(nameof(IsRiserTool)); OnPropertyChanged(nameof(IsPipeTool)); OnPropertyChanged(nameof(IsPlaceTool)); OnPropertyChanged(nameof(IsDoorTool)); OnPropertyChanged(nameof(IsWindowTool)); OnPropertyChanged(nameof(IsSpaceTool)); OnPropertyChanged(nameof(IsMeasureTool)); OnPropertyChanged(nameof(IsNumberTool)); OnPropertyChanged(nameof(IsStraightenTool)); OnPropertyChanged(nameof(IsStretchTool)); MeasurePoints.Clear(); NumberPending.Clear();
-        Hint = value switch { ToolKind.DrawWall => T("hint.draw.wall"), ToolKind.Riser => T("hint.riser"), ToolKind.DrawPipe => T("hint.draw.pipe"), ToolKind.Place => T("hint.place"), ToolKind.Align => T("hint.align"), ToolKind.Door => T("hint.door"), ToolKind.Window => T("hint.window"), ToolKind.Space => T("hint.space"), ToolKind.Measure => T("hint.measure"), ToolKind.NumberCellars => T("hint.number"), ToolKind.Straighten => T("hint.straighten"), ToolKind.Stretch => T("hint.stretch"), _ => T("hint.select") }; if (value != ToolKind.Align) AlignCancel();
+        OnPropertyChanged(nameof(IsSelectTool)); OnPropertyChanged(nameof(IsDrawTool)); OnPropertyChanged(nameof(IsAlignTool)); OnPropertyChanged(nameof(IsRiserTool)); OnPropertyChanged(nameof(IsPipeTool)); OnPropertyChanged(nameof(IsPlaceTool)); OnPropertyChanged(nameof(IsDoorTool)); OnPropertyChanged(nameof(IsWindowTool)); OnPropertyChanged(nameof(IsSpaceTool)); OnPropertyChanged(nameof(IsMeasureTool)); OnPropertyChanged(nameof(IsNumberTool)); OnPropertyChanged(nameof(IsStraightenTool)); OnPropertyChanged(nameof(IsStretchTool)); OnPropertyChanged(nameof(IsCutWallTool)); OnPropertyChanged(nameof(IsMergeRegionTool)); CutPoints.Clear(); CutAwaitSide = false; MeasurePoints.Clear(); NumberPending.Clear();
+        Hint = value switch { ToolKind.DrawWall => T("hint.draw.wall"), ToolKind.Riser => T("hint.riser"), ToolKind.DrawPipe => T("hint.draw.pipe"), ToolKind.Place => T("hint.place"), ToolKind.Align => T("hint.align"), ToolKind.Door => T("hint.door"), ToolKind.Window => T("hint.window"), ToolKind.Space => T("hint.space"), ToolKind.Measure => T("hint.measure"), ToolKind.NumberCellars => T("hint.number"), ToolKind.Straighten => T("hint.straighten"), ToolKind.Stretch => T("hint.stretch"), ToolKind.CutWall => T("hint.cutwall"), ToolKind.MergeRegion => T("hint.mergeregion"), _ => T("hint.select") }; if (value != ToolKind.Align) AlignCancel();
         Changed?.Invoke();
     }
 
@@ -676,7 +748,7 @@ public partial class MainViewModel : ObservableObject
         SelectedWalls.IntersectWith(CurrentLevel?.Walls.Select(w => w.Id) ?? []);
         Levels.Clear();
         foreach (var l in Building.Levels.AsEnumerable().Reverse()) // top level first, like an elevator
-            Levels.Add(new LevelItem(l.Id, l.DisplayName, $"{l.AltitudeMm / 1000.0:0.0} m", l.Id == CurrentLevel?.Id, l.Walls.Count, T("level.tooltip", l.DisplayName, Enum_(l.Kind), (l.AltitudeMm / 1000.0).ToString("0.00"), (l.HeightMm / 1000.0).ToString("0.00"))));
+            Levels.Add(new LevelItem(l.Id, l.DisplayName, $"{l.AltitudeMm / 1000.0:0.0} m", l.Id == CurrentLevel?.Id, l.Walls.Count, T("level.tooltip", l.DisplayName, Enum_(l.Kind), (l.AltitudeMm / 1000.0).ToString("0.00"), (l.HeightMm / 1000.0).ToString("0.00")), HiddenLevels.Contains(l.Id)));
         Networks.Clear();
         foreach (var n in Building.Networks)
         { var c = NetworkQueries.ColorOf(n.Type); var where = string.Join(", ", n.Segments.SelectMany(sg => Spaces.CrossedBy(Building, n, sg)).Select(sp => sp.DisplayName).Distinct()); Networks.Add(new NetworkItem(n.Id, n.Name, Enum_(n.Type), n.Visible, n.Locked, $"#{c.R:X2}{c.G:X2}{c.B:X2}", where.Length > 0 ? T("network.runs", where) : "")); }
@@ -817,7 +889,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private double _imgScaleX; [ObservableProperty] private double _imgScaleY; [ObservableProperty] private double _imgRotation; [ObservableProperty] private double _imgOffsetX; [ObservableProperty] private double _imgOffsetY;
 
     /// <summary>Commits a stretch gesture or nudge (one history step).</summary>
-    public void SetImageTransform(Affine t) { if (CurrentLevel is { } l) { Actions.SetImageTransform(l.Id, t.ToArray()); Refresh(); } }
+    public void SetImageTransform(Affine t) { if (CurrentLevel is { } l) { Actions.SetImageTransform(l.Id, t.ToArray(), AlignMoveWalls); Refresh(); } }
     public void NudgeImage(int dx, int dy) { if (CurrentLevel?.ImageTransform is { } m) SetImageTransform(ImageStretch.Nudge(ImageStretch.FromArray(m), dx, dy)); }
     [RelayCommand] private void ApplyImageFields() { if (CurrentLevel?.ImageTransform != null) SetImageTransform(ImageStretch.Compose(ImgScaleX, ImgScaleY, ImgRotation, ImgOffsetX, ImgOffsetY)); }
 
@@ -840,9 +912,9 @@ public partial class MainViewModel : ObservableObject
 
     private void OnLanguageChanged()
     {
-        Hint = Tool switch { ToolKind.DrawWall => T("hint.draw.wall"), ToolKind.DrawPipe => T("hint.draw.pipe"), ToolKind.Riser => T("hint.riser"), ToolKind.Place => T("hint.place"), ToolKind.Align => T("hint.align"), ToolKind.Door => T("hint.door"), ToolKind.Window => T("hint.window"), ToolKind.Space => T("hint.space"), ToolKind.Measure => T("hint.measure"), ToolKind.NumberCellars => T("hint.number"), ToolKind.Straighten => T("hint.straighten"), ToolKind.Stretch => T("hint.stretch"), _ => T("hint.select") };
+        Hint = Tool switch { ToolKind.DrawWall => T("hint.draw.wall"), ToolKind.DrawPipe => T("hint.draw.pipe"), ToolKind.Riser => T("hint.riser"), ToolKind.Place => T("hint.place"), ToolKind.Align => T("hint.align"), ToolKind.Door => T("hint.door"), ToolKind.Window => T("hint.window"), ToolKind.Space => T("hint.space"), ToolKind.Measure => T("hint.measure"), ToolKind.NumberCellars => T("hint.number"), ToolKind.Straighten => T("hint.straighten"), ToolKind.Stretch => T("hint.stretch"), ToolKind.CutWall => T("hint.cutwall"), ToolKind.MergeRegion => T("hint.mergeregion"), _ => T("hint.select") };
         Status = T("ready"); RebuildPalette(); OnPropertyChanged(nameof(MapLayers)); OnPropertyChanged(nameof(RiserTemplates)); OnPropertyChanged(nameof(Title)); OnPropertyChanged(nameof(SelectionText));
-        OnPropertyChanged(nameof(TourTitle)); OnPropertyChanged(nameof(TourBody)); OnPropertyChanged(nameof(NetworkTypes)); OnPropertyChanged(nameof(SpaceKinds));
+        OnPropertyChanged(nameof(TourTitle)); OnPropertyChanged(nameof(TourBody)); OnPropertyChanged(nameof(NetworkTypes)); OnPropertyChanged(nameof(SpaceKinds)); OnPropertyChanged(nameof(WallDisplayLabel));
         if (SelectedEquipment != null) SelectEquipment(SelectedEquipmentId);
         Refresh(); LanguageRefreshed?.Invoke();
     }
@@ -872,6 +944,13 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _ghostBelow = true;
     [ObservableProperty] private bool _ghostAbove;
     [ObservableProperty] private bool _commonOnly;
+    /// <summary>Levels switched off with the eye in the level list: not drawn as a transparent ghost in the plan, not built in 3D. View state only, no history step.</summary>
+    public HashSet<Guid> HiddenLevels { get; } = new();
+    [RelayCommand] private void ToggleLevelVisibility(Guid id)
+    {
+        if (!HiddenLevels.Remove(id)) HiddenLevels.Add(id);
+        Refresh(); Changed?.Invoke();
+    }
     [RelayCommand] private void ToggleGhostBelow() { GhostBelow = !GhostBelow; Changed?.Invoke(); }
     [RelayCommand] private void ToggleGhostAbove() { GhostAbove = !GhostAbove; Changed?.Invoke(); }
     [RelayCommand] private void ToggleCommonOnly() { CommonOnly = !CommonOnly; Status = CommonOnly ? T("commononly") : T("showall"); Changed?.Invoke(); }

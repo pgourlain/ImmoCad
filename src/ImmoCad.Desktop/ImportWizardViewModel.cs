@@ -24,6 +24,8 @@ public partial class ImportWizardViewModel : ObservableObject
     [ObservableProperty] private double _angle;
     [ObservableProperty] private double _distanceMetres = 5;
     [ObservableProperty] private bool _twoAxes;
+    [ObservableProperty] private double _scaleDenominator = 100;   // printed scale 1:N, often written on the plan
+    [ObservableProperty] private double _dpi;                     // scan resolution; from the file when it carries one
     [ObservableProperty] private double _distanceVMetres = 5;
     [ObservableProperty] private int _threshold;          // 0 = automatic
     [ObservableProperty] private int _minThickness = 5;
@@ -38,7 +40,8 @@ public partial class ImportWizardViewModel : ObservableObject
     public GrayImage? Gray { get; private set; }
     public Calibration? Calibration { get; private set; }
 
-    public ImportWizardViewModel(byte[] data, IReadOnlyList<WizardReference>? references = null) { Original = data; _image = data; Gray = PlanImport.Decode(data); References = references ?? []; }
+    // scans of plans are ~300 dpi; a density of 72/96 is just the default written by image editors
+    public ImportWizardViewModel(byte[] data, IReadOnlyList<WizardReference>? references = null) { Original = data; _image = data; _dpi = PlanImport.DensityDpi(data) is > 96 and var d ? Math.Round(d) : 300; Gray = PlanImport.Decode(data); References = references ?? []; }
 
     // ---- calibration against an imported level: two points on the reference, the same two features on the new plan
     public IReadOnlyList<WizardReference> References { get; }
@@ -92,8 +95,14 @@ public partial class ImportWizardViewModel : ObservableObject
     /// <summary>Rotates the original by -Angle (straightens a tilt of Angle) and redecodes.</summary>
     public void ApplyRotation()
     {
-        Image = PlanImport.Rotate(Original, -Angle); AppliedAngle = Angle; Gray = PlanImport.Decode(Image); CalibrationPoints.Clear(); Calibration = null;
+        Image = PlanImport.Rotate(Original, 90 * QuarterTurns - Angle); AppliedAngle = Angle; Gray = PlanImport.Decode(Image); CalibrationPoints.Clear(); Calibration = null;
     }
+
+    /// <summary>Clockwise quarter turns (0-3) applied to the original before the fine angle.</summary>
+    public int QuarterTurns { get; private set; }
+
+    /// <summary>Turns the picture by 90° (+1 clockwise, -1 counter-clockwise), keeping the fine angle.</summary>
+    public void RotateQuarter(int direction) { QuarterTurns = ((QuarterTurns + direction) % 4 + 4) % 4; ApplyRotation(); }
 
     /// <summary>Angle currently baked into <see cref="Image"/> (the canvas previews the difference live while the slider moves).</summary>
     public double AppliedAngle { get; private set; }
@@ -124,6 +133,16 @@ public partial class ImportWizardViewModel : ObservableObject
         if (TwoAxes && p.Count == 4) Calibration = PlanImport.TwoAxis(p[0], p[1], DistanceMetres, p[2], p[3], DistanceVMetres);
         else if (p.Count >= 2) { var s = PlanImport.PxPerMm(p[0], p[1], DistanceMetres); Calibration = new(s, s); }
         Message = Calibration is { } c ? $"{c.PxPerMmX:0.####} px/mm" : "";
+    }
+
+    /// <summary>Calibration skipped: assumes 0.1 px/mm (10 mm per pixel, about a 1:100 scan at 250 dpi); the picture can be stretched to the right size afterwards.</summary>
+    public void UseDefaultCalibration() { Calibration = new(0.1, 0.1); Offset = (0, 0); Message = "0.1 px/mm"; }
+
+    /// <summary>Calibration from the printed scale (1:N) and the scan resolution.</summary>
+    public void ApplyPrintedScale()
+    {
+        if (ScaleDenominator < 1 || Dpi < 1) return;
+        var s = PlanImport.PxPerMmFromScale(Dpi, ScaleDenominator); Calibration = new(s, s); Offset = (0, 0); CalibrationPoints.Clear(); Message = $"{s:0.####} px/mm";
     }
 
     public bool IsCalibrated => Calibration != null;

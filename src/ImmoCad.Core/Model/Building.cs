@@ -122,6 +122,8 @@ public sealed class SiteInfo
     public string? Address { get; set; }
     /// <summary>Cadastral footprint used as reference outline, in Lambert 93 metres (closed ring without repeated point).</summary>
     public List<double[]> Footprint { get; set; } = new();
+    /// <summary>Further cadastral parcels of the same building (same anchor, so no extra alignment), rings in Lambert 93.</summary>
+    public List<List<double[]>> ExtraFootprints { get; set; } = new();
     /// <summary>Neighbouring cadastral buildings (rings in Lambert 93), for party-wall detection.</summary>
     public List<List<double[]>> Neighbours { get; set; } = new();
     public bool ShowFootprint { get; set; } = true;

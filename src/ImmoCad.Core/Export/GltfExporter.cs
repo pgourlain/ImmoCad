@@ -42,7 +42,7 @@ public static class GltfExporter
             var m = new Mesh();
             foreach (var w in l.Walls)
             {
-                MeshBuilder.ExtrudeWall(w.Footprint.Select(p => (p.X, p.Y)).ToList(), l.AltitudeMm, w.HeightMm ?? l.HeightMm, m);
+                MeshBuilder.ExtrudeWall(w.Footprint.Select(p => (p.X, p.Y)).ToList(), l.AltitudeMm, w.HeightMm ?? l.HeightMm, m, w.Holes.Select(h => (IReadOnlyList<(int X, int Y)>)h.Select(p => (p.X, p.Y)).ToList()).ToList());
                 foreach (var h in w.Holes) MeshBuilder.ExtrudeSides(h.Select(p => (p.X, p.Y)).ToList(), l.AltitudeMm, w.HeightMm ?? l.HeightMm, m);
             }
             if (m.VertexCount > 0) children.Add(AddMesh("level_" + l.DisplayName, m, 0));

@@ -92,6 +92,8 @@ public partial class MainWindow : Window
             case Avalonia.Input.Key.N: Vm.SetToolCommand.Execute("Window"); break;
             case Avalonia.Input.Key.S: Vm.SetToolCommand.Execute("Space"); break;
             case Avalonia.Input.Key.M: Vm.SetToolCommand.Execute("Measure"); break;
+            case Avalonia.Input.Key.F: Vm.SetToolCommand.Execute("MergeRegion"); break;
+            case Avalonia.Input.Key.K: Vm.SetToolCommand.Execute("CutWall"); break;
             default: return;
         }
         e.Handled = true;
@@ -133,11 +135,13 @@ public partial class MainWindow : Window
         DataContextChanged += (_, _) =>
         {
             Vm.Dialogs = new AvaloniaDialogService(this);
-            Vm.Changed += () => { Plan.Invalidate(); SyncView3D(); Elev.InvalidateVisual(); SiteMap.InvalidateVisual(); };
+            Vm.Changed += () => { Plan.Invalidate(); Cube2D.InvalidateVisual(); SyncView3D(); Elev.InvalidateVisual(); SiteMap.InvalidateVisual(); };
+            Cube2D.Current = () => Vm.ViewPlane switch { ViewPlane.XZ => Vm.PlaneFlip ? ViewCube.Face.Back : ViewCube.Face.Front, ViewPlane.YZ => Vm.PlaneFlip ? ViewCube.Face.Left : ViewCube.Face.Right, _ => ViewCube.Face.Top };
+            Cube2D.FaceChosen = f => { switch (f) { case ViewCube.Face.Front: Vm.ChoosePlane(ViewPlane.XZ, false); break; case ViewCube.Face.Back: Vm.ChoosePlane(ViewPlane.XZ, true); break; case ViewCube.Face.Right: Vm.ChoosePlane(ViewPlane.YZ, false); break; case ViewCube.Face.Left: Vm.ChoosePlane(ViewPlane.YZ, true); break; default: Vm.ChoosePlane(ViewPlane.XY, false); break; } };
             Vm.OnLog += m => Log.LogInformation("{Message}", m);
             Vm.OnError += (what, ex) => Log.LogError(ex, "Failed to {What}", what);
             Vm.RecentFiles.CollectionChanged += (_, _) => BuildMenus(); Vm.LanguageRefreshed += BuildMenus;
-            Plan.CursorMoved += p => Vm.Status = $"X {p.X / 1000.0:0.00} m   Y {p.Y / 1000.0:0.00} m";
+            Plan.CursorMoved += p => { var (h, v) = Vm.ViewPlane switch { ViewPlane.XZ => ("X", "Z"), ViewPlane.YZ => ("Y", "Z"), _ => ("X", "Y") }; Vm.Status = $"{h} {p.X / 1000.0:0.00} m   {v} {p.Y / 1000.0:0.00} m"; };
             Vm.TransitionHandler = HandleTransition;
             Vm.PlanZoomRequested += how => Plan.Zoom(how);
             KeyDown += OnWindowKey;
@@ -149,11 +153,26 @@ public partial class MainWindow : Window
     }
 
     /// <summary>Menus are defined once (MenuSpec) and rendered natively on macOS, in the window elsewhere.</summary>
+    private bool _menusPending;
+    private NativeMenu? _nativeMenu;
     private void BuildMenus()
     {
-        var specs = MenuFactory.Build(Vm, OpenLogFolder, CopySystemInfo, ShowAbout);
-        if (OperatingSystem.IsMacOS()) { NativeMenu.SetMenu(this, MenuFactory.ToNativeMenu(specs)); MenuHost.Content = null; }
-        else MenuHost.Content = MenuFactory.ToMenu(specs);
+        if (_menusPending) return;
+        _menusPending = true;
+        // Deferred: rebuilding while a native menu command is still running (save → recent files, language) crashes macOS.
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            _menusPending = false;
+            var specs = MenuFactory.Build(Vm, OpenLogFolder, CopySystemInfo, ShowAbout);
+            if (OperatingSystem.IsMacOS())
+            {
+                var fresh = MenuFactory.ToNativeMenu(specs);
+                if (_nativeMenu == null) { _nativeMenu = fresh; NativeMenu.SetMenu(this, _nativeMenu); }
+                else { var items = fresh.Items.ToList(); fresh.Items.Clear(); _nativeMenu.Items.Clear(); foreach (var i in items) _nativeMenu.Items.Add(i); }
+                MenuHost.Content = null; (Avalonia.Application.Current as App)?.RefreshAppMenu();
+            }
+            else MenuHost.Content = MenuFactory.ToMenu(specs);
+        }, Avalonia.Threading.DispatcherPriority.Background);
     }
 
     private void OnDrop(object? s, DragEventArgs e)

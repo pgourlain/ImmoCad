@@ -15,11 +15,13 @@
             <Button Content="+" vm:L.Tip="wiz.zoomin" Click="OnZoomIn" Width="34" HorizontalContentAlignment="Center" />
             <Button Content="−" vm:L.Tip="wiz.zoomout" Click="OnZoomOut" Width="34" HorizontalContentAlignment="Center" />
             <Button vm:L.Content="wiz.fit" Click="OnFit" />
-            <CheckBox x:Name="GuidesBox" vm:L.Content="wiz.guides" IsChecked="True" IsCheckedChanged="OnGuides" />
           </StackPanel>
 
           <StackPanel x:Name="PStraighten" Spacing="8">
-            <Button vm:L.Content="wiz.autodeskew" Click="OnAutoDeskew" HorizontalAlignment="Stretch" />
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <Button Content="↺ 90°" vm:L.Tip="wiz.turn.left" Click="OnTurnLeft" />
+              <Button Content="↻ 90°" vm:L.Tip="wiz.turn.right" Click="OnTurnRight" />
+            </StackPanel>
             <TextBlock Text="{Binding AngleLabel}" />
             <Slider Minimum="-45" Maximum="45" Value="{Binding Angle}" TickFrequency="0.1" PointerReleased="OnAngleChanged" />
             <StackPanel Orientation="Horizontal" Spacing="6">
@@ -29,32 +31,28 @@
           </StackPanel>
 
           <StackPanel x:Name="PCalibrate" Spacing="8" IsVisible="False">
-            <StackPanel x:Name="PRefPick" Spacing="4">
-              <TextBlock vm:L.Text="wiz.ref.level" />
-              <ComboBox x:Name="RefBox" HorizontalAlignment="Stretch" SelectionChanged="OnReferenceChanged" />
-            </StackPanel>
-            <StackPanel x:Name="PManual" Spacing="8">
-              <CheckBox vm:L.Content="wiz.twoaxes" IsChecked="{Binding TwoAxes}" />
-              <TextBlock vm:L.Text="wiz.dist.h" />
-              <NumericUpDown Value="{Binding DistanceMetres}" Minimum="0.1" Maximum="500" Increment="0.1" FormatString="0.00" />
-              <StackPanel IsVisible="{Binding TwoAxes}">
-                <TextBlock vm:L.Text="wiz.dist.v" />
-                <NumericUpDown Value="{Binding DistanceVMetres}" Minimum="0.1" Maximum="500" Increment="0.1" FormatString="0.00" />
-              </StackPanel>
-            </StackPanel>
+            <TextBlock vm:L.Text="wiz.printed" />
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
+              <TextBlock Text="1 :" VerticalAlignment="Center" />
+              <NumericUpDown Grid.Column="1" Value="{Binding ScaleDenominator}" Minimum="1" Maximum="100000" Increment="10" FormatString="0" />
+            </Grid>
+            <Separator />
+            <TextBlock vm:L.Text="wiz.measure" TextWrapping="Wrap" />
+            <TextBlock vm:L.Text="wiz.dist.h" TextWrapping="Wrap" />
+            <NumericUpDown Value="{Binding DistanceMetres}" Minimum="0.1" Maximum="500" Increment="0.05" FormatString="0.00" />
             <TextBlock x:Name="CalText" FontWeight="SemiBold" />
           </StackPanel>
 
           <StackPanel x:Name="PDetect" Spacing="6" IsVisible="False">
             <Button vm:L.Content="wiz.autothick" Click="OnAutoThickness" HorizontalAlignment="Stretch" />
             <TextBlock Text="{Binding ThresholdLabel}" />
-            <Slider Minimum="0" Maximum="255" Value="{Binding Threshold}" PointerReleased="OnDetectParam" />
+            <Slider Minimum="0" Maximum="255" Value="{Binding Threshold}" />
             <TextBlock Text="{Binding MinThicknessLabel}" />
-            <Slider Minimum="1" Maximum="60" Value="{Binding MinThickness}" PointerReleased="OnDetectParam" />
+            <Slider Minimum="1" Maximum="60" Value="{Binding MinThickness}" />
             <TextBlock Text="{Binding BridgeLabel}" />
-            <Slider Minimum="0" Maximum="30" Value="{Binding BridgeGap}" PointerReleased="OnDetectParam" />
+            <Slider Minimum="0" Maximum="30" Value="{Binding BridgeGap}" />
             <TextBlock Text="{Binding MinAreaLabel}" />
-            <Slider Minimum="1" Maximum="2000" Value="{Binding MinArea}" PointerReleased="OnDetectParam" />
+            <Slider Minimum="1" Maximum="2000" Value="{Binding MinArea}" />
             <CheckBox vm:L.Content="wiz.straighten.all" IsChecked="{Binding StraightenWalls}" />
           </StackPanel>
 

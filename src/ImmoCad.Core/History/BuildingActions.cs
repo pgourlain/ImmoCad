@@ -203,8 +203,84 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
     public void DeleteWalls(Guid levelId, IEnumerable<Guid> wallIds) =>
         Edit("Delete walls", BuildingEventKind.WallRemoved, () => { var ids = wallIds.ToHashSet(); Find(levelId).Walls.RemoveAll(w => ids.Contains(w.Id)); return levelId; }, i => i);
 
-    public void SetImageTransform(Guid levelId, double[] matrix2x3) =>
-        Edit("Set image transform", BuildingEventKind.LevelChanged, () => { Find(levelId).ImageTransform = matrix2x3; return levelId; }, i => i);
+    private static Geometry.Shape ShapeOf(Wall w) => new(w.Footprint.ToList(), w.Holes.Select(h => h.ToList()).ToList());
+
+    /// <summary>Fuses the walls into one wall per connected piece (gaps narrower than <paramref name="closeMm"/> between fragments are closed). The first wall keeps its id, label and openings. Returns how many walls the group became (0: nothing to do). One history step.</summary>
+    public int MergeWalls(Guid levelId, IEnumerable<Guid> wallIds, int closeMm = 20)
+    {
+        var ids = wallIds.ToHashSet(); var l = Find(levelId); var group = l.Walls.Where(w => ids.Contains(w.Id) && w.Footprint.Count >= 3).ToList(); if (group.Count < 2) return 0;
+        var merged = Geometry.PolygonOps.Merge(group.Select(ShapeOf).ToList(), closeMm); if (merged.Count == 0) return 0;
+        Edit("Merge walls", BuildingEventKind.WallChanged, () =>
+        {
+            var first = group[0]; var at = l.Walls.IndexOf(first); var openings = group.SelectMany(w => w.Openings).ToList();
+            l.Walls.RemoveAll(w => group.Contains(w));
+            for (var i = 0; i < merged.Count; i++)
+            {
+                var w = i == 0 ? first : new Wall { Label = first.Label, Stability = first.Stability, HeightMm = first.HeightMm };
+                w.Footprint = merged[i].Outline; w.Holes = merged[i].Holes; if (i == 0) w.Openings = openings;
+                l.Walls.Insert(Math.Min(at + i, l.Walls.Count), w);
+            }
+            return levelId;
+        }, i => i);
+        return merged.Count;
+    }
+
+    /// <summary>Cuts along the line through a and b and drops everything on the other side, in the given walls or, without ids, in every wall the segment ab crosses. A wall that is cut in several pieces keeps its id on the first; a wall left empty is deleted. Returns the walls changed. One history step.</summary>
+    public int CutWalls(Guid levelId, PointMm a, PointMm b, bool keepLeft, IEnumerable<Guid>? wallIds = null)
+    {
+        var l = Find(levelId); var ids = wallIds?.ToHashSet();
+        var targets = l.Walls.Where(w => w.Footprint.Count >= 3 && (ids?.Contains(w.Id) ?? Geometry.PolygonOps.Crosses(ShapeOf(w), a, b)));
+        return ApplyCuts(l, targets.Select(w => (Wall: w, Parts: Geometry.PolygonOps.KeepSide(ShapeOf(w), a, b, keepLeft))).ToList());
+    }
+
+    /// <summary>Removes what lies inside the zone from the given walls or, without ids, from every wall the zone reaches. Same rules as <see cref="CutWalls"/>; the rest of a wall that runs far beyond the zone is left exactly as it was.</summary>
+    public int CutWallsRegion(Guid levelId, IReadOnlyList<PointMm> zone, IEnumerable<Guid>? wallIds = null)
+    {
+        var l = Find(levelId); var ids = wallIds?.ToHashSet();
+        var targets = l.Walls.Where(w => w.Footprint.Count >= 3 && (ids?.Contains(w.Id) ?? Geometry.PolygonOps.Touches(ShapeOf(w), zone)));
+        return ApplyCuts(l, targets.Select(w => (Wall: w, Parts: Geometry.PolygonOps.Subtract(ShapeOf(w), zone))).ToList());
+    }
+
+    private int ApplyCuts(Level l, List<(Wall Wall, List<Geometry.Shape> Parts)> all)
+    {
+        var cuts = all.Where(t => !(t.Parts.Count == 1 && t.Parts[0].Outline.SequenceEqual(t.Wall.Footprint) && t.Parts[0].Holes.Count == t.Wall.Holes.Count)).ToList();
+        if (cuts.Count == 0) return 0;
+        Edit("Cut walls", BuildingEventKind.WallChanged, () =>
+        {
+            foreach (var (w, parts) in cuts)
+            {
+                var at = l.Walls.IndexOf(w);
+                if (parts.Count == 0) { l.Walls.RemoveAt(at); continue; }
+                w.Footprint = parts[0].Outline; w.Holes = parts[0].Holes;
+                for (var i = 1; i < parts.Count; i++) l.Walls.Insert(at + i, new Wall { Footprint = parts[i].Outline, Holes = parts[i].Holes, Label = w.Label, Stability = w.Stability, HeightMm = w.HeightMm });
+            }
+            return l.Id;
+        }, i => i);
+        return cuts.Count;
+    }
+
+    /// <summary>Sets the background transform; with <paramref name="moveWalls"/> the walls and spaces follow the same move (new ∘ old⁻¹).</summary>
+    public void SetImageTransform(Guid levelId, double[] matrix2x3, bool moveWalls = false) =>
+        Edit("Set image transform", BuildingEventKind.LevelChanged, () =>
+        {
+            var l = Find(levelId); var old = l.ImageTransform; l.ImageTransform = matrix2x3;
+            if (moveWalls && old is { Length: 6 })
+            {
+                var det = old[0] * old[4] - old[1] * old[3];
+                if (Math.Abs(det) > 1e-12)
+                {
+                    // inverse of old, then the new transform: maps a point of the old plan to where it now lies
+                    double ia = old[4] / det, ib = -old[1] / det, ic = -old[3] / det, id = old[0] / det;
+                    double itx = -(ia * old[2] + ib * old[5]), ity = -(ic * old[2] + id * old[5]);
+                    double fa = matrix2x3[0] * ia + matrix2x3[1] * ic, fb = matrix2x3[0] * ib + matrix2x3[1] * id, ftx = matrix2x3[0] * itx + matrix2x3[1] * ity + matrix2x3[2];
+                    double fc = matrix2x3[3] * ia + matrix2x3[4] * ic, fd = matrix2x3[3] * ib + matrix2x3[4] * id, fty = matrix2x3[3] * itx + matrix2x3[4] * ity + matrix2x3[5];
+                    PointMm M(PointMm p) => new((int)Math.Round(fa * p.X + fb * p.Y + ftx), (int)Math.Round(fc * p.X + fd * p.Y + fty));
+                    foreach (var w in l.Walls) { w.Footprint = w.Footprint.Select(M).ToList(); w.Holes = w.Holes.Select(h => h.Select(M).ToList()).ToList(); }
+                    foreach (var sp in l.Spaces) sp.Outline = sp.Outline.Select(M).ToList();
+                }
+            }
+            return levelId;
+        }, i => i);
 
     public void SetBackground(Guid levelId, string imageName, double[] matrix2x3, double opacity = 0.5) =>
         Edit("Set background", BuildingEventKind.LevelChanged, () => { var l = Find(levelId); l.BackgroundImage = imageName; l.ImageTransform = matrix2x3; l.BackgroundOpacity = opacity; return levelId; }, i => i);
@@ -362,6 +438,17 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
         var other = net.Nodes.First(n => n.Id == (seg[0].A == nodeId ? seg[0].B : seg[0].A)).Position;
         if (!AxisAligned(other, to) || other == to || net.Nodes.First(n => n.Id == nodeId).Position == to) return false;
         Edit("Extend pipe", BuildingEventKind.NetworkChanged, () => { net.Nodes.First(n => n.Id == nodeId).Position = to; return nodeId; }, i => i);
+        return true;
+    }
+
+    /// <summary>Moves a free end anywhere (also off the segment's axis, which makes the pipe oblique). False (no change) when the node is not a free end or does not move.</summary>
+    public bool MoveEnd(Guid networkId, Guid nodeId, PointMm3 to)
+    {
+        var net = Net(networkId); var seg = net.Segments.Where(s => s.A == nodeId || s.B == nodeId).ToList();
+        if (seg.Count != 1) return false;
+        var other = net.Nodes.First(n => n.Id == (seg[0].A == nodeId ? seg[0].B : seg[0].A)).Position;
+        if (other == to || net.Nodes.First(n => n.Id == nodeId).Position == to) return false;
+        Edit("Move pipe end", BuildingEventKind.NetworkChanged, () => { net.Nodes.First(n => n.Id == nodeId).Position = to; return nodeId; }, i => i);
         return true;
     }
 
@@ -544,15 +631,15 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
             return n;
         }, _ => levelId);
 
-    /// <summary>Scales a level about the origin (the cadastre says the plan is too wide / too long): the background and, optionally, the walls. One history step.</summary>
-    public void ScaleLevel(Guid levelId, double sx, double sy, bool moveWalls = true) =>
+    /// <summary>Scales a level about a pivot (the origin by default) (the cadastre says the plan is too wide / too long): the background and, optionally, the walls. One history step.</summary>
+    public void ScaleLevel(Guid levelId, double sx, double sy, bool moveWalls = true, double pivotX = 0, double pivotY = 0) =>
         Edit("Scale level", BuildingEventKind.LevelChanged, () =>
         {
             var l = Find(levelId); var t = l.ImageTransform;
-            if (t is { Length: 6 }) l.ImageTransform = [t[0] * sx, t[1] * sx, t[2] * sx, t[3] * sy, t[4] * sy, t[5] * sy];
+            if (t is { Length: 6 }) l.ImageTransform = [t[0] * sx, t[1] * sx, t[2] * sx + (1 - sx) * pivotX, t[3] * sy, t[4] * sy, t[5] * sy + (1 - sy) * pivotY];
             if (moveWalls)
             {
-                PointMm M(PointMm p) => new((int)Math.Round(p.X * sx), (int)Math.Round(p.Y * sy));
+                PointMm M(PointMm p) => new((int)Math.Round(pivotX + (p.X - pivotX) * sx), (int)Math.Round(pivotY + (p.Y - pivotY) * sy));
                 foreach (var w in l.Walls) { w.Footprint = w.Footprint.Select(M).ToList(); w.Holes = w.Holes.Select(h => h.Select(M).ToList()).ToList(); }
                 foreach (var sp in l.Spaces) sp.Outline = sp.Outline.Select(M).ToList();
             }
@@ -630,16 +717,16 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
             if (moved.Contains(l.Walls[i].Id)) l.Walls[i].Footprint = snapped[i].Select(p => new PointMm((int)Math.Round(p.X), (int)Math.Round(p.Y))).ToList();
     }
 
-    /// <summary>Several risers at once (hot+cold…) at fixed spacing along X, from zFrom to zTo. One history step.</summary>
-    public IReadOnlyList<Network> AddRiserTemplate(PointMm origin, int spacingMm, IReadOnlyList<NetworkType> types, int zFromMm, int zToMm, int diameterMm = 20) =>
+    /// <summary>Several risers at once (hot+cold…) at fixed spacing along a row (east by default, turned by <paramref name="quarterTurns"/> quarter turns counter-clockwise about the first), from zFrom to zTo. One history step.</summary>
+    public IReadOnlyList<Network> AddRiserTemplate(PointMm origin, int spacingMm, IReadOnlyList<NetworkType> types, int zFromMm, int zToMm, int diameterMm = 20, int quarterTurns = 0) =>
         Edit("Add riser template", BuildingEventKind.NetworkChanged, () =>
         {
-            var res = new List<Network>();
+            var res = new List<Network>(); var (sx, sy) = Tools.RiserSnap.RowStep(quarterTurns);
             for (var i = 0; i < types.Count; i++)
             {
                 var n = new Network { Name = "Riser " + types[i], Type = types[i] };
-                var a = new Node { Position = new(origin.X + i * spacingMm, origin.Y, zFromMm) };
-                var b = new Node { Position = new(origin.X + i * spacingMm, origin.Y, zToMm) };
+                var a = new Node { Position = new(origin.X + sx * i * spacingMm, origin.Y + sy * i * spacingMm, zFromMm) };
+                var b = new Node { Position = new(origin.X + sx * i * spacingMm, origin.Y + sy * i * spacingMm, zToMm) };
                 n.Nodes.Add(a); n.Nodes.Add(b); n.Segments.Add(new Segment { A = a.Id, B = b.Id, DiameterMm = diameterMm });
                 building.Networks.Add(n); res.Add(n);
             }

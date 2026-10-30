@@ -14,9 +14,25 @@ public class ElevationView : Control
 {
     private MainViewModel? Vm => DataContext as MainViewModel;
     private double _scale = 0.1; private double _ox = 40, _oy;               // px per mm; screen origin of (u=0, z=zMin)
-    private bool _fit = true;
+    private bool _fit = true; private (bool, Guid) _fitKey;
     private Point? _down, _now; private double _z0;
     private (Guid NetworkId, Guid NodeId, double U)? _endDrag;
+    private Point? _panFrom; private bool _space;                              // Space+drag, middle or right button pans; two-finger scroll pans, pinch zooms (as in the plan)
+
+    public ElevationView()
+    {
+        ClipToBounds = true;
+        AddHandler(PointerTouchPadGestureMagnifyEvent, (_, e) => { ZoomAt(e.GetPosition(this), Math.Exp(e.Delta.X)); e.Handled = true; });
+    }
+
+    private void ZoomAt(Point p, double factor)
+    {
+        var u = ToU(p.X); var z = ToZ(p.Y); _scale = Math.Clamp(_scale * factor, 0.01, 3);
+        _ox = p.X - u * _scale; _oy = Bounds.Height - p.Y - z * _scale; _fit = false; InvalidateVisual();
+    }
+    protected override void OnKeyDown(KeyEventArgs e) { if (e.Key == Key.Space) { _space = true; Cursor = new Cursor(StandardCursorType.Hand); e.Handled = true; } base.OnKeyDown(e); }
+    protected override void OnKeyUp(KeyEventArgs e) { if (e.Key == Key.Space) { _space = false; Cursor = null; e.Handled = true; } base.OnKeyUp(e); }
+    protected override void OnLostFocus(FocusChangedEventArgs e) { _space = false; Cursor = null; base.OnLostFocus(e); }
 
     private (Network Net, Segment Seg, double U, bool Top, Guid NodeId)? HitVerticalHandle(Point p)
     {
@@ -46,23 +62,29 @@ public class ElevationView : Control
     public void Fit()
     {
         if (Vm?.Plane is not { } p || Vm.Building.Levels.Count == 0 || Bounds.Width < 10) return;
-        var top = Vm.Building.Levels[^1].AltitudeMm + Vm.Building.Levels[^1].HeightMm; var bottom = Vm.Building.Levels[0].AltitudeMm;
+        var (bottom, top) = Vm.ElevationRange();
         _scale = Math.Min((Bounds.Width - 140) / p.Length, (Bounds.Height - 80) / Math.Max(1, top - bottom)); _ox = 40; _oy = 40 - bottom * _scale; _fit = false;
     }
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         Focus(); if (Vm?.Plane == null) return;
-        var pt = e.GetPosition(this);
+        var pt = e.GetPosition(this); var props = e.GetCurrentPoint(this).Properties;
+        if (_space || props.IsMiddleButtonPressed || props.IsRightButtonPressed) { _panFrom = pt; e.Pointer.Capture(this); return; }
         if (HitVerticalHandle(pt) is { } hh) { _endDrag = (hh.Net.Id, hh.NodeId, hh.U); _down = _now = pt; e.Pointer.Capture(this); return; }
         if (!Vm.IsRiserTool && !Vm.IsPipeTool && HitPipe(pt) is { } hp) { Vm.SelectSegment(hp.Net.Id, hp.Seg.Id); InvalidateVisual(); return; }
         _down = _now = e.GetPosition(this); _z0 = ElevationPlane.SnapZ(Vm.Building, (int)ToZ(_down.Value.Y), (int)(12 / _scale)); e.Pointer.Capture(this);
     }
-    protected override void OnPointerMoved(PointerEventArgs e) { if (_down != null) { _now = e.GetPosition(this); InvalidateVisual(); } }
+    protected override void OnPointerMoved(PointerEventArgs e)
+    {
+        if (_panFrom is { } pf) { var q = e.GetPosition(this); _ox += q.X - pf.X; _oy -= q.Y - pf.Y; _panFrom = q; _fit = false; InvalidateVisual(); return; }
+        if (_down != null) { _now = e.GetPosition(this); InvalidateVisual(); }
+    }
     internal void ReleaseForTest(Point p) { if (_endDrag is { } ed) { _endDrag = null; _down = null; Vm?.DragVerticalEnd(ed.NetworkId, ed.NodeId, (int)ToZ(p.Y)); InvalidateVisual(); } }
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
         e.Pointer.Capture(null);
+        if (_panFrom != null) { _panFrom = null; return; }
         if (_endDrag != null) { ReleaseForTest(e.GetPosition(this)); return; }
         if (_down is not { } d || _now is not { } n || Vm is not { } vm) return;
         var drag = Math.Abs(n.X - d.X) + Math.Abs(n.Y - d.Y) > 4; _down = null;
@@ -73,8 +95,11 @@ public class ElevationView : Control
     }
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
     {
-        var p = e.GetPosition(this); var u = ToU(p.X); var z = ToZ(p.Y); _scale = Math.Clamp(_scale * (e.Delta.Y > 0 ? 1.15 : 1 / 1.15), 0.01, 3);
-        _ox = p.X - u * _scale; _oy = Bounds.Height - p.Y - z * _scale; InvalidateVisual();
+        if (OperatingSystem.IsMacOS() && !e.KeyModifiers.HasFlag(MenuFactory.CommandModifiers))
+        {   // trackpad: two-finger scroll pans
+            _ox += e.Delta.X * 40; _oy -= e.Delta.Y * 40; _fit = false; InvalidateVisual(); e.Handled = true; return;
+        }
+        ZoomAt(e.GetPosition(this), Math.Pow(1.15, Math.Clamp(e.Delta.Y, -3, 3)));
     }
 
     public override void Render(DrawingContext ctx)
@@ -85,17 +110,18 @@ public class ElevationView : Control
         if (_fit) Fit();
         var b = Vm.Building; var txt = dark ? Brushes.Gainsboro : Brushes.DimGray;
         // face
-        var bottom = b.Levels[0].AltitudeMm; var top = b.Levels[^1].AltitudeMm + b.Levels[^1].HeightMm;
+        var (bottom, top) = Vm.ElevationRange(); var shown = Vm.ElevationLevels().ToList();
+        if (_fitKey != (Vm.ElevationLevelOnly, Vm.CurrentLevelId)) { _fitKey = (Vm.ElevationLevelOnly, Vm.CurrentLevelId); Fit(); }
         ctx.DrawRectangle(new SolidColorBrush(Color.FromArgb(40, 120, 120, 130)), new Pen(Brushes.Gray, 1), new Rect(S(0, top), S(plane.Length, bottom)));
         if (Vm.Side != null)
-            foreach (var l in b.Levels)
+            foreach (var l in shown)
                 foreach (var w in l.Walls)
                 {   // wall silhouettes for context (the whole building seen from this side)
                     if (w.Footprint.Count < 2) continue; var us = w.Footprint.Select(p => plane.ProjectU(p)).ToList();
                     ctx.DrawRectangle(new SolidColorBrush(Color.FromArgb(50, 130, 130, 140)), new Pen(new SolidColorBrush(Color.FromArgb(110, 110, 110, 120)), 0.8), new Rect(S(us.Min(), l.AltitudeMm + l.HeightMm), S(us.Max(), l.AltitudeMm)));
                 }
         // level lines
-        foreach (var l in b.Levels)
+        foreach (var l in shown)
         {
             var y = S(0, l.AltitudeMm).Y;
             ctx.DrawLine(new Pen(new SolidColorBrush(Color.FromRgb(90, 140, 220)), 1, DashStyle.Dash), new(_ox - 10, y), new(Bounds.Width, y));

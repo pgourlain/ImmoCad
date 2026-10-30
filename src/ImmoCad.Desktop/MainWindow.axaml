@@ -58,7 +58,12 @@
         <ToggleButton Classes="tool" Content="⊟" vm:L.Tip="tip.window" IsChecked="{Binding IsWindowTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Window" />
         <ToggleButton Classes="tool" Content="▢" vm:L.Tip="tip.space" IsChecked="{Binding IsSpaceTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Space" />
         <ToggleButton Classes="tool" Content="№" vm:L.Tip="tip.number" IsChecked="{Binding IsNumberTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="NumberCellars" />
-        <ToggleButton Classes="tool" Content="⟷" vm:L.Tip="tip.measure" IsChecked="{Binding IsMeasureTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Measure" />
+        <ToggleButton Classes="tool" vm:L.Tip="tip.measure" IsChecked="{Binding IsMeasureTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Measure">
+          <Path Width="26" Height="26" Stretch="Uniform" RenderTransformOrigin="50%,50%" StrokeThickness="1.4" StrokeLineCap="Round" StrokeJoin="Round" Stroke="{Binding $parent[ToggleButton].Foreground}"
+                Data="M1,8 L23,8 L23,16 L1,16 Z M4,8 L4,12 M7,8 L7,10.5 M10,8 L10,12 M13,8 L13,10.5 M16,8 L16,12 M19,8 L19,10.5"><Path.RenderTransform><RotateTransform Angle="-35" /></Path.RenderTransform></Path>
+        </ToggleButton>
+        <ToggleButton Classes="tool" Content="⧉" vm:L.Tip="tip.mergeregion" IsChecked="{Binding IsMergeRegionTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="MergeRegion" />
+        <ToggleButton Classes="tool" Content="✂" vm:L.Tip="tip.cutwalls" IsChecked="{Binding IsCutWallTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="CutWall" />
         <ToggleButton Classes="tool" Content="⟋" vm:L.Tip="tip.straighten" IsChecked="{Binding IsStraightenTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Straighten" />
         <ToggleButton Classes="tool" Content="⇔" vm:L.Tip="tip.stretch" IsChecked="{Binding IsStretchTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Stretch" />
         <ToggleButton Classes="tool" Content="⌖" vm:L.Tip="tip.align" IsChecked="{Binding IsAlignTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Align" />
@@ -161,21 +166,29 @@
               </DataTemplate></ItemsControl.ItemTemplate>
             </ItemsControl>
             <Button vm:L.Content="site.create" Command="{Binding CreateFromFootprintCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+            <Button vm:L.Content="site.parcel.add" Command="{Binding AddParcelCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+            <Button vm:L.Content="site.parcel.remove" Command="{Binding RemoveParcelCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
             <Button vm:L.Content="site.place" Command="{Binding BeginPlacementCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+            <StackPanel Spacing="6" IsVisible="{Binding Placing}">
+              <TextBlock vm:L.Text="site.place.rotate" Classes="caption" />
+              <WrapPanel>
+                <Button Content="↺ 90°" Command="{Binding RotatePlacementCommand}" CommandParameter="90" Margin="0,0,4,4" />
+                <Button Content="↻ 90°" Command="{Binding RotatePlacementCommand}" CommandParameter="-90" Margin="0,0,4,4" />
+                <RepeatButton Content="↺ 1°" Command="{Binding RotatePlacementCommand}" CommandParameter="1" Margin="0,0,4,4" />
+                <RepeatButton Content="↻ 1°" Command="{Binding RotatePlacementCommand}" CommandParameter="-1" Margin="0,0,4,4" />
+                <RepeatButton Content="↺ 0.1°" Command="{Binding RotatePlacementCommand}" CommandParameter="0.1" Margin="0,0,4,4" />
+                <RepeatButton Content="↻ 0.1°" Command="{Binding RotatePlacementCommand}" CommandParameter="-0.1" Margin="0,0,4,4" />
+              </WrapPanel>
+              <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
+                <Button vm:L.Content="site.place.cancel" Command="{Binding CancelPlacementCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+                <Button Grid.Column="1" vm:L.Content="site.place.ok" Command="{Binding ConfirmPlacementCommand}" Classes="accent" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+              </Grid>
+            </StackPanel>
             <Separator />
             <TextBlock vm:L.Text="site.checks" Classes="caption" />
             <CheckBox vm:L.Content="site.showfootprint" IsChecked="{Binding ShowFootprint}" />
             <CheckBox vm:L.Content="site.straighten.cadastre" IsChecked="{Binding StraightenWithCadastre}" />
             <Button vm:L.Content="site.fitwalls" Command="{Binding FitOuterWallsCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
-            <Button vm:L.Content="site.checkscale" Command="{Binding CheckScaleCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
-            <TextBlock Text="{Binding ScaleText}" TextWrapping="Wrap" Classes="caption" />
-            <Button vm:L.Content="site.applyscale" Command="{Binding ApplyScaleCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
-            <Button vm:L.Content="site.checkangles" Command="{Binding CheckAnglesCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
-            <ItemsControl ItemsSource="{Binding AngleIssues}">
-              <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:MainViewModel+CornerItem">
-                <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Background="Transparent" Padding="8,3" Content="{Binding Text}" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).FocusCornerCommand}" CommandParameter="{Binding At}" />
-              </DataTemplate></ItemsControl.ItemTemplate>
-            </ItemsControl>
             <TextBlock vm:L.Text="site.guide" TextWrapping="Wrap" Classes="caption" />
           </StackPanel></ScrollViewer>
         </TabItem>
@@ -277,15 +290,19 @@
                       <MenuItem vm:L.Header="menu.level.addabove" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).AddLevelAboveCommand}" CommandParameter="{Binding Id}" />
                       <MenuItem vm:L.Header="menu.level.addbelow" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).AddLevelBelowCommand}" CommandParameter="{Binding Id}" />
                       <MenuItem vm:L.Header="menu.level.rename" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).RenameLevelCommand}" CommandParameter="{Binding Id}" />
+                      <MenuItem vm:L.Header="menu.level.delete" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).DeleteLevelCommand}" CommandParameter="{Binding Id}" />
                       <MenuItem vm:L.Header="menu.level.geometry" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).SetLevelGeometryCommand}" CommandParameter="{Binding Id}" />
                       <MenuItem vm:L.Header="menu.level.kind.basement" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).SetLevelKindCommand}" CommandParameter="{Binding BasementSpec}" />
                       <MenuItem vm:L.Header="menu.level.kind.ground" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).SetLevelKindCommand}" CommandParameter="{Binding GroundSpec}" />
                       <MenuItem vm:L.Header="menu.level.kind.standard" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).SetLevelKindCommand}" CommandParameter="{Binding StandardSpec}" />
                     </ContextMenu>
                   </Button.ContextMenu>
-                  <Grid ColumnDefinitions="*,Auto">
-                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
-                    <TextBlock Grid.Column="1" Text="{Binding Altitude}" FontSize="10" Opacity="0.7" VerticalAlignment="Center" Margin="8,0,0,0" />
+                  <Grid ColumnDefinitions="Auto,*,Auto">
+                    <Button Content="👁" Padding="2,0" Margin="0,0,6,0" Background="Transparent" BorderThickness="0" FontSize="13" vm:L.Tip="tip.levelvisible"
+                            Opacity="{Binding Hidden, Converter={x:Static vm:Converters.DimIf}}"
+                            Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ToggleLevelVisibilityCommand}" CommandParameter="{Binding Id}" />
+                    <TextBlock Grid.Column="1" Text="{Binding Name}" FontWeight="SemiBold" />
+                    <TextBlock Grid.Column="2" Text="{Binding Altitude}" FontSize="10" Opacity="0.7" VerticalAlignment="Center" Margin="8,0,0,0" />
                   </Grid>
                 </Button>
               </DataTemplate>
@@ -304,16 +321,12 @@
         </StackPanel>
         <TextBlock Grid.Column="1" Text="{Binding SelectionText}" HorizontalAlignment="Center" VerticalAlignment="Center" Classes="caption" />
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
-          <Button vm:L.Content="view.2d" Command="{Binding SetModeCommand}" CommandParameter="Plan" />
+          <Button vm:L.Content="view.2d" Command="{Binding SetViewPlaneCommand}" CommandParameter="XY" vm:L.Tip="tip.side.xy" />
           <ToggleButton Content="⫴" vm:L.Tip="tip.sidebyside" IsChecked="{Binding SideBySide}" />
           <Button vm:L.Content="view.elevation" Command="{Binding ShowElevationCommand}" vm:L.Tip="tip.elevation" />
-          <Button vm:L.Content="view.front" Command="{Binding ShowSideCommand}" CommandParameter="South" vm:L.Tip="tip.side" />
-          <Button vm:L.Content="view.right" Command="{Binding ShowSideCommand}" CommandParameter="East" vm:L.Tip="tip.side" />
-          <Button vm:L.Content="view.back" Command="{Binding ShowSideCommand}" CommandParameter="North" vm:L.Tip="tip.side" />
-          <Button vm:L.Content="view.left" Command="{Binding ShowSideCommand}" CommandParameter="West" vm:L.Tip="tip.side" />
-          <Button Content="↺" Command="{Binding RotateViewCommand}" CommandParameter="1" vm:L.Tip="tip.rotate.view" IsVisible="{Binding IsElevation}" />
-          <Button Content="↻" Command="{Binding RotateViewCommand}" CommandParameter="-1" vm:L.Tip="tip.rotate.view" IsVisible="{Binding IsElevation}" />
-          <NumericUpDown Value="{Binding ElevationDepth}" Minimum="0" Maximum="50000" Increment="100" Width="150" vm:L.Format="fmt.depth.pipes" IsVisible="{Binding IsElevation}" />
+          <Button Content="{Binding WallDisplayLabel}" Command="{Binding CycleWallDisplayCommand}" vm:L.Tip="tip.walldisplay" />
+          <ToggleButton vm:L.Content="view.levelonly" IsChecked="{Binding ElevationLevelOnly}" IsVisible="{Binding ShowSideControls}" vm:L.Tip="tip.levelonly" />
+          <NumericUpDown Value="{Binding ElevationDepth}" Minimum="0" Maximum="50000" Increment="100" Width="200" vm:L.Format="fmt.depth.pipes" IsVisible="{Binding ShowSideControls}" />
           <Button vm:L.Content="view.3d" Command="{Binding SetModeCommand}" CommandParameter="Solid" />
           <Button vm:L.Content="view.wire" Command="{Binding SetModeCommand}" CommandParameter="Wireframe" />
           <ToggleButton vm:L.Content="view.xray" IsChecked="{Binding XRay, Mode=OneWay}" Command="{Binding ToggleXRayCommand}" IsVisible="{Binding Is3D}" />
@@ -349,7 +362,10 @@
         </StackPanel>
       </Border>
       <UniformGrid Rows="1">
-        <vm:PlanView x:Name="Plan" IsVisible="{Binding ShowPlan}" />
+        <Grid IsVisible="{Binding ShowPlan}">
+          <vm:PlanView x:Name="Plan" />
+          <vm:ViewCube x:Name="Cube2D" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,10,14,0" />
+        </Grid>
         <Grid x:Name="View3DHost" IsVisible="{Binding Show3D}" />
       </UniformGrid>
       <vm:SiteView x:Name="SiteMap" IsVisible="{Binding IsSite}" />

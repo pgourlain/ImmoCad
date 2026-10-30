@@ -42,6 +42,20 @@ public static class PlanImport
 
     public static (int Width, int Height) Size(byte[] data) { var i = new MagickImageInfo(data); return ((int)i.Width, (int)i.Height); }
 
+    /// <summary>Resolution stored in the picture (dots per inch), 0 when it carries none.</summary>
+    public static double DensityDpi(byte[] data)
+    {
+        try
+        {
+            var d = new MagickImageInfo(data).Density; if (d is null || d.X <= 1) return 0;
+            return d.Units == DensityUnit.PixelsPerCentimeter ? d.X * 2.54 : d.Units == DensityUnit.PixelsPerInch ? d.X : 0;
+        }
+        catch { return 0; }
+    }
+
+    /// <summary>pixels per mm of a picture scanned at <paramref name="dpi"/> from a drawing printed at 1:<paramref name="denominator"/>.</summary>
+    public static double PxPerMmFromScale(double dpi, double denominator) => dpi / (25.4 * denominator);
+
     /// <summary>pixels per mm from two clicked points and the real distance in metres.</summary>
     public static double PxPerMm((double X, double Y) a, (double X, double Y) b, double realMetres) =>
         Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y)) / (realMetres * 1000);

@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
@@ -13,7 +14,12 @@ public partial class App : Application
     public static AutosaveService? Autosave { get; private set; }
     public static string? StartupFile { get; set; }
 
-    public override void Initialize() => AvaloniaXamlLoader.Load(this);
+    public override void Initialize() { AvaloniaXamlLoader.Load(this); RefreshAppMenu(); }
+
+    /// <summary>The About entry of the macOS application menu follows the language.</summary>
+    public void RefreshAppMenu() { if (NativeMenu.GetMenu(this)?.Items.OfType<NativeMenuItem>().FirstOrDefault() is { } about) about.Header = Translations.T("about.app"); }
+
+    private async void OnAbout(object? sender, EventArgs e) { if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime { MainWindow: { } w }) await new AboutDialog().ShowDialog(w); }
 
     public override void OnFrameworkInitializationCompleted()
     {
@@ -37,7 +43,7 @@ public partial class App : Application
             var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) }; http.DefaultRequestHeaders.UserAgent.ParseAdd("ImmoCad/1.0");
             var cache = new ImmoCad.Geo.DiskCache(Path.Combine(dir, "cache"));
             vm.Geo = new SiteData(new ImmoCad.Geo.IgnGeocoder(http, cache), new ImmoCad.Geo.IgnCadastre(http, cache), new ImmoCad.Geo.IgnTiles(http, cache));
-            Translations.Language = settings.Language;
+            Translations.Language = settings.Language; RefreshAppMenu();
             var win = new MainWindow { DataContext = vm, Width = settings.WindowWidth, Height = settings.WindowHeight };
             win.Opened += (_, _) =>
             {

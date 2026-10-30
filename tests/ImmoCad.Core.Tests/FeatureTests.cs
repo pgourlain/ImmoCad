@@ -490,6 +490,17 @@ public class NetworkEditTests
         var corner = new List<PointMm> { new(0, 0), new(200, 0), new(200, 4000), new(0, 4000) };
         Assert.Equal(new PointMm(250, 250), RiserSnap.Snap(new(300, 330), [wall, corner]));   // inner corner: 50 mm from both faces
         Assert.Equal(new PointMm(2000, 2000), RiserSnap.Snap(new(2000, 2000), [wall, corner])); // far from walls: untouched
+        // a row of tubes backs off as a whole: 3 tubes 150 apart coming from the left of a wall whose west face is x=1000 end 50 mm short of it (950), not inside it
+        var vw = new List<PointMm> { new(1000, 0), new(1200, 0), new(1200, 2000), new(1000, 2000) };
+        Assert.Equal(new PointMm(650, 1000), RiserSnap.SnapRow(new(700, 1000), 150, 3, 28, [vw]));
+        Assert.Equal(new PointMm(1250, 1000), RiserSnap.SnapRow(new(1230, 1000), 150, 3, 28, [vw]));        // coming from the right (east face x=1200): the first tube 50 mm off, the others further out
+        Assert.Equal(new PointMm(2000, 1000), RiserSnap.SnapRow(new(2000, 1000), 150, 3, 28, [vw]));        // far away: untouched
+        Assert.Equal(RiserSnap.Snap(new(1000, 330), [wall]), RiserSnap.SnapRow(new(1000, 330), 0, 1, 28, [wall]));   // one small tube behaves as before
+        Assert.Equal(new PointMm(1000, 260), RiserSnap.SnapRow(new(1000, 330), 0, 1, 100, [wall]));         // a Ø100 drain keeps its radius + 10 mm from the face
+        // turned a quarter turn the row runs north, towards a wall whose south face is y=2000
+        var ceiling = new List<PointMm> { new(0, 2000), new(4000, 2000), new(4000, 2200), new(0, 2200) };
+        Assert.Equal(new PointMm(500, 1650), RiserSnap.SnapRow(new(500, 1600), 150, 3, 28, [ceiling], quarterTurns: 1));   // last tube at 1900 is pulled to 50 mm from the face (1950)
+        Assert.Equal(new PointMm(500, 1650), RiserSnap.SnapRow(new(500, 1700), 150, 3, 28, [ceiling], quarterTurns: 1));   // last tube would be at 2000: backs off so it also ends at 1950
     }
 }
 
@@ -610,9 +621,9 @@ public class PipeHandleToolTests
     [Fact] public void Drag_end_handle_extends_with_live_length_in_one_step()
     {
         var (b, a, h, n) = Pipe(); var steps = h.Items.Count; var t = new PipeHandleTool(a, n.Id, n.Segments[0].Id, PipeHandle.EndB);
-        t.Down(P(2000, 0)); t.Move(P(2600, 40)); t.Move(P(3010, 30));
+        t.Down(P(2000, 0)); t.Move(P(2600, 10)); t.Move(P(3010, 20));
         Assert.Equal(ToolState.Dragging, t.State); Assert.Equal(3000, t.Proposal!.Value.LengthMm); Assert.Equal(steps, h.Items.Count);   // preview does not touch the model
-        t.Up(P(3010, 30));
+        t.Up(P(3010, 20));
         Assert.True(t.Committed); Assert.Equal(steps + 1, h.Items.Count); Assert.Equal(new PointMm3(3000, 0, 2400), n.Nodes[1].Position);
     }
 
@@ -624,14 +635,18 @@ public class PipeHandleToolTests
         Assert.True(t.Committed); Assert.Equal(2500, n.Nodes[1].Position.X);
     }
 
-    [Fact] public void Dragging_perpendicular_makes_an_elbow_and_modifier_forces_it()
+    [Fact] public void Dragging_an_end_off_the_axis_makes_the_pipe_oblique_and_the_modifier_forces_an_elbow()
     {
-        var (b, a, h, n) = Pipe(); var t = new PipeHandleTool(a, n.Id, n.Segments[0].Id, PipeHandle.EndB);
+        var (b, a, h, n) = Pipe(); var steps = h.Items.Count; var t = new PipeHandleTool(a, n.Id, n.Segments[0].Id, PipeHandle.EndB);
         t.Down(P(2000, 0)); t.Move(P(2050, 1200)); t.Up(P(2050, 1200));
-        Assert.True(t.Committed); Assert.Equal(2, n.Segments.Count); Assert.Equal(new PointMm3(2000, 1200, 2400), n.Nodes[^1].Position);
-        Assert.Equal(FittingKind.Elbow90, FittingResolver.Resolve(n).First(f => f.Position == new PointMm3(2000, 0, 2400)).Kind);
+        Assert.True(t.Committed); Assert.Single(n.Segments); Assert.Equal(new PointMm3(2050, 1200, 2400), n.Nodes[1].Position); Assert.Equal(steps + 1, h.Items.Count);   // the free end moved: the pipe is oblique
+        var t1 = new PipeHandleTool(a, n.Id, n.Segments[0].Id, PipeHandle.EndB); t1.Down(P(2050, 1200)); t1.Move(P(3000, 1200)); t1.Up(P(3000, 1200));   // an oblique pipe keeps moving freely
+        Assert.Equal(new PointMm3(3000, 1200, 2400), n.Nodes[1].Position);
         var (_, a2, _, n2) = Pipe(); var t2 = new PipeHandleTool(a2, n2.Id, n2.Segments[0].Id, PipeHandle.EndB) { ForceElbow = true };
-        t2.Down(P(2000, 0)); t2.Move(P(2000, 100)); t2.Up(P(2000, 100)); Assert.Equal(2, n2.Segments.Count);
+        t2.Down(P(2000, 0)); t2.Move(P(2000, 1200)); t2.Up(P(2000, 1200)); Assert.Equal(2, n2.Segments.Count); Assert.Equal(new PointMm3(2000, 1200, 2400), n2.Nodes[^1].Position);
+        Assert.Equal(FittingKind.Elbow90, FittingResolver.Resolve(n2).First(f => f.Position == new PointMm3(2000, 0, 2400)).Kind);
+        var (_, a3, _, n3) = Pipe(); var t3 = new PipeHandleTool(a3, n3.Id, n3.Segments[0].Id, PipeHandle.EndB) { TypedLengthMm = 1000 };
+        t3.Down(P(2000, 0)); t3.Move(P(1000, 1000)); t3.Up(P(1000, 1000)); Assert.Equal(1000, t3.Proposal?.LengthMm ?? 1000);   // typed length along the pointer direction
     }
 
     [Fact] public void Mid_handle_makes_a_tee_and_body_drag_moves_the_run()
@@ -711,6 +726,38 @@ public class WallToolsTests
         a.SetSpaceProperties(l.Id, sp.Id, "Cave 3", SpaceKind.Cellar, "3", "Lot 12"); var s = b.Levels.First(x => x.Name == "RDC").Spaces[0];
         Assert.Equal(("Cave 3", "3", "Lot 12", Stability.Common), (s.Name, s.Number, s.Lot, s.Stability));
     }
+
+    [Fact] public void Fragments_of_one_wall_merge_into_one_and_a_cut_removes_a_spike()
+    {
+        var (b, a, h) = New(); var l = a.AddLevel("RDC", 0);
+        // five pieces of a 5 m wall, 2-3 mm apart, with slightly different heights
+        int[] xs = [0, 1000, 2003, 3005, 4008, 5000]; for (var i = 0; i < 5; i++) a.AddWall(l.Id, [new(xs[i], 0), new(xs[i + 1] - 3, 0), new(xs[i + 1] - 3, 200 + 10 * i), new(xs[i], 200 + 10 * i)]);
+        var ids = b.Levels[0].Walls.Select(w => w.Id).ToList(); var steps = h.Items.Count;
+        Assert.Equal(1, a.MergeWalls(l.Id, ids)); Assert.Single(b.Levels[0].Walls); Assert.Equal(steps + 1, h.Items.Count);
+        var o = b.Levels[0].Walls[0].Footprint; Assert.Equal(0, o.Min(p => p.X)); Assert.InRange(o.Max(p => p.X), 4990, 5000); Assert.InRange(o.Max(p => p.Y), 235, 245);
+        h.Undo(b); Assert.Equal(5, b.Levels[0].Walls.Count);
+
+        // a wall with a spike sticking out above the 200 mm line: cut along y = 200 keeping the lower side (right of a→b going west)
+        var spike = a.AddWall(l.Id, [new(0, 5000), new(3000, 5000), new(3000, 5200), new(1600, 5200), new(1500, 5900), new(1400, 5200), new(0, 5200)]);
+        Assert.Equal(1, a.CutWalls(l.Id, new(0, 5200), new(3000, 5200), keepLeft: false));
+        var cut = b.Levels[0].Walls.First(w => w.Id == spike.Id).Footprint; Assert.Equal(5200, cut.Max(p => p.Y)); Assert.Equal(4, cut.Count);
+        Assert.Equal(0, a.CutWalls(l.Id, new(0, 5200), new(3000, 5200), keepLeft: false));                   // nothing sticks out any more: no history step
+        // cutting through the middle of a wall and keeping one side leaves a shorter wall; keeping nothing deletes it
+        a.CutWalls(l.Id, new(1000, 4000), new(1000, 6000), keepLeft: true); Assert.Equal(1000, b.Levels[0].Walls.First(w => w.Id == spike.Id).Footprint.Max(p => p.X));
+    }
+
+    [Fact] public void Image_transform_can_carry_the_walls_along()
+    {
+        var (b, a, h) = New(); var l = a.AddLevel("RDC", 0); a.SetBackground(l.Id, "x.png", [10, 0, 1000, 0, -10, 5000]);
+        a.AddWall(l.Id, [new(2000, 0), new(3000, 0), new(3000, 200), new(2000, 200)]);
+        // rotate the plan 90° about the origin and move it by (100, 50): new = R·old + t
+        a.SetImageTransform(l.Id, [0, 10, 100 - 5000 * 0 + 0, 10, 0, 50 + 1000], moveWalls: true);
+        var fp = b.Levels[0].Walls[0].Footprint; var t = b.Levels[0].ImageTransform!;
+        // a point's pixel position is invariant: px = old⁻¹(p); new(px) must equal the wall point now
+        var (px, py) = ((2000 - 1000) / 10.0, (2000 * 0 + 5000 - 0) / 10.0);   // wall point (2000,0) ↔ pixel (100, 500)
+        Assert.Equal((int)Math.Round(t[0] * px + t[1] * py + t[2]), fp[0].X); Assert.Equal((int)Math.Round(t[3] * px + t[4] * py + t[5]), fp[0].Y);
+        h.Undo(b); Assert.Equal(new PointMm(2000, 0), b.Levels[0].Walls[0].Footprint[0]);
+    }
 }
 
 public class SceneMapperTests
@@ -775,6 +822,17 @@ public class ImageStretchTests
         var m = ImmoCad.Core.Geometry.ImageStretch.Drag(T, W, H, StretchHandle.Move, (0, 0), (50, -30)); Assert.Equal(T.Tx + 50, m.Tx, 9); Assert.Equal(T.Ty - 30, m.Ty, 9);
         var centre = P(StretchHandle.Move, T); var rot = ImmoCad.Core.Geometry.ImageStretch.Drag(T, W, H, StretchHandle.Rotate, (centre.X + 1000, centre.Y), (centre.X, centre.Y + 1000));
         Assert.Equal(90, ImmoCad.Core.Geometry.ImageStretch.Decompose(rot).RotationDeg, 6); var after = P(StretchHandle.Move, rot); Assert.Equal(centre.X, after.X, 6); Assert.Equal(centre.Y, after.Y, 6);
+    }
+
+    [Fact] public void Shear_handle_slides_the_top_sideways_and_keeps_the_bottom_and_the_scale()
+    {
+        var g = P(StretchHandle.Shear, T); Assert.Equal(P(StretchHandle.Right, T).X, g.X, 6); Assert.True(g.Y > P(StretchHandle.Right, T).Y);   // right edge, above the middle
+        var s = Drag(StretchHandle.Shear, 100, 0);
+        var bl0 = ImmoCad.Core.Geometry.ImageStretch.Corners(T, W, H); var bl1 = ImmoCad.Core.Geometry.ImageStretch.Corners(s, W, H);
+        Assert.Equal(bl0[3].X, bl1[3].X, 6); Assert.Equal(bl0[2].X, bl1[2].X, 6); Assert.Equal(bl0[3].Y, bl1[3].Y, 6);   // bottom corners did not move
+        Assert.Equal(bl0[0].X + 100 / 0.88, bl1[0].X, 6); Assert.Equal(bl0[0].Y, bl1[0].Y, 6);                            // top corner slid, the grabbed point moved by exactly 100
+        Assert.Equal(g.X + 100, P(StretchHandle.Shear, s).X, 6);
+        Assert.Equal(6000, Wd(s), 6); Assert.Equal(bl0[2].Y, bl1[2].Y, 6);                                               // row width and height unchanged
     }
 
     [Fact] public void Nudge_and_numeric_fields_round_trip()
@@ -1136,5 +1194,44 @@ public class FreeCadMacroSyntaxTests
         var file = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".py"); File.WriteAllText(file, macro);
         using var proc = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(py, $"-I -m py_compile \"{file}\"") { RedirectStandardError = true })!; var err = proc.StandardError.ReadToEnd(); proc.WaitForExit(15000); File.Delete(file);
         Assert.True(proc.ExitCode == 0, err);
+    }
+}
+
+public class PolygonSubtractTests
+{
+    static Shape Rect(int x0, int y0, int x1, int y1) => new([new(x0, y0), new(x1, y0), new(x1, y1), new(x0, y1)], new());
+    static List<PointMm> Z(params int[] c) { var r = new List<PointMm>(); for (var i = 0; i < c.Length; i += 2) r.Add(new(c[i], c[i + 1])); return r; }
+    static double Area(IEnumerable<Shape> shapes) => shapes.Sum(s => Math.Abs(A(s.Outline)) - s.Holes.Sum(h => Math.Abs(A(h))));
+    static double A(List<PointMm> r) { double a = 0; for (var i = 0; i < r.Count; i++) { var (p, q) = (r[i], r[(i + 1) % r.Count]); a += (double)p.X * q.Y - (double)q.X * p.Y; } return a / 2; }
+
+    [Fact] public void A_corner_bite_keeps_the_rest_of_the_wall()
+    {
+        var res = PolygonOps.Subtract(Rect(0, 0, 4000, 200), Z(3000, -100, 5000, -100, 5000, 300, 3000, 300));
+        Assert.Single(res); Assert.InRange(Area(res), 3000 * 200 - 1500, 3000 * 200 + 1500); Assert.Equal(0, res[0].Outline.Min(p => p.X)); Assert.InRange(res[0].Outline.Max(p => p.X), 2999, 3001);
+    }
+    [Fact] public void A_zone_across_a_wall_leaves_two_pieces_and_one_inside_or_covering_it_works()
+    {
+        var res = PolygonOps.Subtract(Rect(0, 0, 4000, 200), Z(1500, -100, 2500, -100, 2500, 300, 1500, 300));
+        Assert.Equal(2, res.Count); Assert.InRange(Area(res), 3000 * 200 - 2000, 3000 * 200 + 2000);
+        Assert.Empty(PolygonOps.Subtract(Rect(0, 0, 4000, 200), Z(-100, -100, 5000, -100, 5000, 300, -100, 300)));
+        var hole = PolygonOps.Subtract(Rect(0, 0, 4000, 4000), Z(1000, 1000, 2000, 1000, 2000, 2000, 1000, 2000)); Assert.Single(hole); Assert.Single(hole[0].Holes); Assert.InRange(Area(hole), 15_000_000 - 1, 15_000_000 + 1);
+        Assert.Single(PolygonOps.Subtract(Rect(0, 0, 4000, 200), Z(0, 5000, 100, 5000, 100, 5100)));                                    // far away: untouched
+    }
+    [Fact] public void A_wall_running_all_round_the_plan_only_loses_the_part_under_the_zone()
+    {
+        // a frame 60 m x 40 m, 200 mm thick (outline + room hole), zone bites the middle of the top side and crosses the room too
+        var frame = new Shape(Rect(0, 0, 60000, 40000).Outline, [Rect(200, 200, 59800, 39800).Outline]);
+        var res = PolygonOps.Subtract(frame, Z(25000, 39000, 35000, 39000, 35000, 41000, 25000, 41000));
+        Assert.Single(res); var bite = 10000 * 200;                                                                                       // the zone removes a 10 m x 200 mm stretch of the top side
+        Assert.InRange(Area(res), Area([frame]) - bite - 20_000, Area([frame]) - bite + 20_000);
+        Assert.Contains(res[0].Outline, p => p.X == 0 && p.Y == 0); Assert.Contains(res[0].Outline, p => p.X == 60000 && p.Y == 40000);   // far corners keep their exact coordinates
+    }
+    [Fact] public void A_lasso_cut_through_actions_is_one_history_step()
+    {
+        var b = new Building(); var h = new BuildingHistory(); var a = new BuildingActions(b, h, new BuildingEventsService()); var l = a.AddLevel("RDC", 0);
+        var w = a.AddWall(l.Id, Rect(0, 0, 60000, 200).Outline); var steps = h.Items.Count;
+        Assert.Equal(1, a.CutWallsRegion(l.Id, Z(20000, -500, 30000, -500, 30000, 700, 20000, 700))); Assert.Equal(steps + 1, h.Items.Count); Assert.Equal(2, b.Levels[0].Walls.Count);
+        Assert.Equal(0, a.CutWallsRegion(l.Id, Z(20000, -500, 30000, -500, 30000, 700, 20000, 700)));                                    // nothing left under it
+        h.Undo(b); Assert.Single(b.Levels[0].Walls);
     }
 }

@@ -68,11 +68,15 @@ public static class MenuFactory
             new(T("menu.level"),
             [
                 new(T("menu.addlevel"), vm.AddLevelCommand),
+                new(T("menu.level.delete"), vm.DeleteCurrentLevelCommand),
                 new(T("menu.sel.up"), vm.MoveSelectionUpCommand, Key: Key.PageUp, UseCommandKey: true),
                 new(T("menu.sel.down"), vm.MoveSelectionDownCommand, Key: Key.PageDown, UseCommandKey: true),
                 MenuItemSpec.Separator,
                 new(T("menu.align"), vm.SetToolCommand, "Align"),
                 new(T("menu.straighten"), vm.StraightenSelectionCommand),
+                new(T("tip.mergeregion"), vm.SetToolCommand, "MergeRegion"),
+                new(T("tip.mergewalls"), vm.MergeSelectedWallsCommand),
+                new(T("tip.cutwalls"), vm.SetToolCommand, "CutWall"),
             ]),
             new(T("menu.view"),
             [
