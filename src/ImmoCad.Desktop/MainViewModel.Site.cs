@@ -21,6 +21,7 @@ public partial class MainViewModel
     public string[] MapLayers => [T("map.ortho"), T("map.plan"), T("map.cadastre")];
     [ObservableProperty] private string _siteAddress = "";
     [ObservableProperty] private int _mapLayer;                                // 0 orthophoto, 1 plan IGN, 2 cadastre
+    partial void OnMapLayerChanged(int value) { if (!IsSite) Mode = ViewMode.Site; else SiteChanged?.Invoke(); }   // choosing a background shows the map
     [ObservableProperty] private bool _showFootprint = true;
     /// <summary>true = true north up (the plan is turned by the site rotation); false = building aligned.</summary>
     [ObservableProperty] private bool _northUp;
@@ -39,12 +40,12 @@ public partial class MainViewModel
     public event Action? SiteChanged;
 
     // ---- First visit to the map: show the building's own parcels when the plan is already georeferenced ----
-    private Building? _siteFocused;
+    private Building? _siteFocused; private bool _searching;
     /// <summary>Set by <see cref="FocusSite"/>, consumed by the map view once it knows its size: centre of the parcels and their extent in metres.</summary>
     public double? PendingSiteFit { get; set; }
     private void FocusSite()
     {
-        if (Building.Site is not { } s || ReferenceEquals(_siteFocused, Building)) return;
+        if (_searching || Building.Site is not { } s || ReferenceEquals(_siteFocused, Building)) return;
         var rings = new[] { s.Footprint }.Concat(s.ExtraFootprints).Where(r => r.Count >= 3).ToList();
         var pts = rings.SelectMany(r => r).Select(p => (E: p[0], N: p[1])).ToList();
         if (pts.Count == 0) { var a = new SiteAnchor(s.EastM, s.NorthM, s.RotationDeg, s.AltitudeM); pts = BuildingCorners().Select(c => a.ToLambert(c.X, c.Y)).ToList(); }   // no cadastral outline: the plan itself
@@ -70,6 +71,7 @@ public partial class MainViewModel
     [RelayCommand] private async Task SearchAddressAsync()
     {
         if (Geo == null) { SiteMessage = T("site.nomap"); return; }
+        if (!IsSite) { _searching = true; try { Mode = ViewMode.Site; } finally { _searching = false; } }   // show the map, on the searched address rather than on the building
         try
         {
             var at = await Geo.Geocoder.GeocodeAsync(SiteAddress);

@@ -1067,6 +1067,15 @@ public class SiteUiTests
         geo = new FakeGeo(); var vm = new MainViewModel(startWithSample: false) { Settings = new() }; vm.Geo = new SiteData(geo, geo, geo); vm.NewDocumentCommand.Execute(null); return vm;
     }
 
+    [Fact] public Task Searching_an_address_or_choosing_a_background_shows_the_map_and_its_tab() => f.Session.RunAsync(async () =>
+    {
+        var vm = Make(out _); vm.SetStepCommand.Execute("Equip"); Assert.Equal(ViewMode.Plan, vm.Mode);
+        vm.MapLayer = 2; Assert.Equal(ViewMode.Site, vm.Mode); Assert.Equal(4, vm.PanelTab);                                   // cadastre chosen: the map shows, the Site tab opens
+        vm.SetModeCommand.Execute("Plan"); vm.PanelTab = 0;
+        vm.SiteAddress = "1 place Bellecour, Lyon"; await vm.SearchAddressCommand.ExecuteAsync(null);
+        Assert.Equal(ViewMode.Site, vm.Mode); Assert.Equal(4, vm.PanelTab); Assert.NotEmpty(vm.Footprints);
+    });
+
     [Fact] public Task Several_selected_parcels_make_one_building_with_one_anchor() => f.Session.RunAsync(async () =>
     {
         var vm = Make(out _); vm.SiteAddress = "1 place Bellecour, Lyon"; await vm.SearchAddressCommand.ExecuteAsync(null);
