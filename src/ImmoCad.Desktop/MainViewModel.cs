@@ -514,7 +514,7 @@ public partial class MainViewModel : ObservableObject
         if (CurrentLevel is not { } l) return;
         if (SpaceAt(click) != null) { SpaceHover = null; Status = T("space.exists"); return; }   // one room per place: select it instead
         // the outline shown under the cursor when the click falls in it, else a fresh probe (fast once the walls are rasterised)
-        var probe = SpaceHover is { Outline: { } ho } h && SpaceFinder.Contains(ho, click) ? h : SpaceFinder.ProbeWide(GridFor(l), click);
+        var probe = SpaceHover is { Outline: { } ho } h && SpaceFinder.Contains(ho, click) ? h : ProbeRoom(GridFor(l), click);
         SpaceHover = null;
         if (probe.Outline == null) { Status = T("space.open"); return; }
         var n = l.Spaces.Count + 1; var sp = Actions.AddSpace(l.Id, probe.Outline, Token("space.default.name", n), NewSpaceKind);
@@ -526,6 +526,14 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _spaceBusy;
     /// <summary>Room found under the cursor after it rested there (outline and bridged openings), null while it moves.</summary>
     public SpaceProbe? SpaceHover { get; set; }
+
+    /// <summary>Room tool option: openings up to this width (mm) count as closed. Ordinary doors (up to 1 m) are always tried first; the wider closing is the second chance.</summary>
+    public int SpaceGapMm
+    {
+        get => Settings.SpaceGapMm;
+        set { value = Math.Clamp(value, 0, 5000); if (value == Settings.SpaceGapMm) return; Settings.SpaceGapMm = value; SpaceHover = null; OnPropertyChanged(); Changed?.Invoke(); }
+    }
+    private SpaceProbe ProbeRoom(SpaceGrid g, PointMm at) => SpaceFinder.ProbeWide(g, at, default, Math.Min(1000, SpaceGapMm), SpaceGapMm);
     private SpaceGrid? _spaceGrid; private (Guid Level, int Key) _spaceGridFor;
     private CancellationTokenSource? _probeCts;
 
@@ -552,7 +560,7 @@ public partial class MainViewModel : ObservableObject
         SpaceBusy = true;
         try
         {
-            var (g, probe) = await Task.Run(() => { var g = grid ?? new SpaceGrid(walls!); return (g, SpaceFinder.ProbeWide(g, at, cts.Token)); }, cts.Token);
+            var gap = SpaceGapMm; var (g, probe) = await Task.Run(() => { var g = grid ?? new SpaceGrid(walls!); return (g, SpaceFinder.ProbeWide(g, at, cts.Token, Math.Min(1000, gap), gap)); }, cts.Token);
             _spaceGrid = g; _spaceGridFor = key;
             return cts.IsCancellationRequested ? null : probe;
         }
@@ -741,7 +749,7 @@ public partial class MainViewModel : ObservableObject
     public static int PipeAngleDeg(SegmentRef s) => (int)Math.Round(Math.Atan2(s.B.Y - s.A.Y, s.B.X - s.A.X) * 180 / Math.PI);
 
     /// <summary>Outline of the room a click would create with the space tool (null when the walls are not closed there).</summary>
-    public List<PointMm>? SpacePreview(PointMm at) => CurrentLevel is { } l ? SpaceFinder.ProbeWide(GridFor(l), at).Outline : null;
+    public List<PointMm>? SpacePreview(PointMm at) => CurrentLevel is { } l ? ProbeRoom(GridFor(l), at).Outline : null;
 
     private (SegmentRef Segment, PointMm3 Point, double Distance)? NearestPipe(PointMm at, Level l)
     {
@@ -842,7 +850,7 @@ public partial class MainViewModel : ObservableObject
     public bool IsNumberTool => Tool == ToolKind.NumberCellars;
     public bool IsStraightenTool => Tool == ToolKind.Straighten;
     /// <summary>The Options tab only shows what the active tool has; a tool without options says so.</summary>
-    public bool HasToolOptions => Tool is ToolKind.DrawWall or ToolKind.Riser or ToolKind.DrawPipe or ToolKind.Align or ToolKind.Straighten;
+    public bool HasToolOptions => Tool is ToolKind.DrawWall or ToolKind.Riser or ToolKind.DrawPipe or ToolKind.Align or ToolKind.Straighten or ToolKind.Space;
     public bool HasNoToolOptions => !HasToolOptions;
     public bool IsStretchTool => Tool == ToolKind.Stretch;
     public string SelectionText => SelectedEquipment is { } se ? T("eq.selected", EquipmentCatalog.Find(se.CatalogId)?.Name ?? se.CatalogId) : SelectedSpaceId != null ? T("space.selected") : SelectedOpening != null ? T("opening.selected") : SelectedSegment != null ? T("pipe.selected") : SelectedWalls.Count == 0 ? T("no.selection") : T("walls.selected", SelectedWalls.Count);

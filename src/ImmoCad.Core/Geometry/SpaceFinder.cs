@@ -97,7 +97,7 @@ public static class SpaceFinder
     /// </summary>
     public static SpaceProbe ProbeWide(SpaceGrid g, PointMm at, CancellationToken ct = default, int firstMm = 1000, int lastMm = 2000)
     {
-        var narrow = Probe(g, at, firstMm, ct); if (narrow.Outline != null) return narrow;
+        firstMm = Math.Min(firstMm, lastMm); var narrow = Probe(g, at, firstMm, ct); if (narrow.Outline != null || lastMm <= firstMm) return narrow;
         var wide = Probe(g, at, lastMm, ct); return wide.Outline != null ? wide : narrow;
     }
 

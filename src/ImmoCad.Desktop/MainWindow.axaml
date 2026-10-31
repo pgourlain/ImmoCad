@@ -179,6 +179,11 @@
               <TextBlock vm:L.Text="opt.align" Classes="caption" />
             <CheckBox vm:L.Content="align.movewalls" IsChecked="{Binding AlignMoveWalls}" />
             </StackPanel>
+            <StackPanel Spacing="6" IsVisible="{Binding IsSpaceTool}">
+              <TextBlock vm:L.Text="opt.space" Classes="caption" />
+              <NumericUpDown Value="{Binding SpaceGapMm}" Minimum="0" Maximum="5000" Increment="100" vm:L.Format="fmt.spacegap" />
+              <TextBlock vm:L.Text="opt.space.help" Classes="caption" TextWrapping="Wrap" />
+            </StackPanel>
             <StackPanel Spacing="6" IsVisible="{Binding IsStraightenTool}">
             <TextBlock vm:L.Text="opt.straighten" Classes="caption" />
             <NumericUpDown Value="{Binding StraightenTolerance}" Minimum="0" Maximum="300" vm:L.Format="fmt.tolerance" />

@@ -1711,6 +1711,43 @@ public class NorthUpTests
 }
 
 /// <summary>Walk mode (first person). Headless tests have no OpenGL: they cover availability, the state around the walk, the overlay and the map, not the rendering.</summary>
+public class RoomSensitivityTests
+{
+    private readonly HeadlessFixture f = new();
+
+    [Fact] public Task The_room_tool_has_an_opening_tolerance_option_that_decides_what_is_previewed_and_is_kept_in_the_settings() => f.Session.RunAsync(async () =>
+    {
+        var vm = new MainViewModel(startWithSample: false) { Settings = new() }; vm.NewDocumentCommand.Execute(null);
+        var l = vm.Actions.AddLevel("RDC", 0);
+        List<PointMm> R(int x0, int y0, int x1, int y1) => [new(x0, y0), new(x1, y0), new(x1, y1), new(x0, y1)];
+        vm.Actions.ImportWalls(l.Id, new[] { R(0, 0, 2000, 200), R(3500, 0, 6000, 200), R(0, 4800, 6000, 5000), R(0, 0, 200, 5000), R(5800, 0, 6000, 5000) });          // a 1.5 m opening in the south wall
+        vm.SelectLevelCommand.Execute(l.Id); vm.SetToolCommand.Execute("Space");
+        Assert.True(vm.HasToolOptions); Assert.False(vm.HasNoToolOptions); Assert.Equal(1, vm.PanelTab);                                       // choosing the tool shows its options
+        Assert.Equal(2000, vm.SpaceGapMm); Assert.Equal(2000, vm.Settings.SpaceGapMm);
+        Assert.NotNull((await vm.ProbeSpaceAsync(new(3000, 2500)))?.Outline);                                                                    // default: the 1.5 m bay is closed
+        vm.SpaceGapMm = 1000; Assert.Null((await vm.ProbeSpaceAsync(new(3000, 2500)))?.Outline); Assert.Null(vm.SpacePreview(new(3000, 2500)));      // ordinary doors only: not closed
+        vm.SpaceGapMm = 1600; Assert.NotNull((await vm.ProbeSpaceAsync(new(3000, 2500)))?.Outline);
+        vm.SpaceGapMm = 0; Assert.Null((await vm.ProbeSpaceAsync(new(3000, 2500)))?.Outline);
+        vm.SpaceGapMm = 99999; Assert.Equal(5000, vm.SpaceGapMm); vm.SpaceGapMm = -5; Assert.Equal(0, vm.SpaceGapMm);                           // kept in a sensible range
+        vm.SpaceHover = new ImmoCad.Core.Geometry.SpaceProbe(null, [], 0); vm.SpaceGapMm = 2500; Assert.Null(vm.SpaceHover);                                          // a new value drops the preview shown
+        var json = System.Text.Json.JsonSerializer.Serialize(vm.Settings, ImmoCad.Core.SettingsJsonContext.Default.AppSettings); Assert.Contains("\"SpaceGapMm\": 2500", json);
+    }, CancellationToken.None);
+
+    [Fact] public Task The_option_is_in_the_options_tab_in_both_languages() => f.Session.Dispatch(() =>
+    {
+        foreach (var lang in new[] { "en", "fr" })
+        {
+            ImmoCad.Core.Translations.Language = lang;
+            var vm = new MainViewModel { Settings = new() }; var w = new MainWindow { DataContext = vm, Width = 1280, Height = 900 }; w.Show();
+            vm.SetToolCommand.Execute("Space"); Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+            Assert.Contains(Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(w).OfType<NumericUpDown>(), n => n.IsEffectivelyVisible && n.Minimum == 0 && n.Maximum == 5000);
+            Assert.Contains(Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(w).OfType<TextBlock>(), t => t.IsEffectivelyVisible && t.Text == ImmoCad.Core.Translations.T("opt.space"));
+            w.CaptureRenderedFrame()!.Save(Path.Combine(AppContext.BaseDirectory, "screenshots", $"room-options-{lang}.png")); w.Close();
+        }
+        ImmoCad.Core.Translations.Language = "fr";
+    }, CancellationToken.None);
+}
+
 public class WalkUiTests
 {
     private readonly HeadlessFixture f = new();

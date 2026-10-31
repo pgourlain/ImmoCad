@@ -18,6 +18,8 @@ public sealed class AppSettings
     /// <summary>auto | light | dark</summary>
     public string Theme { get; set; } = "auto";
     public bool TourDone { get; set; }
+    /// <summary>Room tool: openings up to this width (mm) are treated as closed when looking for the room under the cursor; 0 = only closed rooms.</summary>
+    public int SpaceGapMm { get; set; } = 2000;
     /// <summary>Ghost mode of the walk is remembered: following a pipe or a shaft through walls is its main use.</summary>
     public bool WalkGhost { get; set; }
     /// <summary>The first-use hint of the walk mode was shown once.</summary>
