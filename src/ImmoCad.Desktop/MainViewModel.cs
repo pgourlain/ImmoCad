@@ -516,7 +516,7 @@ public partial class MainViewModel : ObservableObject
         // the outline shown under the cursor when the click falls in it, else a fresh probe (fast once the walls are rasterised)
         var probe = SpaceHover is { Outline: { } ho } h && SpaceFinder.Contains(ho, click) ? h : ProbeRoom(GridFor(l), click);
         SpaceHover = null;
-        if (probe.Outline == null) { Status = T("space.open"); return; }
+        if (probe.Outline == null) { Status = T("space.open", SpaceGapMm / 1000.0); return; }
         var n = l.Spaces.Count + 1; var sp = Actions.AddSpace(l.Id, probe.Outline, Token("space.default.name", n), NewSpaceKind);
         Refresh(); SelectSpace(sp.Id);
         Status = probe.Leaks.Count > 0 ? T("space.added.gaps", SpaceFinder.AreaMm2(sp.Outline) / 1e6, probe.Leaks.Count) : T("space.added", SpaceFinder.AreaMm2(sp.Outline) / 1e6);
@@ -527,13 +527,13 @@ public partial class MainViewModel : ObservableObject
     /// <summary>Room found under the cursor after it rested there (outline and bridged openings), null while it moves.</summary>
     public SpaceProbe? SpaceHover { get; set; }
 
-    /// <summary>Room tool option: openings up to this width (mm) count as closed. Ordinary doors (up to 1 m) are always tried first; the wider closing is the second chance.</summary>
+    /// <summary>Room tool option: openings up to this width (mm) count as closed, wherever the cursor is in the room.</summary>
     public int SpaceGapMm
     {
         get => Settings.SpaceGapMm;
         set { value = Math.Clamp(value, 0, 5000); if (value == Settings.SpaceGapMm) return; Settings.SpaceGapMm = value; SpaceHover = null; OnPropertyChanged(); Changed?.Invoke(); }
     }
-    private SpaceProbe ProbeRoom(SpaceGrid g, PointMm at) => SpaceFinder.ProbeWide(g, at, default, Math.Min(1000, SpaceGapMm), SpaceGapMm);
+    private SpaceProbe ProbeRoom(SpaceGrid g, PointMm at) => SpaceFinder.Probe(g, at, SpaceGapMm);
     private SpaceGrid? _spaceGrid; private (Guid Level, int Key) _spaceGridFor;
     private CancellationTokenSource? _probeCts;
 
@@ -560,7 +560,7 @@ public partial class MainViewModel : ObservableObject
         SpaceBusy = true;
         try
         {
-            var gap = SpaceGapMm; var (g, probe) = await Task.Run(() => { var g = grid ?? new SpaceGrid(walls!); return (g, SpaceFinder.ProbeWide(g, at, cts.Token, Math.Min(1000, gap), gap)); }, cts.Token);
+            var gap = SpaceGapMm; var (g, probe) = await Task.Run(() => { var g = grid ?? new SpaceGrid(walls!); return (g, SpaceFinder.Probe(g, at, gap, cts.Token)); }, cts.Token);
             _spaceGrid = g; _spaceGridFor = key;
             return cts.IsCancellationRequested ? null : probe;
         }

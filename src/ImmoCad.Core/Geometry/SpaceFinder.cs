@@ -82,7 +82,10 @@ public static class SpaceFinder
         for (var r = maxR; r >= 0; r--)
         {
             ct.ThrowIfCancellationRequested();
-            var seed = sy * g.W + sx; if (g.Dist[seed] <= r) continue;   // the click is too close to a wall for openings that wide
+            var seed = sy * g.W + sx;
+            // the room has to hold a core (cells farther than r from any wall) for openings that wide to be closed; the click itself may be close to a wall,
+            // so the flood starts from the nearest core cell instead of the click (otherwise a cursor near a wall silently narrows what is closed)
+            if (g.Dist[seed] <= r && (seed = NearestCore(g, seed, r)) < 0) continue;
             var region = Flood(g, seed, r); if (region == null) continue;
             if (r > 0) Grow(g, region, r);
             var leaks = r > 0 ? Leaks(g, region) : [];
@@ -91,14 +94,22 @@ public static class SpaceFinder
         return new(null, [], 0);
     }
 
-    /// <summary>
-    /// <see cref="Probe"/> with a second chance: when no room is found closing openings up to <paramref name="firstMm"/> (1 m: doors, windows), openings up to
-    /// <paramref name="lastMm"/> (2 m: double doors, a wide bay) are closed instead. Only tried when the first fails, so a room that closes with ordinary doors is never grown.
-    /// </summary>
-    public static SpaceProbe ProbeWide(SpaceGrid g, PointMm at, CancellationToken ct = default, int firstMm = 1000, int lastMm = 2000)
+    /// <summary>The nearest cell farther than r from any wall, reached through free cells within r steps of the click (so growing the core back by r covers the click); -1 when the room is too narrow.</summary>
+    private static int NearestCore(SpaceGrid g, int from, int r)
     {
-        firstMm = Math.Min(firstMm, lastMm); var narrow = Probe(g, at, firstMm, ct); if (narrow.Outline != null || lastMm <= firstMm) return narrow;
-        var wide = Probe(g, at, lastMm, ct); return wide.Outline != null ? wide : narrow;
+        var depth = new Dictionary<int, int> { [from] = 0 }; var q = new Queue<int>(); q.Enqueue(from);
+        while (q.Count > 0)
+        {
+            var i = q.Dequeue(); var d = depth[i]; if (d >= r) continue; int x = i % g.W, y = i / g.W;
+            for (var dy = -1; dy <= 1; dy++)
+                for (var dx = -1; dx <= 1; dx++)
+                {
+                    int nx = x + dx, ny = y + dy; if (!g.Inside(nx, ny)) continue; var j = ny * g.W + nx;
+                    if (g.Dist[j] == 0 || depth.ContainsKey(j)) continue;
+                    if (g.Dist[j] > r) return j; depth[j] = d + 1; q.Enqueue(j);
+                }
+        }
+        return -1;
     }
 
     /// <summary>4-connected fill through cells farther than r from any wall; null when it reaches the border (open).</summary>

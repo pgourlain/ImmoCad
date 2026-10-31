@@ -163,22 +163,44 @@ public class GeometryTests
         Assert.Null(ImmoCad.Core.Geometry.SpaceFinder.Find(l, new(1500, 1500)));
     }
 
-    [Fact] public void SpaceFinder_closes_a_wide_opening_only_when_ordinary_doors_do_not_close_the_room()
+    [Fact] public void The_closing_of_openings_does_not_depend_on_where_the_cursor_is_in_the_room()
+    {
+        static Wall W(int x0, int y0, int x1, int y1) => new() { Footprint = [new(x0, y0), new(x1, y0), new(x1, y1), new(x0, y1)] };
+        // a building 10 m x 12 m; an inner wall at y = 5.8..6 m has two openings, 3 m (x 2..5 m) and 2.5 m (x 6.5..9 m), onto a hall above
+        var walls = new List<Wall>
+        {
+            W(0, 0, 10000, 200), W(0, 11800, 10000, 12000), W(0, 0, 200, 12000), W(9800, 0, 10000, 12000),
+            W(200, 5800, 2000, 6000), W(5000, 5800, 6500, 6000), W(9000, 5800, 9800, 6000),
+        };
+        var g = new ImmoCad.Core.Geometry.SpaceGrid(walls); long room = 9600L * 5600;
+        foreach (var at in new[] { new PointMm(5000, 3000), new PointMm(600, 3000), new PointMm(600, 600), new PointMm(9400, 5400), new PointMm(3500, 5300) })       // centre, near the walls, near the openings
+        {
+            var p = ImmoCad.Core.Geometry.SpaceFinder.Probe(g, at, 5000);
+            Assert.NotNull(p.Outline); var area = ImmoCad.Core.Geometry.SpaceFinder.AreaMm2(p.Outline!);
+            Assert.InRange(area, room * 90 / 100, room * 112 / 100);                                                                                           // the room below only, never the hall above
+            Assert.Equal(2, p.Leaks.Count);                                                                                                                    // both openings are reported
+        }
+        // with ordinary doors only (1 m) the same openings stay open and the room merges with the hall: that is what the tolerance is for
+        var narrow = ImmoCad.Core.Geometry.SpaceFinder.Probe(g, new PointMm(5000, 3000), 1000);
+        Assert.True(narrow.Outline == null || ImmoCad.Core.Geometry.SpaceFinder.AreaMm2(narrow.Outline) > room * 150 / 100);
+    }
+
+    [Fact] public void SpaceFinder_closes_openings_up_to_the_chosen_width_and_not_beyond()
     {
         static Wall W(int x0, int y0, int x1, int y1) => new() { Footprint = [new(x0, y0), new(x1, y0), new(x1, y1), new(x0, y1)] };
         // a room 5.8 m x 4.6 m whose south wall has a 1.5 m opening (from x = 2000 to 3500): too wide for a door, fine for a bay
         var walls = new List<Wall> { W(0, 0, 2000, 200), W(3500, 0, 6000, 200), W(0, 4800, 6000, 5000), W(0, 0, 200, 5000), W(5800, 0, 6000, 5000) };
         var g = new ImmoCad.Core.Geometry.SpaceGrid(walls); var at = new PointMm(3000, 2500);
-        Assert.Null(ImmoCad.Core.Geometry.SpaceFinder.Probe(g, at).Outline);                                                              // 1 m: not closed, the preview used to stay empty
-        var wide = ImmoCad.Core.Geometry.SpaceFinder.ProbeWide(g, at);
+        Assert.Null(ImmoCad.Core.Geometry.SpaceFinder.Probe(g, at).Outline);                                                              // 1 m: not closed
+        var wide = ImmoCad.Core.Geometry.SpaceFinder.Probe(g, at, 2000);
         Assert.NotNull(wide.Outline); Assert.NotEmpty(wide.Leaks); Assert.InRange(ImmoCad.Core.Geometry.SpaceFinder.AreaMm2(wide.Outline!), 5800L * 4800 * 90 / 100, 5800L * 4800 * 105 / 100);
-        // 3 m opening: still not a room
+        // 3 m opening: still not a room at 2 m, a room at 4 m
         var open = new List<Wall> { W(0, 0, 1000, 200), W(4500, 0, 6000, 200), W(0, 4800, 6000, 5000), W(0, 0, 200, 5000), W(5800, 0, 6000, 5000) };
-        Assert.Null(ImmoCad.Core.Geometry.SpaceFinder.ProbeWide(new ImmoCad.Core.Geometry.SpaceGrid(open), at).Outline);
-        // a room that closes with ordinary doors is not grown by the second chance
+        var og = new ImmoCad.Core.Geometry.SpaceGrid(open); Assert.Null(ImmoCad.Core.Geometry.SpaceFinder.Probe(og, at, 2000).Outline); Assert.NotNull(ImmoCad.Core.Geometry.SpaceFinder.Probe(og, at, 4000).Outline);
+        // a room that closes with ordinary doors has the same outline with a wider tolerance
         var door = new List<Wall> { W(0, 0, 8000, 200), W(0, 2800, 8000, 3000), W(0, 0, 200, 3000), W(7800, 0, 8000, 3000), W(4000, 0, 4200, 1000), W(4000, 1900, 4200, 3000) };
-        var dg = new ImmoCad.Core.Geometry.SpaceGrid(door); Assert.Equal(ImmoCad.Core.Geometry.SpaceFinder.Probe(dg, new(2000, 1500)).Outline!.Count, ImmoCad.Core.Geometry.SpaceFinder.ProbeWide(dg, new(2000, 1500)).Outline!.Count);
-        Assert.Equal(ImmoCad.Core.Geometry.SpaceFinder.Probe(dg, new(2000, 1500)).GapMm, ImmoCad.Core.Geometry.SpaceFinder.ProbeWide(dg, new(2000, 1500)).GapMm);
+        var dg = new ImmoCad.Core.Geometry.SpaceGrid(door);
+        Assert.Equal(ImmoCad.Core.Geometry.SpaceFinder.AreaMm2(ImmoCad.Core.Geometry.SpaceFinder.Probe(dg, new(2000, 1500)).Outline!), ImmoCad.Core.Geometry.SpaceFinder.AreaMm2(ImmoCad.Core.Geometry.SpaceFinder.Probe(dg, new(2000, 1500), 2000).Outline!));
     }
 
     [Fact] public void SpaceFinder_closes_a_door_gap_and_reports_it()
