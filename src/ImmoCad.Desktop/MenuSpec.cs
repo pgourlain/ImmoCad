@@ -77,6 +77,7 @@ public static class MenuFactory
                 new(T("menu.align"), vm.SetToolCommand, "Align"),
                 new(T("menu.straighten"), vm.StraightenSelectionCommand),
                 new(T("tip.mergeregion"), vm.SetToolCommand, "MergeRegion"),
+                new(T("tip.paintzone"), vm.SetToolCommand, "PaintZone"),
                 new(T("tip.mergewalls"), vm.MergeSelectedWallsCommand),
                 new(T("tip.cutwalls"), vm.SetToolCommand, "CutWall"),
             ]),

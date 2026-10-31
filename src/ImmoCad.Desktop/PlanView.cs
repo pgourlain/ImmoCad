@@ -36,6 +36,7 @@ public partial class PlanView : Control
     public void TurnQuarter(int dir) { UserRotationRad = Math.IEEERemainder(UserRotationRad + dir * Math.PI / 2, 2 * Math.PI); InvalidateVisual(); }
     private bool _fitted;
     private enum Gesture { None, Box, Move }
+    private Point? _paintFrom; private Point _paintNow;      // the rectangle being dragged by the paint tool
     private List<Point>? _lasso;                  // the freehand outline being drawn by the merge-region tool
     private Gesture _gesture; private Point _start; private Point _now; private PointMm _startMm; private (int X, int Y) _delta;
     private bool _addToSelection;
@@ -177,7 +178,7 @@ public partial class PlanView : Control
     private Matrix RotationMatrix() => ViewRotationRad == 0 ? Matrix.Identity : Matrix.CreateTranslation(-Bounds.Width / 2, -Bounds.Height / 2) * Matrix.CreateRotation(ViewRotationRad) * Matrix.CreateTranslation(Bounds.Width / 2, Bounds.Height / 2);
     public PointMm ToMm(Point p) { var u = Rot(p, -ViewRotationRad); return new((int)Math.Round((u.X - Offset.X) / Scale), (int)Math.Round((Bounds.Height - u.Y - Offset.Y) / Scale)); }
     internal Point ToScreenForTest(PointMm p) => ToScreen(p);
-    private Point ToScreen(PointMm p) => Rot(new(Offset.X + p.X * Scale, Bounds.Height - Offset.Y - p.Y * Scale), ViewRotationRad);
+    public Point ToScreen(PointMm p) => Rot(new(Offset.X + p.X * Scale, Bounds.Height - Offset.Y - p.Y * Scale), ViewRotationRad);
 
     /// <summary>Moves the drawing by a screen vector (accounts for the view rotation).</summary>
     private void PanBy(double dx, double dy)
@@ -270,6 +271,7 @@ public partial class PlanView : Control
             }
             return;
         }
+        if (vm.IsPaintTool) { if (vm.PaintLasso) _lasso = [p]; else { _paintFrom = p; _paintNow = p; } e.Pointer.Capture(this); InvalidateVisual(); return; }
         if (vm.IsMergeRegionTool) { _lasso = [p]; e.Pointer.Capture(this); InvalidateVisual(); return; }
         if (vm.IsDoorTool) { vm.PlaceOpening(ToMm(p), OpeningKind.Door); return; }
         if (vm.IsWindowTool) { vm.PlaceOpening(ToMm(p), OpeningKind.Window); return; }
@@ -339,6 +341,7 @@ public partial class PlanView : Control
         if (_eqDrag is { } ed0) { var m = ToMm(p); var d = (X: m.X - ed0.From.X, Y: m.Y - ed0.From.Y); var orig = Vm.Building.Equipment.First(q => q.Id == ed0.Id).Position; _eqDrag = (ed0.Id, new PointMm(Snap(orig.X + d.X, Snapper.GridMm), Snap(orig.Y + d.Y, Snapper.GridMm)), ed0.From); InvalidateVisual(); return; }
         if (_stretch is { } sh && Vm.BackgroundSize() is { } szm) { var mm = ToMm(p); _stretchLive = ImageStretch.Drag(_stretchStart, szm.W, szm.H, sh, _stretchFrom, (mm.X, mm.Y), keepRatio: e.KeyModifiers.HasFlag(KeyModifiers.Shift)); InvalidateVisual(); return; }
         if (_openingDrag != null) { _now = p; InvalidateVisual(); return; }
+        if (_paintFrom != null) { _paintNow = p; InvalidateVisual(); return; }
         if (_lasso != null) { if (Math.Abs(p.X - _lasso[^1].X) + Math.Abs(p.Y - _lasso[^1].Y) > 3) _lasso.Add(p); InvalidateVisual(); return; }
         if (vm.IsMeasureTool || vm.IsNumberTool || vm.IsCutWallTool) { InvalidateVisual(); }
         if (_gesture == Gesture.None) return;
@@ -370,7 +373,13 @@ public partial class PlanView : Control
         if (_connect is { } cr) { _connect = null; vm.ConnectPort(cr.EqId, cr.Port, cr.At, ToMm(e.GetPosition(this))); InvalidateVisual(); return; }
         if (_eqDrag is { } er) { _eqDrag = null; var orig = vm.Building.Equipment.First(q => q.Id == er.Id).Position; if (er.To != orig) vm.MoveEquipmentTo(er.Id, er.To); InvalidateVisual(); return; }
         if (_stretch != null) { var live = _stretchLive; _stretch = null; _stretchLive = null; if (live is { } lt && lt != _stretchStart) vm.SetImageTransform(lt); InvalidateVisual(); return; }
-        if (_lasso is { } ls) { _lasso = null; vm.MergeRegion(ls.Select(ToMm).ToList()); InvalidateVisual(); return; }
+        if (_paintFrom is { } pf)
+        {   // a rectangle: a click without dragging forgets the zone
+            _paintFrom = null; var to = e.GetPosition(this);
+            if (Math.Abs(to.X - pf.X) + Math.Abs(to.Y - pf.Y) > 6) vm.PaintSetZone(ImmoCad.Core.Geometry.FloorMarkings.RectZone(ToMm(pf), ToMm(to))); else vm.PaintCancelCommand.Execute(null);
+            InvalidateVisual(); return;
+        }
+        if (_lasso is { } ls) { _lasso = null; if (vm.IsPaintTool) { if (ls.Count >= 3) vm.PaintSetZone(ls.Select(ToMm).ToList()); } else vm.MergeRegion(ls.Select(ToMm).ToList()); InvalidateVisual(); return; }
         if (vm.IsRiserTool || vm.IsPlaceTool || vm.IsAlignTool || vm.IsDoorTool || vm.IsWindowTool || vm.IsSpaceTool || vm.IsNumberTool || vm.IsMeasureTool || vm.IsCutWallTool) return;
         if (_openingDrag is { } od) { var to = ToMm(e.GetPosition(this)); _openingDrag = null; if (Math.Abs(_now.X - _start.X) + Math.Abs(_now.Y - _start.Y) > 3) vm.MoveOpeningTo(od.Wall, od.Opening, to); InvalidateVisual(); return; }
         if (_gesture == Gesture.Move && Math.Abs(_now.X - _start.X) + Math.Abs(_now.Y - _start.Y) > 3) vm.MoveSelection(_delta.X, _delta.Y);
@@ -429,10 +438,12 @@ public partial class PlanView : Control
         if (e.Key == Key.Space && vm.IsRiserTool) { vm.TurnRiser(); InvalidateVisual(); e.Handled = true; return; }                                      // turns a multiple riser about the cursor
         if (e.Key == Key.Space && !IsChain && _handleTool == null) { _space = true; Cursor = new Cursor(StandardCursorType.Hand); e.Handled = true; return; }
         if (vm.IsStraightenTool && e.Key == Key.Enter) { vm.StraightenSelectionCommand.Execute(null); vm.SetToolCommand.Execute("Select"); InvalidateVisual(); e.Handled = true; return; }
+        if (vm.IsPaintTool && e.Key == Key.Enter) { vm.PaintApplyCommand.Execute(null); InvalidateVisual(); e.Handled = true; return; }
+        if (vm.IsPaintTool && e.Key == Key.Escape && vm.PaintZone != null) { vm.PaintCancelCommand.Execute(null); InvalidateVisual(); e.Handled = true; return; }      // the first Esc forgets the zone, the next leaves the tool
         if (vm.IsCutWallTool && e.Key == Key.Enter) { vm.CutWallFinish(); InvalidateVisual(); e.Handled = true; return; }
         if (vm.IsMeasureTool && !vm.IsSidePlane && e.Key == Key.Enter && vm.MeasurePoints.Count == 2) { vm.MeasureScaleCommand.Execute(null); e.Handled = true; return; }
         if (vm.IsNumberTool && e.Key == Key.Enter) { vm.NumberCommit(); InvalidateVisual(); e.Handled = true; return; }
-        if (e.Key == Key.Escape && (vm.IsDoorTool || vm.IsWindowTool || vm.IsSpaceTool || vm.IsMeasureTool || vm.IsCutWallTool || vm.IsMergeRegionTool || vm.IsNumberTool || vm.IsPlaceTool || vm.IsRiserTool || vm.IsStraightenTool)) { vm.SetToolCommand.Execute("Select"); e.Handled = true; return; }
+        if (e.Key == Key.Escape && (vm.IsDoorTool || vm.IsWindowTool || vm.IsSpaceTool || vm.IsMeasureTool || vm.IsCutWallTool || vm.IsMergeRegionTool || vm.IsPaintTool || vm.IsNumberTool || vm.IsPlaceTool || vm.IsRiserTool || vm.IsStraightenTool)) { vm.SetToolCommand.Execute("Select"); e.Handled = true; return; }
         if (vm.IsAlignTool)
         {
             if (e.Key == Key.Enter) vm.AlignApply(); else if (e.Key == Key.Back) vm.AlignUndoPair(); else if (e.Key == Key.Escape) { vm.AlignCancel(); vm.SetToolCommand.Execute("Select"); } else return;
@@ -536,6 +547,35 @@ public partial class PlanView : Control
             ac.EndFigure(false);
         }
         ctx.DrawGeometry(null, dash, arc);
+    }
+
+    private Geometry Shape(IReadOnlyList<PointMm> outline, IEnumerable<List<PointMm>> holes)
+    {
+        var g = new StreamGeometry(); using (var cx = g.Open())
+        {
+            cx.SetFillRule(FillRule.EvenOdd);
+            foreach (var ring in new[] { outline }.Concat(holes)) { if (ring.Count < 3) continue; cx.BeginFigure(ToScreen(ring[0]), true); for (var i = 1; i < ring.Count; i++) cx.LineTo(ToScreen(ring[i])); cx.EndFigure(true); }
+        }
+        return g;
+    }
+
+    /// <summary>White paint on the floor (parking bay lines): light fill, thin grey outline so it shows on the pale plan too.</summary>
+    private void DrawMarkings(DrawingContext ctx, Level l, bool dark)
+    {
+        if (l.Markings.Count == 0 || Vm?.WallDisplay == WallDisplay.Hidden) return;
+        var fill = new SolidColorBrush(dark ? Color.FromRgb(242, 242, 238) : Colors.White); var pen = new Pen(new SolidColorBrush(Color.FromRgb(150, 152, 158)), 0.7);
+        foreach (var m in l.Markings) if (m.Outline.Count >= 3) ctx.DrawGeometry(fill, pen, Shape(m.Outline, m.Holes));
+    }
+
+    /// <summary>The paint tool: the rectangle being dragged, the zone, and in orange what applying would change.</summary>
+    private void DrawPaintPreview(DrawingContext ctx)
+    {
+        if (Vm is not { IsPaintTool: true } vm) return;
+        if (_paintFrom is { } pf) ctx.DrawRectangle(new SolidColorBrush(Color.FromArgb(30, 0, 120, 255)), new Pen(Brushes.DodgerBlue, 1.2, DashStyle.Dash), new Rect(new Point(Math.Min(pf.X, _paintNow.X), Math.Min(pf.Y, _paintNow.Y)), new Point(Math.Max(pf.X, _paintNow.X), Math.Max(pf.Y, _paintNow.Y))));
+        if (vm.PaintZone is { Count: >= 3 } z) ctx.DrawGeometry(new SolidColorBrush(Color.FromArgb(22, 0, 120, 255)), new Pen(Brushes.DodgerBlue, 1.2, DashStyle.Dash), Shape(z, []));
+        var orange = new SolidColorBrush(Color.FromArgb(170, 255, 140, 0)); var pen = new Pen(Brushes.OrangeRed, 1.1);
+        foreach (var sp in vm.PaintSplits ?? []) foreach (var t in sp.Thin) ctx.DrawGeometry(orange, pen, Shape(t.Outline, t.Holes));
+        foreach (var m in vm.PaintTouched ?? []) ctx.DrawGeometry(orange, pen, Shape(m.Outline, m.Holes));
     }
 
     /// <summary>The frame that limits the walk's world, when one is set: a dashed rectangle.</summary>
@@ -860,6 +900,7 @@ public partial class PlanView : Control
             if (Vm.GhostAbove) DrawWalls(ctx, g, new SolidColorBrush(Color.FromArgb((byte)(k == 0 ? 45 : 24), 255, 150, 40)), null, null);
         var wallFill = Tokens.Brush(this, "WallFill", dark ? Color.FromRgb(190, 192, 198) : Color.FromRgb(70, 72, 78));
         var sel = new SolidColorBrush(Color.FromRgb(255, 140, 0));
+        DrawMarkings(ctx, l, dark);                                                   // paint on the floor, under the walls
         DrawWalls(ctx, l, wallFill, new Pen(new SolidColorBrush(dark ? Colors.Black : Colors.Black), 0.8), null, Vm.SelectedWalls, sel);
         foreach (var rm in l.References)   // locked reference mesh: horizontal section 1 m above the floor, to trace over
         {
@@ -876,7 +917,7 @@ public partial class PlanView : Control
             var g = new StreamGeometry(); using (var cx = g.Open()) { cx.BeginFigure(lz[0], true); foreach (var q in lz.Skip(1)) cx.LineTo(q); cx.EndFigure(true); }
             ctx.DrawGeometry(new SolidColorBrush(Color.FromArgb(40, 0, 120, 255)), new Pen(Brushes.DodgerBlue, 1.5, DashStyle.Dash), g);
         }
-        DrawMeasure(ctx); DrawCutLine(ctx); DrawStraightenPreview(ctx);
+        DrawMeasure(ctx); DrawCutLine(ctx); DrawStraightenPreview(ctx); DrawPaintPreview(ctx);
         if (_gesture == Gesture.Move && (_delta.X != 0 || _delta.Y != 0))   // ghost of the move
             DrawWalls(ctx, l, new SolidColorBrush(Color.FromArgb(110, 255, 140, 0)), new Pen(Brushes.OrangeRed, 1.2, DashStyle.Dash), _delta, Vm.SelectedWalls, null, onlySelected: true);
         if (_gesture == Gesture.Box)

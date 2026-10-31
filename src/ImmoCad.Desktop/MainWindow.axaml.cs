@@ -105,6 +105,7 @@ public partial class MainWindow : Window
             case Avalonia.Input.Key.M: Vm.SetToolCommand.Execute("Measure"); break;
             case Avalonia.Input.Key.F: Vm.SetToolCommand.Execute("MergeRegion"); break;
             case Avalonia.Input.Key.K: Vm.SetToolCommand.Execute("CutWall"); break;
+            case Avalonia.Input.Key.B: Vm.SetToolCommand.Execute("PaintZone"); break;
             default: return;
         }
         e.Handled = true;

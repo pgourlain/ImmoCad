@@ -19,7 +19,7 @@ namespace ImmoCad.Desktop;
 public enum ViewPlane { XY, XZ, YZ }
 public enum WallDisplay { Solid, Wireframe, Hidden }
 public enum ViewMode { Plan, Solid, Wireframe, Elevation, Site, Walk }
-public enum ToolKind { Select, DrawWall, Align, Riser, DrawPipe, Place, Door, Window, Space, Measure, NumberCellars, Straighten, Stretch, CutWall, MergeRegion }
+public enum ToolKind { Select, DrawWall, Align, Riser, DrawPipe, Place, Door, Window, Space, Measure, NumberCellars, Straighten, Stretch, CutWall, MergeRegion, PaintZone }
 
 /// <summary>One button of the level bar.</summary>
 /// <summary>One open building with its own history, pictures and file.</summary>
@@ -850,7 +850,7 @@ public partial class MainViewModel : ObservableObject
     public bool IsNumberTool => Tool == ToolKind.NumberCellars;
     public bool IsStraightenTool => Tool == ToolKind.Straighten;
     /// <summary>The Options tab only shows what the active tool has; a tool without options says so.</summary>
-    public bool HasToolOptions => Tool is ToolKind.DrawWall or ToolKind.Riser or ToolKind.DrawPipe or ToolKind.Align or ToolKind.Straighten or ToolKind.Space;
+    public bool HasToolOptions => Tool is ToolKind.DrawWall or ToolKind.Riser or ToolKind.DrawPipe or ToolKind.Align or ToolKind.Straighten or ToolKind.Space or ToolKind.PaintZone;
     public bool HasNoToolOptions => !HasToolOptions;
     public bool IsStretchTool => Tool == ToolKind.Stretch;
     public string SelectionText => SelectedEquipment is { } se ? T("eq.selected", EquipmentCatalog.Find(se.CatalogId)?.Name ?? se.CatalogId) : SelectedSpaceId != null ? T("space.selected") : SelectedOpening != null ? T("opening.selected") : SelectedSegment != null ? T("pipe.selected") : SelectedWalls.Count == 0 ? T("no.selection") : T("walls.selected", SelectedWalls.Count);
@@ -884,8 +884,8 @@ public partial class MainViewModel : ObservableObject
     partial void OnModeChanged(ViewMode value) { if (value != ViewMode.Walk) EndWalk(); else PanelTab = 2; OnPropertyChanged(nameof(IsWalk)); OnPropertyChanged(nameof(NotWalk)); OnPropertyChanged(nameof(ShowSelectionActions)); if (value == ViewMode.Site) { FocusSite(); PanelTab = 4; } OnPropertyChanged(nameof(ShowSideControls)); OnPropertyChanged(nameof(Is3D)); OnPropertyChanged(nameof(ShowPlan)); OnPropertyChanged(nameof(Show3D)); OnPropertyChanged(nameof(IsElevation)); OnPropertyChanged(nameof(IsPlan)); OnPropertyChanged(nameof(IsSite)); Changed?.Invoke(); }
     partial void OnToolChanged(ToolKind value)
     {
-        OnPropertyChanged(nameof(IsSelectTool)); OnPropertyChanged(nameof(IsDrawTool)); OnPropertyChanged(nameof(IsAlignTool)); OnPropertyChanged(nameof(IsRiserTool)); OnPropertyChanged(nameof(IsPipeTool)); OnPropertyChanged(nameof(IsPlaceTool)); OnPropertyChanged(nameof(IsDoorTool)); OnPropertyChanged(nameof(IsWindowTool)); OnPropertyChanged(nameof(IsSpaceTool)); OnPropertyChanged(nameof(IsMeasureTool)); OnPropertyChanged(nameof(IsNumberTool)); OnPropertyChanged(nameof(IsStraightenTool)); OnPropertyChanged(nameof(IsStretchTool)); OnPropertyChanged(nameof(IsCutWallTool)); OnPropertyChanged(nameof(IsMergeRegionTool)); CutPoints.Clear(); CutAwaitSide = false; MeasurePoints.Clear(); NumberPending.Clear(); SpaceHover = null;
-        Hint = value switch { ToolKind.DrawWall => T("hint.draw.wall"), ToolKind.Riser => T("hint.riser"), ToolKind.DrawPipe => T("hint.draw.pipe"), ToolKind.Place => T("hint.place"), ToolKind.Align => T("hint.align"), ToolKind.Door => T("hint.door"), ToolKind.Window => T("hint.window"), ToolKind.Space => T("hint.space"), ToolKind.Measure => T("hint.measure"), ToolKind.NumberCellars => T("hint.number"), ToolKind.Straighten => T("hint.straighten"), ToolKind.Stretch => T("hint.stretch"), ToolKind.CutWall => T("hint.cutwall"), ToolKind.MergeRegion => T("hint.mergeregion"), _ => T("hint.select") }; if (value != ToolKind.Align) AlignCancel();
+        OnPropertyChanged(nameof(IsSelectTool)); OnPropertyChanged(nameof(IsDrawTool)); OnPropertyChanged(nameof(IsAlignTool)); OnPropertyChanged(nameof(IsRiserTool)); OnPropertyChanged(nameof(IsPipeTool)); OnPropertyChanged(nameof(IsPlaceTool)); OnPropertyChanged(nameof(IsDoorTool)); OnPropertyChanged(nameof(IsWindowTool)); OnPropertyChanged(nameof(IsSpaceTool)); OnPropertyChanged(nameof(IsMeasureTool)); OnPropertyChanged(nameof(IsNumberTool)); OnPropertyChanged(nameof(IsStraightenTool)); OnPropertyChanged(nameof(IsStretchTool)); OnPropertyChanged(nameof(IsCutWallTool)); OnPropertyChanged(nameof(IsMergeRegionTool)); OnPropertyChanged(nameof(IsPaintTool)); PaintClear(); CutPoints.Clear(); CutAwaitSide = false; MeasurePoints.Clear(); NumberPending.Clear(); SpaceHover = null;
+        Hint = value switch { ToolKind.DrawWall => T("hint.draw.wall"), ToolKind.Riser => T("hint.riser"), ToolKind.DrawPipe => T("hint.draw.pipe"), ToolKind.Place => T("hint.place"), ToolKind.Align => T("hint.align"), ToolKind.Door => T("hint.door"), ToolKind.Window => T("hint.window"), ToolKind.Space => T("hint.space"), ToolKind.Measure => T("hint.measure"), ToolKind.NumberCellars => T("hint.number"), ToolKind.Straighten => T("hint.straighten"), ToolKind.Stretch => T("hint.stretch"), ToolKind.CutWall => T("hint.cutwall"), ToolKind.MergeRegion => T("hint.mergeregion"), ToolKind.PaintZone => T("hint.paint"), _ => T("hint.select") }; if (value != ToolKind.Align) AlignCancel();
         OnPropertyChanged(nameof(HasToolOptions)); OnPropertyChanged(nameof(HasNoToolOptions)); if (HasToolOptions) PanelTab = 1;       // choosing a tool shows its options
         Changed?.Invoke();
     }
@@ -1065,7 +1065,7 @@ public partial class MainViewModel : ObservableObject
 
     private void OnLanguageChanged()
     {
-        Hint = Tool switch { ToolKind.DrawWall => T("hint.draw.wall"), ToolKind.DrawPipe => T("hint.draw.pipe"), ToolKind.Riser => T("hint.riser"), ToolKind.Place => T("hint.place"), ToolKind.Align => T("hint.align"), ToolKind.Door => T("hint.door"), ToolKind.Window => T("hint.window"), ToolKind.Space => T("hint.space"), ToolKind.Measure => T("hint.measure"), ToolKind.NumberCellars => T("hint.number"), ToolKind.Straighten => T("hint.straighten"), ToolKind.Stretch => T("hint.stretch"), ToolKind.CutWall => T("hint.cutwall"), ToolKind.MergeRegion => T("hint.mergeregion"), _ => T("hint.select") };
+        Hint = Tool switch { ToolKind.DrawWall => T("hint.draw.wall"), ToolKind.DrawPipe => T("hint.draw.pipe"), ToolKind.Riser => T("hint.riser"), ToolKind.Place => T("hint.place"), ToolKind.Align => T("hint.align"), ToolKind.Door => T("hint.door"), ToolKind.Window => T("hint.window"), ToolKind.Space => T("hint.space"), ToolKind.Measure => T("hint.measure"), ToolKind.NumberCellars => T("hint.number"), ToolKind.Straighten => T("hint.straighten"), ToolKind.Stretch => T("hint.stretch"), ToolKind.CutWall => T("hint.cutwall"), ToolKind.MergeRegion => T("hint.mergeregion"), ToolKind.PaintZone => T("hint.paint"), _ => T("hint.select") };
         Status = T("ready"); RebuildPalette(); RebuildSteps(); OnPropertyChanged(nameof(MapLayers)); OnPropertyChanged(nameof(RiserTemplates)); OnPropertyChanged(nameof(Title)); OnPropertyChanged(nameof(SelectionText));
         OnPropertyChanged(nameof(TourTitle)); OnPropertyChanged(nameof(TourBody)); OnPropertyChanged(nameof(NetworkTypes)); OnPropertyChanged(nameof(SpaceKinds)); OnPropertyChanged(nameof(WallDisplayLabel));
         if (SelectedEquipment != null) SelectEquipment(SelectedEquipmentId);

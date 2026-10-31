@@ -102,6 +102,7 @@
                 Data="M1,8 L23,8 L23,16 L1,16 Z M4,8 L4,12 M7,8 L7,10.5 M10,8 L10,12 M13,8 L13,10.5 M16,8 L16,12 M19,8 L19,10.5"><Path.RenderTransform><RotateTransform Angle="-35" /></Path.RenderTransform></Path>
         </ToggleButton>
         <ToggleButton Classes="tool" Content="⧉" vm:L.Tip="tip.mergeregion" IsChecked="{Binding IsMergeRegionTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="MergeRegion" IsVisible="{Binding ShowWallTools}" />
+        <ToggleButton Classes="tool" Content="░" vm:L.Tip="tip.paintzone" IsChecked="{Binding IsPaintTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="PaintZone" IsVisible="{Binding ShowWallTools}" />
         <ToggleButton Classes="tool" Content="✂" vm:L.Tip="tip.cutwalls" IsChecked="{Binding IsCutWallTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="CutWall" IsVisible="{Binding ShowWallTools}" />
         <ToggleButton Classes="tool" Content="⟋" vm:L.Tip="tip.straighten" IsChecked="{Binding IsStraightenTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Straighten" IsVisible="{Binding ShowWallTools}" />
         <ToggleButton Classes="tool" Content="⇔" vm:L.Tip="tip.stretch" IsChecked="{Binding IsStretchTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Stretch" IsVisible="{Binding ShowPlanTools}" />
@@ -126,6 +127,7 @@
           <WrapPanel ItemSpacing="4" LineSpacing="4">
             <Button vm:L.Content="bar.rotate" Command="{Binding RotateSelectedEquipmentCommand}" IsVisible="{Binding EquipmentSelected}" />
             <Button vm:L.Content="bar.duplicate" Command="{Binding DuplicateCommand}" IsVisible="{Binding WallsSelected}" />
+            <Button vm:L.Content="bar.tomarking" vm:L.Tip="tip.tomarking" Command="{Binding ConvertSelectionToMarkingsCommand}" IsVisible="{Binding WallsSelected}" />
             <Button vm:L.Content="bar.copylevels" Command="{Binding CopySelectionToAllLevelsCommand}" IsVisible="{Binding WallsSelected}" />
             <Button vm:L.Content="bar.elevation" Command="{Binding ShowElevationCommand}" IsVisible="{Binding WallsSelected}" />
             <Button vm:L.Content="bar.properties" Command="{Binding ShowPropertiesCommand}" />
@@ -178,6 +180,17 @@
             <StackPanel Spacing="6" IsVisible="{Binding IsAlignTool}">
               <TextBlock vm:L.Text="opt.align" Classes="caption" />
             <CheckBox vm:L.Content="align.movewalls" IsChecked="{Binding AlignMoveWalls}" />
+            </StackPanel>
+            <StackPanel Spacing="6" IsVisible="{Binding IsPaintTool}">
+              <TextBlock vm:L.Text="opt.paint" Classes="caption" />
+              <ComboBox ItemsSource="{Binding PaintModes}" SelectedIndex="{Binding PaintMode}" HorizontalAlignment="Stretch" />
+              <NumericUpDown Value="{Binding PaintMaxThicknessMm}" Minimum="20" Maximum="1000" Increment="10" vm:L.Format="fmt.thinmax" />
+              <CheckBox vm:L.Content="paint.lasso" IsChecked="{Binding PaintLasso}" />
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <Button vm:L.Content="paint.apply" Command="{Binding PaintApplyCommand}" Classes="accent" />
+                <Button vm:L.Content="paint.cancel" Command="{Binding PaintCancelCommand}" />
+              </StackPanel>
+              <TextBlock vm:L.Text="paint.help" Classes="caption" TextWrapping="Wrap" />
             </StackPanel>
             <StackPanel Spacing="6" IsVisible="{Binding IsSpaceTool}">
               <TextBlock vm:L.Text="opt.space" Classes="caption" />

@@ -1711,6 +1711,75 @@ public class NorthUpTests
 }
 
 /// <summary>Walk mode (first person). Headless tests have no OpenGL: they cover availability, the state around the walk, the overlay and the map, not the rendering.</summary>
+public class PaintTests
+{
+    private readonly HeadlessFixture f = new();
+    private static string Shots() { var d = Path.Combine(AppContext.BaseDirectory, "screenshots"); Directory.CreateDirectory(d); return d; }
+    private static List<PointMm> R(int x0, int y0, int x1, int y1) => [new(x0, y0), new(x1, y0), new(x1, y1), new(x0, y1)];
+
+    /// <summary>A basement: a thick wall along the top and three painted bay lines (80 mm wide, 2.5 m long) that the scan made walls.</summary>
+    private static MainViewModel Basement(out Guid levelId)
+    {
+        var vm = new MainViewModel(startWithSample: false) { Settings = new() }; vm.NewDocumentCommand.Execute(null);
+        var l = vm.Actions.AddLevel("SS1", 0); levelId = l.Id;
+        vm.Actions.ImportWalls(l.Id, new[] { R(0, 3200, 8000, 3500), R(1000, 600, 1080, 3100), R(2000, 600, 2080, 3100), R(3000, 600, 3080, 3100) }.Select(r => r.ToArray()).ToArray());
+        vm.SelectLevelCommand.Execute(l.Id); vm.SetToolCommand.Execute("PaintZone"); return vm;
+    }
+
+    [Fact] public Task The_paint_tool_previews_the_thin_walls_in_a_zone_and_applies_them_with_one_undoable_step() => f.Session.RunAsync(async () =>
+    {
+        var vm = Basement(out var id); Assert.True(vm.IsPaintTool); Assert.True(vm.HasToolOptions); Assert.Equal(150, vm.PaintMaxThicknessMm); Assert.False(vm.HasPaintPlan);
+        var steps = vm.History.Items.Count; var before = ImmoCad.Core.History.BuildingJson.Serialize(vm.Building);
+        vm.PaintSetZone(ImmoCad.Core.Geometry.FloorMarkings.RectZone(new(500, 500), new(3500, 3300))); await vm.PaintTask;
+        Assert.True(vm.HasPaintPlan); Assert.Equal(3, vm.PaintSplits!.Sum(sp => sp.Thin.Count)); Assert.Equal(steps, vm.History.Items.Count);       // a preview changes nothing
+        Assert.Equal(before, ImmoCad.Core.History.BuildingJson.Serialize(vm.Building)); Assert.True(vm.PaintApplyCommand.CanExecute(null));
+        vm.PaintApplyCommand.Execute(null);
+        var l = vm.CurrentLevel!; Assert.Single(l.Walls); Assert.Equal(3, l.Markings.Count); Assert.Equal(steps + 1, vm.History.Items.Count); Assert.False(vm.HasPaintPlan); Assert.Null(vm.PaintZone);
+        vm.UndoCommand.Execute(null); Assert.Equal(before, ImmoCad.Core.History.BuildingJson.Serialize(vm.Building)); Assert.Equal(4, vm.CurrentLevel!.Walls.Count);
+    }, CancellationToken.None);
+
+    [Fact] public Task The_thickness_option_and_the_mode_recompute_the_preview_and_the_other_modes_undo_the_paint() => f.Session.RunAsync(async () =>
+    {
+        var vm = Basement(out _); vm.PaintSetZone(ImmoCad.Core.Geometry.FloorMarkings.RectZone(new(-100, 500), new(8100, 3600))); await vm.PaintTask;
+        Assert.Equal(3, vm.PaintSplits!.Sum(sp => sp.Thin.Count));                                                                              // the 300 mm wall is not thin at 150
+        vm.PaintMaxThicknessMm = 400; await vm.PaintTask; Assert.Equal(4, vm.PaintSplits!.Sum(sp => sp.Thin.Count));                                // at 400 it is
+        vm.PaintMaxThicknessMm = 150; await vm.PaintTask; vm.PaintApplyCommand.Execute(null);
+        Assert.Equal(3, vm.CurrentLevel!.Markings.Count);
+        vm.PaintMode = 1; vm.PaintSetZone(ImmoCad.Core.Geometry.FloorMarkings.RectZone(new(500, 500), new(2500, 3300))); await vm.PaintTask;           // markings back to walls, two of them in this zone
+        Assert.Equal(2, vm.PaintTouched!.Count); vm.PaintApplyCommand.Execute(null); Assert.Equal(3, vm.CurrentLevel!.Walls.Count); Assert.Single(vm.CurrentLevel!.Markings);
+        vm.PaintMode = 2; vm.PaintSetZone(ImmoCad.Core.Geometry.FloorMarkings.RectZone(new(500, 500), new(8000, 3300))); await vm.PaintTask; Assert.Single(vm.PaintTouched!);
+        vm.PaintApplyCommand.Execute(null); Assert.Empty(vm.CurrentLevel!.Markings);
+        vm.PaintSetZone(ImmoCad.Core.Geometry.FloorMarkings.RectZone(new(500, 500), new(8000, 3300))); await vm.PaintTask; Assert.False(vm.HasPaintPlan); Assert.False(vm.PaintApplyCommand.CanExecute(null));          // nothing left to erase
+    }, CancellationToken.None);
+
+    [Fact] public Task Forgetting_the_zone_or_leaving_the_tool_or_the_level_drops_the_preview_and_the_selection_converts_whole_walls() => f.Session.RunAsync(async () =>
+    {
+        var vm = Basement(out var id); vm.PaintSetZone(ImmoCad.Core.Geometry.FloorMarkings.RectZone(new(500, 500), new(3500, 3300))); await vm.PaintTask; Assert.True(vm.HasPaintPlan);
+        vm.PaintCancelCommand.Execute(null); Assert.Null(vm.PaintZone); Assert.False(vm.HasPaintPlan);
+        vm.PaintSetZone(ImmoCad.Core.Geometry.FloorMarkings.RectZone(new(500, 500), new(3500, 3300))); await vm.PaintTask; vm.SetToolCommand.Execute("Select"); Assert.Null(vm.PaintZone); Assert.Equal(4, vm.CurrentLevel!.Walls.Count);
+        vm.SelectedWalls.Add(vm.CurrentLevel!.Walls[1].Id); vm.SelectedWalls.Add(vm.CurrentLevel!.Walls[2].Id); var steps = vm.History.Items.Count;
+        vm.ConvertSelectionToMarkingsCommand.Execute(null); Assert.Equal(2, vm.CurrentLevel!.Markings.Count); Assert.Equal(2, vm.CurrentLevel!.Walls.Count); Assert.Equal(steps + 1, vm.History.Items.Count);
+        var json = System.Text.Json.JsonSerializer.Serialize(vm.Settings, ImmoCad.Core.SettingsJsonContext.Default.AppSettings); Assert.Contains("\"PaintMaxThicknessMm\": 150", json);
+    }, CancellationToken.None);
+
+    [Fact] public Task Dragging_a_rectangle_in_the_plan_sets_the_zone_and_the_markings_and_the_preview_are_drawn_in_both_languages() => f.Session.RunAsync(async () =>
+    {
+        foreach (var lang in new[] { "en", "fr" })
+        {
+            ImmoCad.Core.Translations.Language = lang;
+            var vm = Basement(out _); var w = new MainWindow { DataContext = vm, Width = 1280, Height = 860 }; w.Show(); vm.ZoomPlanCommand.Execute("fit"); Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+            Point At(int x, int y) => w.Plan.TranslatePoint(w.Plan.ToScreen(new PointMm(x, y)), w)!.Value;
+            w.MouseDown(At(500, 400), Avalonia.Input.MouseButton.Left); w.MouseMove(At(2000, 2000)); w.MouseMove(At(3500, 3300)); w.MouseUp(At(3500, 3300), Avalonia.Input.MouseButton.Left);
+            await vm.PaintTask; Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+            Assert.NotNull(vm.PaintZone); Assert.True(vm.HasPaintPlan); Assert.Equal(3, vm.PaintSplits!.Sum(sp => sp.Thin.Count));
+            Assert.Contains(Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(w).OfType<TextBlock>(), t => t.IsEffectivelyVisible && t.Text == ImmoCad.Core.Translations.T("opt.paint"));
+            w.CaptureRenderedFrame()!.Save(Path.Combine(Shots(), $"paint-preview-{lang}.png"));
+            vm.PaintApplyCommand.Execute(null); Avalonia.Threading.Dispatcher.UIThread.RunJobs(); w.CaptureRenderedFrame()!.Save(Path.Combine(Shots(), $"paint-applied-{lang}.png")); w.Close();
+        }
+        ImmoCad.Core.Translations.Language = "fr";
+    }, CancellationToken.None);
+}
+
 public class RoomSensitivityTests
 {
     private readonly HeadlessFixture f = new();
