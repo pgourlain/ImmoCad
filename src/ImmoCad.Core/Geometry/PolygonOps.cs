@@ -309,7 +309,35 @@ public static class PolygonOps
         for (var i = 0; i < thin.Length; i++) if (mask[i] == 1 && thick[i] == 0 && (zoneMask == null || zoneMask[i] == 1)) { thin[i] = 1; any++; }
         if (any < 8) return ([], [shape]);
         var rest = new byte[w * h]; for (var i = 0; i < rest.Length; i++) rest[i] = (byte)(mask[i] == 1 && thin[i] == 0 ? 1 : 0);
+        AbsorbStubs(rest, thin, zoneMask, w, h, Math.Max(2, (int)Math.Round(2.0 * maxThicknessMm / cell)));
         return (Trace(thin, w, h, ox, oy, cell), Trace(rest, w, h, ox, oy, cell));
+    }
+
+    /// <summary>
+    /// Junctions of painted lines (the corner of a bay, a T) are a little thicker than the lines and survive the opening as small blocks: a block of the wall that is no larger than
+    /// <paramref name="maxCells"/> in both directions and touches the thin material goes with it, so no black dots are left at the corners.
+    /// </summary>
+    private static void AbsorbStubs(byte[] rest, byte[] thin, byte[]? zoneMask, int w, int h, int maxCells)
+    {
+        var label = new int[w * h]; var stack = new Stack<int>(); var cells = new List<int>();
+        for (var start = 0; start < rest.Length; start++)
+        {
+            if (rest[start] == 0 || label[start] != 0) continue;
+            cells.Clear(); stack.Push(start); label[start] = 1; int minX = int.MaxValue, maxX = -1, minY = int.MaxValue, maxY = -1; var touches = false; var inZone = true; var big = false;
+            while (stack.Count > 0)
+            {
+                var i = stack.Pop(); int x = i % w, y = i / w;
+                if (!big) { cells.Add(i); minX = Math.Min(minX, x); maxX = Math.Max(maxX, x); minY = Math.Min(minY, y); maxY = Math.Max(maxY, y); if (maxX - minX + 1 > maxCells || maxY - minY + 1 > maxCells) { big = true; cells.Clear(); } }
+                if (!big) { if (zoneMask != null && zoneMask[i] == 0) inZone = false; if (!touches) for (var dy = -1; dy <= 1 && !touches; dy++) for (var dx = -1; dx <= 1; dx++) { int nx = x + dx, ny = y + dy; if (nx >= 0 && ny >= 0 && nx < w && ny < h && thin[ny * w + nx] == 1) { touches = true; break; } } }
+                foreach (var j in new[] { i + 1, i - 1, i + w, i - w })
+                {
+                    if (j < 0 || j >= rest.Length || rest[j] == 0 || label[j] != 0) continue;
+                    if ((j == i + 1 && x == w - 1) || (j == i - 1 && x == 0)) continue;
+                    label[j] = 1; stack.Push(j);
+                }
+            }
+            if (!big && touches && inZone) foreach (var i in cells) { thin[i] = 1; rest[i] = 0; }
+        }
     }
 
     /// <summary>Fallback for cuts that leave several pieces or cross a hole: draw the shape, erase the removed side, trace what is left.</summary>

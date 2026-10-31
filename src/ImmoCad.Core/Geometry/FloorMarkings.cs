@@ -15,13 +15,14 @@ public static class FloorMarkings
     {
         var res = new List<WallSplit>(); if (zone.Count < 3) return res;
         int zx0 = zone.Min(p => p.X), zy0 = zone.Min(p => p.Y), zx1 = zone.Max(p => p.X), zy1 = zone.Max(p => p.Y);
-        foreach (var w in level.Walls)
+        var candidates = level.Walls.Where(w => w.Footprint.Count >= 3 && w.Footprint.Max(p => p.X) >= zx0 && w.Footprint.Min(p => p.X) <= zx1 && w.Footprint.Max(p => p.Y) >= zy0 && w.Footprint.Min(p => p.Y) <= zy1).ToList();
+        var results = new WallSplit?[candidates.Count];
+        Parallel.For(0, candidates.Count, new ParallelOptions { CancellationToken = ct }, i =>        // every wall is rasterised on its own: independent, so they run side by side
         {
-            ct.ThrowIfCancellationRequested();
-            if (w.Footprint.Count < 3 || w.Footprint.Max(p => p.X) < zx0 || w.Footprint.Min(p => p.X) > zx1 || w.Footprint.Max(p => p.Y) < zy0 || w.Footprint.Min(p => p.Y) > zy1) continue;
-            var (thin, rest) = PolygonOps.SplitThin(new Shape(w.Footprint.ToList(), w.Holes.Select(h => h.ToList()).ToList()), maxThicknessMm, zone);
-            if (thin.Count > 0) res.Add(new WallSplit(w.Id, thin, rest));
-        }
+            var w = candidates[i]; var (thin, rest) = PolygonOps.SplitThin(new Shape(w.Footprint.ToList(), w.Holes.Select(h => h.ToList()).ToList()), maxThicknessMm, zone);
+            if (thin.Count > 0) results[i] = new WallSplit(w.Id, thin, rest);
+        });
+        foreach (var r in results) if (r != null) res.Add(r);
         return res;
     }
 

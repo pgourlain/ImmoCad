@@ -43,6 +43,15 @@ public class MarkingTests
         Assert.Single(inZone); Assert.InRange(Area(inZone), 80L * 4700 * 90 / 100, 80L * 4700 * 112 / 100); Assert.True(Area(rest) > 6000L * 300 + 80L * 4000);                          // the line at x = 4000 stays on the wall
     }
 
+    [Fact] public void The_blocks_left_at_the_corner_of_a_painted_bay_go_with_the_paint_but_a_real_pillar_does_not()
+    {
+        // a bay: a closed ring of 80 mm lines 2.5 m x 5 m with a thicker 180 mm block at each corner (the junction), plus a 400 mm pillar attached to a line
+        var outer = Rect(0, 0, 2500, 5000); var inner = Rect(80, 80, 2420, 4920); var ring = new Shape(outer, [inner]);
+        var (thin, rest) = PolygonOps.SplitThin(ring, 150); Assert.NotEmpty(thin); Assert.True(Area(rest) < 80L * 80, $"left {Area(rest)} mm2 of the ring on the walls");     // no corner block left
+        var pillar = new Shape([new(0, 0), new(80, 0), new(80, 2000), new(480, 2000), new(480, 2400), new(80, 2400), new(80, 5000), new(0, 5000)], new());                  // a 400 x 400 mm pillar on a line
+        var (t2, r2) = PolygonOps.SplitThin(pillar, 150); Assert.NotEmpty(t2); Assert.InRange(Area(r2), 400L * 400 * 80 / 100, 400L * 400 * 130 / 100);                         // it stays a wall
+    }
+
     private static (Building B, BuildingActions A, BuildingHistory H, Level L) Level3Thin()
     {
         var b = new Building(); var h = new BuildingHistory(); var a = new BuildingActions(b, h, new BuildingEventsService()); var l = a.AddLevel("SS", 0);
