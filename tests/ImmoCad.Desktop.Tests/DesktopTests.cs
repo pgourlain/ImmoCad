@@ -1709,3 +1709,114 @@ public class NorthUpTests
         Assert.Equal(1000 - 50 / 0.2, w.Offset.X, 6);
     }
 }
+
+/// <summary>Walk mode (first person). Headless tests have no OpenGL: they cover availability, the state around the walk, the overlay and the map, not the rendering.</summary>
+public class WalkUiTests
+{
+    private readonly HeadlessFixture f = new();
+    private static string Shots() { var d = Path.Combine(AppContext.BaseDirectory, "screenshots"); Directory.CreateDirectory(d); return d; }
+
+    [Fact] public Task Without_OpenGL_the_Walk_entries_are_disabled_with_the_reason_and_the_G_key_does_nothing() => f.Session.Dispatch(() =>
+    {
+        try
+        {
+        ImmoCad.Core.Translations.Language = "en";
+        var vm = new MainViewModel(); var w = new MainWindow { DataContext = vm, Width = 1200, Height = 800 }; w.Show();
+        Assert.False(vm.WalkAvailable); Assert.False(vm.WalkCommand.CanExecute(null));
+        Assert.Equal(ImmoCad.Core.Translations.T("walk.nogl"), vm.WalkUnavailable); Assert.Equal(vm.WalkUnavailable, vm.WalkTip);
+        vm.BeginWalk(null); Assert.Equal(ViewMode.Plan, vm.Mode); Assert.Null(vm.Walk); Assert.Equal(vm.WalkUnavailable, vm.Status);
+        w.RaiseEvent(new Avalonia.Input.KeyEventArgs { RoutedEvent = Avalonia.Input.InputElement.KeyDownEvent, Key = Avalonia.Input.Key.G }); Assert.Equal(ViewMode.Plan, vm.Mode);
+        w.Close();
+            }
+        finally { ImmoCad.Core.Translations.Language = "fr"; }
+    }, CancellationToken.None);
+
+    [Fact] public Task A_building_without_walls_cannot_be_walked_and_says_why() => f.Session.Dispatch(() =>
+    {
+        try
+        {
+        ImmoCad.Core.Translations.Language = "en";
+        var vm = new MainViewModel(startWithSample: false) { Settings = new() }; vm.NewDocumentCommand.Execute(null); vm.WalkAvailable = true;
+        Assert.False(vm.CanWalk); Assert.Equal(ImmoCad.Core.Translations.T("walk.nowalls.building"), vm.WalkUnavailable);
+        vm.BeginWalk(null); Assert.Null(vm.Walk);
+            }
+        finally { ImmoCad.Core.Translations.Language = "fr"; }
+    }, CancellationToken.None);
+
+    [Fact] public Task Walking_changes_nothing_in_the_building_and_leaving_comes_back_to_the_plan_centred_on_the_last_position() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel { Settings = new() }; vm.WalkAvailable = true;
+        var items = vm.History.Items.Count; var pointer = vm.History.Pointer; var dirty = vm.History.IsDirty;
+        PointMm? focused = null; vm.FocusRequested += p => focused = p;
+        vm.BeginWalk(new PointMm(4000, 3000));
+        Assert.Equal(ViewMode.Walk, vm.Mode); Assert.NotNull(vm.Walk); Assert.True(vm.Show3D); Assert.False(vm.ShowPlan); Assert.True(vm.IsWalk); Assert.False(vm.NotWalk);
+        vm.Walk!.Update(0.5, new(1, 0, 0, false));
+        vm.LeaveWalkCommand.Execute(null);
+        Assert.Equal(ViewMode.Plan, vm.Mode); Assert.Null(vm.Walk); Assert.NotNull(vm.WalkPin); Assert.Equal(vm.WalkPin, focused);
+        Assert.Equal((items, pointer, dirty), (vm.History.Items.Count, vm.History.Pointer, vm.History.IsDirty));                       // not a single history step, not dirty
+        var pin = vm.WalkPin!.Value; vm.BeginWalk(null); Assert.Equal(pin.X, vm.Walk!.X, 0); Assert.Null(vm.WalkPin);                                                           // the next walk on this level starts where this one ended
+    }, CancellationToken.None);
+
+    [Fact] public Task The_level_bar_is_the_elevator_and_the_walk_follows_the_current_level() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel { Settings = new() }; vm.WalkAvailable = true;
+        vm.BeginWalk(new PointMm(4000, 3000)); var ground = vm.Walk!.LevelId;
+        var up = vm.Building.Levels[1]; vm.SelectLevelCommand.Execute(up.Id);
+        Assert.Equal(up.Id, vm.Walk!.LevelId); Assert.Equal(up.Id, vm.CurrentLevelId); Assert.Equal(up.AltitudeMm + 1600, vm.Walk.EyeZ);
+        vm.LevelDownCommand.Execute(null); Assert.Equal(ground, vm.Walk!.LevelId); Assert.Contains(vm.Building.Levels[0].DisplayName, vm.WalkHud());
+    }, CancellationToken.None);
+
+    [Fact] public Task Walk_from_a_room_starts_in_that_room_and_the_view_buttons_end_the_walk() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel { Settings = new() }; vm.WalkAvailable = true;
+        var room = vm.SpaceItems.First(); vm.WalkFromSpaceCommand.Execute(room.Id);
+        Assert.NotNull(vm.Walk); Assert.Equal(room.LevelId, vm.Walk!.LevelId);
+        vm.SetModeCommand.Execute("Solid"); Assert.Equal(ViewMode.Solid, vm.Mode); Assert.Null(vm.Walk);                                // another view ends the walk too
+    }, CancellationToken.None);
+
+    [Fact] public Task Ghost_mode_is_remembered_in_the_settings_and_comes_back_at_the_next_walk() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel { Settings = new() }; vm.WalkAvailable = true;
+        vm.BeginWalk(null); Assert.False(vm.Walk!.Ghost); vm.ToggleWalkGhostCommand.Execute(null); Assert.True(vm.Walk.Ghost); Assert.True(vm.Settings.WalkGhost);
+        vm.LeaveWalkCommand.Execute(null); vm.BeginWalk(null); Assert.True(vm.Walk!.Ghost);
+        Assert.False(new ImmoCad.Core.AppSettings().WalkGhost);                                                                          // off by default: collisions are the safe first experience
+    }, CancellationToken.None);
+
+    [Fact] public Task Undo_while_walking_keeps_a_valid_state_and_removing_the_level_ends_the_walk() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel { Settings = new() }; vm.WalkAvailable = true; vm.BeginWalk(null);
+        vm.Actions.RenameLevel(vm.Walk!.LevelId, "X"); vm.Refresh(); Assert.NotNull(vm.Walk); vm.UndoCommand.Execute(null); Assert.NotNull(vm.Walk); Assert.Same(vm.Building.Levels.First(l => l.Id == vm.Walk!.LevelId), vm.Walk!.Level);
+        vm.Actions.DeleteLevel(vm.Walk.LevelId); vm.Refresh(); Assert.Null(vm.Walk); Assert.Equal(ViewMode.Plan, vm.Mode);
+    }, CancellationToken.None);
+
+    [Fact] public Task The_label_under_the_cursor_names_the_network_the_diameter_and_the_material() => f.Session.Dispatch(() =>
+    {
+        try
+        {
+        ImmoCad.Core.Translations.Language = "en";
+        var vm = new MainViewModel { Settings = new() }; var net = vm.Building.Networks[0]; var seg = net.Segments[0];
+        var text = vm.DescribeScene(seg.Id, ImmoCad.Scene.SceneKind.Pipe);
+        Assert.Contains(seg.DiameterMm.ToString(), text); Assert.Contains(seg.Material, text); Assert.Equal("Wall", vm.DescribeScene(Guid.NewGuid(), ImmoCad.Scene.SceneKind.Wall));
+            }
+        finally { ImmoCad.Core.Translations.Language = "fr"; }
+    }, CancellationToken.None);
+
+    [Fact] public Task The_overlay_shows_where_you_are_and_the_map_places_the_walker_and_jumps_on_click_in_both_languages() => f.Session.Dispatch(() =>
+    {
+        foreach (var lang in new[] { "en", "fr" })
+        {
+            ImmoCad.Core.Translations.Language = lang;
+            var vm = new MainViewModel { Settings = new() }; var w = new MainWindow { DataContext = vm, Width = 1280, Height = 860 }; w.Show();
+            vm.WalkAvailable = true; vm.BeginWalk(new PointMm(1200, 1200));
+            Assert.True(w.Overlay!.IsVisible); Assert.False(w.Cube.IsVisible);                                                              // the view cube makes way for the map
+            var map = w.Overlay.Children.OfType<StackPanel>().SelectMany(p => p.Children).OfType<MiniMapView>().Single();
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs(); Assert.True(map.Bounds.Width > 100);
+            var t = map.Transform()!.Value; var me = new Point(t.OX + vm.Walk!.X * t.Scale, t.OY + (t.MaxY - vm.Walk.Y) * t.Scale);
+            var back = map.ToMm(me)!.Value; Assert.InRange(back.X, (int)vm.Walk.X - 2, (int)vm.Walk.X + 2); Assert.InRange(back.Y, (int)vm.Walk.Y - 2, (int)vm.Walk.Y + 2);
+            var target = new Point(t.OX + 5000 * t.Scale, t.OY + (t.MaxY - 3000) * t.Scale); var mm = map.ToMm(target)!.Value; vm.Walk.Jump(new(mm.X, mm.Y)); Assert.InRange(vm.Walk.X, 4900, 5100);
+            w.CaptureRenderedFrame()!.Save(Path.Combine(Shots(), $"walk-overlay-{lang}.png"));
+            vm.LeaveWalkCommand.Execute(null); Assert.False(w.Overlay.IsVisible); Assert.True(w.Cube.IsVisible); w.Close();
+        }
+        ImmoCad.Core.Translations.Language = "fr";
+    }, CancellationToken.None);
+}

@@ -12,7 +12,7 @@ namespace ImmoCad.Desktop;
 public sealed class WalkDriver
 {
     private readonly MainViewModel _vm; private readonly Func<ViewportController> _controller; private readonly Action _changed;
-    private readonly HashSet<PhysicalKey> _letters = new(); private readonly HashSet<Key> _arrows = new(); private bool _shift;
+    private readonly HashSet<PhysicalKey> _letters = new(), _tappedLetters = new(); private readonly HashSet<Key> _arrows = new(), _tappedArrows = new(); private bool _shift;
     private DispatcherTimer? _timer; private long _last;
 
     public WalkDriver(MainViewModel vm, Func<ViewportController> controller, Action changed) { _vm = vm; _controller = controller; _changed = changed; }
@@ -26,7 +26,7 @@ public sealed class WalkDriver
     }
     public void Stop() { _timer?.Stop(); _timer = null; Clear(); }
     /// <summary>All keys released: used when the window loses focus, otherwise the walk would go on by itself.</summary>
-    public void Clear() { _letters.Clear(); _arrows.Clear(); _shift = false; }
+    public void Clear() { _letters.Clear(); _arrows.Clear(); _tappedLetters.Clear(); _tappedArrows.Clear(); _shift = false; }
 
     private static readonly HashSet<PhysicalKey> Letters = [PhysicalKey.W, PhysicalKey.A, PhysicalKey.S, PhysicalKey.D, PhysicalKey.Q, PhysicalKey.E];
 
@@ -39,14 +39,14 @@ public sealed class WalkDriver
         switch (e.Key)
         {
             case Key.Escape: _vm.LeaveWalkCommand.Execute(null); return true;
-            case Key.Up or Key.Down or Key.Left or Key.Right: _arrows.Add(e.Key); return true;
+            case Key.Up or Key.Down or Key.Left or Key.Right: _arrows.Add(e.Key); _tappedArrows.Add(e.Key); return true;
             case Key.Home: _vm.Walk?.ResetEye(); Touch(); return true;
             case Key.PageUp: _vm.LevelUpCommand.Execute(null); Touch(); return true;
             case Key.PageDown: _vm.LevelDownCommand.Execute(null); Touch(); return true;
             case Key.LeftShift or Key.RightShift: _shift = true; return true;
         }
         if (e.PhysicalKey == PhysicalKey.X) { _vm.ToggleWalkGhostCommand.Execute(null); Touch(); return true; }
-        if (Letters.Contains(e.PhysicalKey)) { _letters.Add(e.PhysicalKey); return true; }
+        if (Letters.Contains(e.PhysicalKey)) { _letters.Add(e.PhysicalKey); _tappedLetters.Add(e.PhysicalKey); return true; }
         return true;                                                                                  // anything else is swallowed too: W, V, Delete… must not start a tool in the dark
     }
 
@@ -62,10 +62,13 @@ public sealed class WalkDriver
     {
         var now = Stopwatch.GetTimestamp(); var dt = Math.Clamp((now - _last) / (double)Stopwatch.Frequency, 0, 0.1); _last = now;
         if (_vm.Walk is not { } w) return;
-        double fwd = (_letters.Contains(PhysicalKey.W) ? 1 : 0) - (_letters.Contains(PhysicalKey.S) ? 1 : 0) + (_arrows.Contains(Key.Up) ? 1 : 0) - (_arrows.Contains(Key.Down) ? 1 : 0);
-        double str = (_letters.Contains(PhysicalKey.D) ? 1 : 0) - (_letters.Contains(PhysicalKey.A) ? 1 : 0);
-        double vert = (_letters.Contains(PhysicalKey.E) ? 1 : 0) - (_letters.Contains(PhysicalKey.Q) ? 1 : 0);
-        double turn = (_arrows.Contains(Key.Left) ? 1 : 0) - (_arrows.Contains(Key.Right) ? 1 : 0);
+        // a key pressed and released between two frames still counts for this frame
+        bool L(PhysicalKey k) => _letters.Contains(k) || _tappedLetters.Contains(k); bool A(Key k) => _arrows.Contains(k) || _tappedArrows.Contains(k);
+        double fwd = (L(PhysicalKey.W) ? 1 : 0) - (L(PhysicalKey.S) ? 1 : 0) + (A(Key.Up) ? 1 : 0) - (A(Key.Down) ? 1 : 0);
+        double str = (L(PhysicalKey.D) ? 1 : 0) - (L(PhysicalKey.A) ? 1 : 0);
+        double vert = (L(PhysicalKey.E) ? 1 : 0) - (L(PhysicalKey.Q) ? 1 : 0);
+        double turn = (A(Key.Left) ? 1 : 0) - (A(Key.Right) ? 1 : 0);
+        _tappedLetters.Clear(); _tappedArrows.Clear();
         var before = (w.X, w.Y, w.EyeZ, w.Yaw);
         if (turn != 0) w.Turn(turn * 1.6 * dt, 0);
         w.Update(dt, new WalkInput(Math.Clamp(fwd, -1, 1), Math.Clamp(str, -1, 1), Math.Clamp(vert, -1, 1), _shift));

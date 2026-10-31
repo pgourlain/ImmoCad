@@ -169,4 +169,61 @@ public sealed class WalkArea
         }
         return bestYaw;
     }
+
+    /// <summary>Bounding box of the level's walls (mm), null without walls.</summary>
+    public (double X0, double Y0, double X1, double Y1)? WallBox()
+    {
+        if (_solids.Count == 0) return null;
+        return (_solids.Min(s => s.MinX), _solids.Min(s => s.MinY), _solids.Max(s => s.MaxX), _solids.Max(s => s.MaxY));
+    }
+
+    /// <summary>
+    /// How much free floor is reachable from a point, on a coarse grid (stops at <paramref name="capCells"/>): the number of cells, and whether the region leaks outside the walls'
+    /// bounding box (through a gap). A small region that does not leak is a closed pocket: a shaft, a closet.
+    /// </summary>
+    public (int Cells, bool Outside) Region(WalkPoint from, double eyeMm, int capCells = 6000, double cellMm = 250)
+    {
+        var box = WallBox(); if (box is not { } b) return (0, true);
+        var seen = new HashSet<(int, int)>(); var q = new Queue<(int, int)>(); (int, int) Cell(double x, double y) => ((int)Math.Floor((x - b.X0) / cellMm), (int)Math.Floor((y - b.Y0) / cellMm));
+        var start = Cell(from.X, from.Y); seen.Add(start); q.Enqueue(start); var outside = false;
+        while (q.Count > 0 && seen.Count < capCells)
+        {
+            var (cx, cy) = q.Dequeue(); double px = b.X0 + (cx + 0.5) * cellMm, py = b.Y0 + (cy + 0.5) * cellMm;
+            if (px < b.X0 || px > b.X1 || py < b.Y0 || py > b.Y1) { outside = true; continue; }                  // reached the open air: no need to look further from here
+            foreach (var (dx, dy) in new[] { (1, 0), (-1, 0), (0, 1), (0, -1) })
+            {
+                var n = (cx + dx, cy + dy); if (seen.Contains(n)) continue;
+                if (Collides(new WalkPoint(b.X0 + (n.Item1 + 0.5) * cellMm, b.Y0 + (n.Item2 + 0.5) * cellMm), eyeMm)) continue;
+                seen.Add(n); q.Enqueue(n);
+            }
+        }
+        return (seen.Count, outside);
+    }
+
+    /// <summary>The free point nearest to the centre of the region with the most free floor inside the walls' bounding box (the main hall, the corridor system), whether or not it leaks outside through a gap; null when none.</summary>
+    public WalkPoint? LargestRegionPoint(double eyeMm, double cellMm = 250)
+    {
+        var box = WallBox(); if (box is not { } b) return null;
+        int w = (int)Math.Ceiling((b.X1 - b.X0) / cellMm) + 2, h = (int)Math.Ceiling((b.Y1 - b.Y0) / cellMm) + 2;      // one cell of margin all round: the open air
+        var free = new bool[w, h]; var label = new int[w, h];
+        for (var i = 0; i < w; i++) for (var j = 0; j < h; j++) free[i, j] = !Collides(new WalkPoint(b.X0 + (i - 1 + 0.5) * cellMm, b.Y0 + (j - 1 + 0.5) * cellMm), eyeMm);
+        var sizes = new List<int> { 0 }; var sums = new List<(double X, double Y)> { (0, 0) };
+        for (var i = 0; i < w; i++) for (var j = 0; j < h; j++)
+        {
+            if (!free[i, j] || label[i, j] != 0) continue;
+            var id = sizes.Count; sizes.Add(0); sums.Add((0, 0)); var q = new Queue<(int, int)>(); q.Enqueue((i, j)); label[i, j] = id;
+            while (q.Count > 0)
+            {
+                var (x, y) = q.Dequeue(); if (x > 0 && y > 0 && x < w - 1 && y < h - 1) { sizes[id]++; sums[id] = (sums[id].X + x, sums[id].Y + y); }      // the margin only connects, it does not count
+                foreach (var (dx, dy) in new[] { (1, 0), (-1, 0), (0, 1), (0, -1) })
+                { int nx = x + dx, ny = y + dy; if (nx >= 0 && ny >= 0 && nx < w && ny < h && free[nx, ny] && label[nx, ny] == 0) { label[nx, ny] = id; q.Enqueue((nx, ny)); } }
+            }
+        }
+        var best = 0; for (var id = 1; id < sizes.Count; id++) if (sizes[id] > 0 && (best == 0 || sizes[id] > sizes[best])) best = id;
+        if (best == 0) return null;
+        double cx = sums[best].X / sizes[best], cy = sums[best].Y / sizes[best]; WalkPoint? pick = null; var bestD = double.MaxValue;
+        for (var i = 0; i < w; i++) for (var j = 0; j < h; j++)
+            if (label[i, j] == best && i > 0 && j > 0 && i < w - 1 && j < h - 1) { var d = (i - cx) * (i - cx) + (j - cy) * (j - cy); if (d < bestD) { bestD = d; pick = new WalkPoint(b.X0 + (i - 1 + 0.5) * cellMm, b.Y0 + (j - 1 + 0.5) * cellMm); } }
+        return pick;
+    }
 }

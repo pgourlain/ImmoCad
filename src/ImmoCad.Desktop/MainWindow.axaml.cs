@@ -127,7 +127,7 @@ public partial class MainWindow : Window
     {
         var c = View3D.Controller; c.WalkMode = Vm.IsWalk && View3D is GlViewport3D; Cube.IsVisible = !Vm.IsWalk;
         if (Overlay != null) Overlay.IsVisible = Vm.IsWalk;
-        if (Vm.IsWalk && View3D is GlViewport3D) Walker?.Start(); else Walker?.Stop();
+        if (Vm.IsWalk && View3D is GlViewport3D) { if (Walker is { Running: false }) View3D.Control.Focus(); Walker?.Start(); } else Walker?.Stop();
         c.Wireframe = Vm.Mode == ViewMode.Wireframe; c.XRay = Vm.XRay; c.CutAboveCurrent = Vm.CutAbove; c.Filter = Vm.LevelFilter switch { 0 => ImmoCad.Scene.LevelFilter.WholeBuilding, 1 => ImmoCad.Scene.LevelFilter.CurrentAndBelow, _ => ImmoCad.Scene.LevelFilter.CurrentOnly };
         if (Vm.Show3D) { View3D.Rebuild(); WatchGl(); }
     }
@@ -153,7 +153,10 @@ public partial class MainWindow : Window
                 Overlay = new WalkOverlay(Vm, () => Walker?.Touch()); View3DHost.Children.Add(Overlay);
                 Walker = new WalkDriver(Vm, () => View3D.Controller, () => Overlay?.Refresh());
                 if (View3D is GlViewport3D gl) gl.Hover += (text, at) => Overlay?.ShowHover(text, at);
-                KeyUp += (_, ke) => Walker?.OnKeyUp(ke); Deactivated += (_, _) => Walker?.Clear();
+                // tunnel: the walk's keys must work whichever control has the focus (a tab, a list…), those would otherwise use the arrows themselves
+                AddHandler(KeyDownEvent, (_, ke) => { if (Vm.IsWalk && ke.Source is not TextBox && Walker?.OnKeyDown(ke) == true) ke.Handled = true; }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+                AddHandler(KeyUpEvent, (_, ke) => Walker?.OnKeyUp(ke), Avalonia.Interactivity.RoutingStrategies.Tunnel);
+                Deactivated += (_, _) => Walker?.Clear();
             }
             Vm.PlanLookAt = () => Plan.LookAtMm; Vm.WalkAvailable = View3D is GlViewport3D;
             Vm.Changed += () => { Plan.Invalidate(); Cube2D.InvalidateVisual(); SyncView3D(); Elev.InvalidateVisual(); SiteMap.InvalidateVisual(); };

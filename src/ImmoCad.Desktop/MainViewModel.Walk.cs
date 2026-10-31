@@ -66,6 +66,8 @@ public partial class MainViewModel
             : _lastWalk.TryGetValue(level.Id, out var last) ? last
             : CorridorCenter(level) ?? (PlanLookAt?.Invoke() is { } p ? new(p.X, p.Y) : new(0, 0));
         var spot = area.NearestWalkable(start, WalkState.DefaultEyeMm);
+        if (at == null && area.Region(spot, WalkState.DefaultEyeMm) is { Outside: false, Cells: < 400 })      // under 25 m² and closed in: a shaft or a closet, not where anyone wants to start
+            if (area.LargestRegionPoint(WalkState.DefaultEyeMm) is { } hall) spot = hall;
         Walk = new WalkState(Building, level, spot, area.LongestFreeYaw(spot, WalkState.DefaultEyeMm));
         Walk.Notice += OnWalkNotice;
         if (Settings.WalkGhost) Walk.SetGhost(true);

@@ -242,4 +242,31 @@ public class WalkTests
         Assert.NotSame(l, b.Levels[0]); Assert.True(s.Rebind()); Assert.Same(b.Levels[0], s.Level);
         b.Levels.Clear(); Assert.False(s.Rebind());
     }
+
+    /// <summary>A 10 m × 10 m hall (walls 200 mm) with a closed 1.4 m closet in the middle.</summary>
+    private static (Building B, Level L) HallWithCloset(bool gap = false)
+    {
+        var l = new Level { Name = "H", HeightMm = 2700 };
+        l.Walls.Add(new Wall { Footprint = Rect(0, 0, 10000, 200) }); l.Walls.Add(new Wall { Footprint = Rect(0, 9800, gap ? 4000 : 10000, 10000) });
+        if (gap) l.Walls.Add(new Wall { Footprint = Rect(5000, 9800, 10000, 10000) });                                                // a 1 m gap in the north wall
+        l.Walls.Add(new Wall { Footprint = Rect(0, 200, 200, 9800) }); l.Walls.Add(new Wall { Footprint = Rect(9800, 200, 10000, 9800) });
+        l.Walls.Add(new Wall { Footprint = Rect(4000, 4000, 5400, 5400), Holes = [Rect(4200, 4200, 5200, 5200)] });                  // closet: walls around a 1 m room
+        var b = new Building(); b.Levels.Add(l); return (b, l);
+    }
+
+    [Fact] public void A_closed_closet_is_a_pocket_and_the_hall_is_the_largest_region()
+    {
+        var (b, l) = HallWithCloset(); var area = new WalkArea(b, l);
+        var inCloset = new WalkPoint(4700, 4700); Assert.False(area.Collides(inCloset, 1600));
+        var (cells, outside) = area.Region(inCloset, 1600); Assert.False(outside); Assert.InRange(cells, 1, 40);
+        var (hallCells, hallOutside) = area.Region(new WalkPoint(2000, 2000), 1600); Assert.False(hallOutside); Assert.True(hallCells > 400);
+        var hall = area.LargestRegionPoint(1600)!.Value; Assert.False(area.Collides(hall, 1600)); Assert.True(area.Region(hall, 1600).Cells > 400);
+    }
+
+    [Fact] public void A_gap_in_the_outer_wall_lets_the_region_leak_outside()
+    {
+        var (b, l) = HallWithCloset(gap: true); var area = new WalkArea(b, l);
+        Assert.True(area.Region(new WalkPoint(2000, 2000), 1600).Outside);
+        var hall = area.LargestRegionPoint(1600)!.Value; Assert.True(area.Region(hall, 1600).Outside);                                  // the big region wins even though it leaks, never the closet
+    }
 }
