@@ -9,7 +9,7 @@ namespace ImmoCad.Desktop;
 
 /// <summary>
 /// Small orientation cube drawn over the 3D view: it follows the camera, click a face to look at it (front / back / left / right / top / bottom),
-/// drag to orbit, ⌂ for the isometric view.
+/// drag to orbit, ⌂ for the isometric view. In 2D, two curved arrows turn the drawing a quarter turn about the axis the view looks along.
 /// </summary>
 public sealed class ViewCube : Control
 {
@@ -20,6 +20,10 @@ public sealed class ViewCube : Control
     // 2D mode: the cube chooses the plane of the canvas (top = XY, front/back = XZ, right/left = YZ); drag turns the cube only, the current face is tinted
     public Func<Face>? Current { get; set; } public Action<Face>? FaceChosen { get; set; }
     private bool Flat2D => FaceChosen != null; private double _yaw2 = 0.6, _pitch2 = 0.5;
+    /// <summary>Curved arrow clicked: -1 counter-clockwise, +1 clockwise.</summary>
+    public Action<int>? Turned { get; set; }
+    /// <summary>Extra yaw of the 2D cube, so that it follows the turned drawing.</summary>
+    public Func<double>? Spin { get; set; }
 
     public ViewCube() { Width = 112; Height = 112; Focusable = false; ClipToBounds = false; }
 
@@ -42,11 +46,11 @@ public sealed class ViewCube : Control
     private const double Controller0Yaw = 0;
 
     private static string Name(Face f) => T("cube." + f.ToString().ToLowerInvariant());
-    private double CubeScale => Math.Min(Bounds.Width, Bounds.Height) * 0.26;
+    private double CubeScale => Math.Min(Bounds.Width, Bounds.Height) * (Flat2D ? 0.185 : 0.26);   // 2D: the control is larger, the outer ring holds the curved arrows
     private Point Centre => new(Bounds.Width / 2, Bounds.Height / 2 + 2);
-    private Rect HomeRect => new(2, 2, 20, 20);
+    private Rect HomeRect => Flat2D ? new(16, Bounds.Height - 36, 20, 20) : new(2, 2, 20, 20);
 
-    private OrbitCamera View() { if (Flat2D) return new OrbitCamera { Yaw = _yaw2, Pitch = _pitch2, Distance = 2, Target = (0, 0, 0) }; var c = Controller?.Camera; return new OrbitCamera { Yaw = c?.Yaw ?? Math.PI / 4, Pitch = c?.Pitch ?? Math.PI / 5, Distance = 2, Target = (0, 0, 0) }; }
+    private OrbitCamera View() { if (Flat2D) return new OrbitCamera { Yaw = _yaw2 + (Spin?.Invoke() ?? 0), Pitch = _pitch2, Distance = 2, Target = (0, 0, 0) }; var c = Controller?.Camera; return new OrbitCamera { Yaw = c?.Yaw ?? Math.PI / 4, Pitch = c?.Pitch ?? Math.PI / 5, Distance = 2, Target = (0, 0, 0) }; }
     private Point S(OrbitCamera cam, (double X, double Y, double Z) v) { var (x, y, _) = cam.Project(v.X, v.Y, v.Z); return new(Centre.X + x * CubeScale, Centre.Y - y * CubeScale); }
 
     private List<(Face Face, Point[] Poly)> Visible()
@@ -69,6 +73,26 @@ public sealed class ViewCube : Control
         return inside;
     }
 
+    private const double ArrowGap = 10 * Math.PI / 180, ArrowBody = 42 * Math.PI / 180, ArrowHead = 16 * Math.PI / 180;
+    private Point OnCircle(double r, double a) => new(Centre.X + r * Math.Cos(a), Centre.Y + r * Math.Sin(a));
+
+    /// <summary>Outline of a curved arrow: it starts near the top of the cube and sweeps down the left (-1) or right (+1) side.</summary>
+    private Point[] ArrowPoly(int dir)
+    {
+        double A(double from12) => -Math.PI / 2 + dir * from12;
+        const int n = 8; var body = Enumerable.Range(0, n + 1).Select(i => ArrowGap + ArrowBody * i / n).ToList(); var end = ArrowGap + ArrowBody;
+        return [.. body.Select(a => OnCircle(61, A(a))), OnCircle(66, A(end)), OnCircle(57.5, A(end + ArrowHead)), OnCircle(49, A(end)), .. Enumerable.Reverse(body).Select(a => OnCircle(54, A(a)))];
+    }
+
+    /// <summary>Curved arrow under p (-1 / +1); the cube's faces come first. The hit zone is wider than the drawing.</summary>
+    public int? ArrowAt(Point p)
+    {
+        if (!Flat2D || Turned == null || FaceAt(p) != null) return null;
+        double dx = p.X - Centre.X, dy = p.Y - Centre.Y, r = Math.Sqrt(dx * dx + dy * dy); if (r < 46 || r > 70) return null;
+        var from12 = Math.Atan2(dx, -dy);                                                       // angle from the top, positive on the right
+        return Math.Abs(from12) < ArrowGap || Math.Abs(from12) > ArrowGap + ArrowBody + ArrowHead ? null : Math.Sign(from12);
+    }
+
     public override void Render(DrawingContext ctx)
     {
         var dark = ActualThemeVariant == Avalonia.Styling.ThemeVariant.Dark;
@@ -85,12 +109,19 @@ public sealed class ViewCube : Control
             var ft = new FormattedText(Name(face), System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, Math.Clamp(Math.Sqrt(area) / 4.2, 8, 12), text);
             ctx.DrawText(ft, new Point(cx - ft.Width / 2, cy - ft.Height / 2));
         }
+        if (Flat2D && Turned != null)
+            foreach (var dir in new[] { -1, 1 })
+            {
+                var poly = ArrowPoly(dir); var g = new StreamGeometry(); using (var c = g.Open()) { c.BeginFigure(poly[0], true); foreach (var q in poly.Skip(1)) c.LineTo(q); c.EndFigure(true); }
+                ctx.DrawGeometry(_arrowHover == dir ? ArrowOn : fillOff, edge, g);
+            }
         ctx.DrawRectangle(_hover == null && _homeHover ? fillOn : fillOff, edge, HomeRect, 4);
         var home = new FormattedText("⌂", System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 14, text);
         ctx.DrawText(home, new Point(HomeRect.X + 10 - home.Width / 2, HomeRect.Y + 10 - home.Height / 2));
     }
 
-    private bool _homeHover;
+    private bool _homeHover; private int? _arrowHover;
+    private static readonly IBrush ArrowOn = new SolidColorBrush(Color.FromRgb(160, 216, 250));
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         var p = e.GetPosition(this);
@@ -100,11 +131,12 @@ public sealed class ViewCube : Control
             if (Flat2D) { _yaw2 -= (p.X - l.X) * 0.012; _pitch2 = Math.Clamp(_pitch2 + (p.Y - l.Y) * 0.012, 0.05, 1.5); _drag = p; InvalidateVisual(); return; }
             Controller?.Camera.Orbit(-(p.X - l.X) * 0.012, (p.Y - l.Y) * 0.012); _drag = p; Controller?.Invalidate?.Invoke(); InvalidateVisual(); return;
         }
-        var f = FaceAt(p); var h = f == null && HomeRect.Contains(p);
-        if (f != _hover || h != _homeHover) { _hover = f; _homeHover = h; InvalidateVisual(); }
+        var f = FaceAt(p); var h = f == null && HomeRect.Contains(p); var ar = ArrowAt(p);
+        if (ar != _arrowHover) ToolTip.SetTip(this, ar is { } d ? T(d < 0 ? "cube.turnleft" : "cube.turnright") : null);
+        if (f != _hover || h != _homeHover || ar != _arrowHover) { _hover = f; _homeHover = h; _arrowHover = ar; InvalidateVisual(); }
     }
-    protected override void OnPointerExited(PointerEventArgs e) { _hover = null; _homeHover = false; InvalidateVisual(); }
-    protected override void OnPointerPressed(PointerPressedEventArgs e) { _drag = e.GetPosition(this); _dragged = false; e.Pointer.Capture(this); e.Handled = true; }
+    protected override void OnPointerExited(PointerEventArgs e) { _hover = null; _homeHover = false; _arrowHover = null; ToolTip.SetTip(this, null); InvalidateVisual(); }
+    protected override void OnPointerPressed(PointerPressedEventArgs e) { var p = e.GetPosition(this); _drag = ArrowAt(p) == null ? p : null; _dragged = false; e.Pointer.Capture(this); e.Handled = true; }   // an arrow is a click, not a drag
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
         var p = e.GetPosition(this); _drag = null; e.Pointer.Capture(null); e.Handled = true;
@@ -112,10 +144,10 @@ public sealed class ViewCube : Control
         Click(p);
     }
 
-    /// <summary>Click on a face → look at it; on ⌂ → isometric view.</summary>
+    /// <summary>Click on a face → look at it; on ⌂ → isometric view; on a curved arrow (2D) → quarter turn.</summary>
     public void Click(Point p)
     {
-        if (Flat2D) { if (FaceAt(p) is { } f2 && f2 != Face.Bottom) FaceChosen!(f2); else if (HomeRect.Contains(p)) FaceChosen!(Face.Top); InvalidateVisual(); return; }
+        if (Flat2D) { if (FaceAt(p) is { } f2 && f2 != Face.Bottom) FaceChosen!(f2); else if (ArrowAt(p) is { } dir) Turned?.Invoke(dir); else if (HomeRect.Contains(p)) FaceChosen!(Face.Top); InvalidateVisual(); return; }
         if (Controller is not { } c) return;
         if (FaceAt(p) is { } f) { var (yaw, pitch) = Look(f); c.LookFrom(f is Face.Top or Face.Bottom ? c.Camera.Yaw : yaw, pitch); }
         else if (HomeRect.Contains(p)) c.LookFrom(Math.PI / 4, Math.PI / 5);

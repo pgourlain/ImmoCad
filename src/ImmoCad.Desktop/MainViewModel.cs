@@ -80,12 +80,14 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _status = T("ready");
     [ObservableProperty] private string _hint = T("hint.select");
     public int WallThicknessMm { get; set; } = 200;
+    public string WallAlignLabel => T("align." + WallAlign.ToString().ToLowerInvariant());
+    [RelayCommand] private void CycleWallAlignOption() => CycleWallAlign();
     /// <summary>Side of the drawn line the new wall lies on (Space cycles it while drawing).</summary>
     public ImmoCad.Core.Geometry.WallAlign WallAlign { get; private set; } = ImmoCad.Core.Geometry.WallAlign.Center;
     public void CycleWallAlign()
     {
         WallAlign = (ImmoCad.Core.Geometry.WallAlign)(((int)WallAlign + 1) % 3);
-        Status = T("align." + WallAlign.ToString().ToLowerInvariant()); OnPropertyChanged(nameof(WallAlign)); Changed?.Invoke();
+        Status = WallAlignLabel; OnPropertyChanged(nameof(WallAlign)); OnPropertyChanged(nameof(WallAlignLabel)); Changed?.Invoke();
     }
 
     // ---- 3D ----
@@ -162,6 +164,24 @@ public partial class MainViewModel : ObservableObject
     // ---- Riser extent (from level X to level Y) ----
     public ObservableCollection<string> LevelNames { get; } = new();
     [ObservableProperty] private int _extentFrom; [ObservableProperty] private int _extentTo; [ObservableProperty] private string _extentInfo = "";
+    [ObservableProperty] private int _segDiameter = 20;
+    [ObservableProperty] private NetworkType _segType;
+    /// <summary>Gives the whole connected run of the selected pipe the chosen type (it moves to the network of that type). One history step.</summary>
+    [RelayCommand] private void ApplyPipeType()
+    {
+        if (SelectedSegment is not { } sel) return;
+        if (Actions.ChangeRunType(sel.NetworkId, sel.SegmentId, SegType) is not { } net) { Status = T("nochange"); return; }
+        Status = T("ptype.changed"); Refresh(); SelectSegment(net.Id, sel.SegmentId);
+    }
+    /// <summary>Applies the diameter to the selected pipe; on a riser, to every segment of that column (same X, Y). One history step.</summary>
+    [RelayCommand] private void ApplyDiameter()
+    {
+        if (SelectedSegment is not { } sel) return;
+        var all = NetworkQueries.All(Building).Where(x => x.Network.Id == sel.NetworkId).ToList(); var one = all.FirstOrDefault(x => x.Segment.Id == sel.SegmentId); if (one == null) return;
+        var ids = all.Where(x => x == one || NetworkQueries.IsVertical(one) && NetworkQueries.IsVertical(x) && x.A.X == one.A.X && x.A.Y == one.A.Y).Select(x => x.Segment.Id).ToList();
+        Actions.SetSegmentsDiameter(sel.NetworkId, ids, Math.Clamp(SegDiameter, 8, 200)); Status = T("diam.changed");
+        var keep = sel; Refresh(); SelectSegment(keep.NetworkId, keep.SegmentId);
+    }
     /// <summary>Fills the extent fields from the selected vertical run (levels it spans).</summary>
     private void RefreshExtent()
     {
@@ -170,6 +190,7 @@ public partial class MainViewModel : ObservableObject
         var n = Building.Networks.FirstOrDefault(x => x.Id == sel.NetworkId); if (n == null || n.Nodes.Count == 0) return;
         var lo = n.Nodes.Min(x => x.Position.Z); var hi = n.Nodes.Max(x => x.Position.Z);
         ExtentFrom = Math.Max(0, Building.Levels.FindLastIndex(l => l.AltitudeMm <= lo)); ExtentTo = Math.Max(0, Building.Levels.FindLastIndex(l => l.AltitudeMm < hi));
+        SegType = n.Type; if (n.Segments.FirstOrDefault(x => x.Id == sel.SegmentId) is { } sg) SegDiameter = sg.DiameterMm;
         ExtentInfo = T("extent.info", n.Name, (lo / 1000.0).ToString("0.00"), (hi / 1000.0).ToString("0.00"));
     }
     [RelayCommand] private void ApplyExtent()
@@ -304,9 +325,37 @@ public partial class MainViewModel : ObservableObject
     public void CommitPipeSide(IReadOnlyList<PointMm> pts)
     {
         if (pts.Count < 2 || Building.Levels.Count == 0) return;
-        var plane = SidePlaneModel(); var net = Building.Networks.FirstOrDefault(n => n.Type == PipeType && !n.Locked) is { } ex ? ex : Actions.AddNetwork(PipeType.ToString(), PipeType);
-        Actions.AddPipeRun(net.Id, pts.Select(p => { var xy = plane.ToPlan(p.X); return new PointMm3(xy.X, xy.Y, p.Y); }).ToList(), PipeDiameter);
-        Status = T("pipe.segments", pts.Count - 1); Refresh();
+        var plane = SidePlaneModel();
+        CommitRun(pts.Select(p => { var xy = plane.ToPlan(p.X); return new PointMm3(xy.X, xy.Y, p.Y); }).ToList());
+    }
+
+    /// <summary>Palette object clicked on a side view (canvas point = u, Z): equipment stands at that height on the view plane; an inline part goes on the nearest pipe seen there.</summary>
+    public void PlaceFromPaletteSide(PointMm at)
+    {
+        if (PaletteId == null || Building.Levels.Count == 0) { Status = T("palette.pick"); return; }
+        var e = EquipmentCatalog.Find(PaletteId)!; var plane = SidePlaneModel();
+        if (e.Inline)
+        {
+            (SegmentRef Seg, PointMm3 P, double D)? best = null;
+            foreach (var s in NetworkQueries.All(Building).Where(x => !x.Network.Locked))
+            {
+                double u0 = plane.ProjectU(new(s.A.X, s.A.Y)), u1 = plane.ProjectU(new(s.B.X, s.B.Y)), du = u1 - u0, dz = s.B.Z - s.A.Z, l2 = du * du + dz * dz;
+                var t = l2 < 1e-6 ? 0 : Math.Clamp(((at.X - u0) * du + (at.Y - s.A.Z) * dz) / l2, 0, 1);
+                var d = Math.Sqrt(Math.Pow(u0 + t * du - at.X, 2) + Math.Pow(s.A.Z + t * dz - at.Y, 2));
+                var q = new PointMm3((int)Math.Round(s.A.X + t * (s.B.X - s.A.X)), (int)Math.Round(s.A.Y + t * (s.B.Y - s.A.Y)), (int)Math.Round(s.A.Z + t * dz));
+                if (d <= 250 && (best == null || d < best.Value.D) && PlacementRules.Check(e, q, s.Network).Valid) best = (s, q, d);
+            }
+            if (best is not { } hit) { Status = T("valve.onpipe"); return; }
+            Actions.InsertComponent(hit.Seg.Network.Id, hit.Seg.Segment.Id, hit.P, e.Id); Status = T("placed.onpipe", e.Name);
+        }
+        else
+        {
+            var z = ElevationPlane.SnapZ(Building, at.Y);
+            var l = Building.Levels.LastOrDefault(x => x.AltitudeMm <= z) ?? Building.Levels[0];
+            Actions.AddEquipment(l.Id, e.Id, plane.ToPlan(at.X), Math.Max(0, z - l.AltitudeMm)); Status = T("placed", e.Name);
+        }
+        Recent.Remove(e.Id); Recent.Insert(0, e.Id); if (Recent.Count > 6) Recent.RemoveAt(6);
+        Refresh();
     }
     /// <summary>Riser clicked on a side view: a vertical pipe over the whole building at that horizontal position.</summary>
     public void PlaceRiserSide(double u)
@@ -462,10 +511,52 @@ public partial class MainViewModel : ObservableObject
     public void PlaceSpace(PointMm click)
     {
         if (CurrentLevel is not { } l) return;
-        var outline = SpaceFinder.Find(l, click);
-        if (outline == null) { Status = T("space.open"); return; }
-        var n = l.Spaces.Count + 1; var sp = Actions.AddSpace(l.Id, outline, Token("space.default.name", n), NewSpaceKind);
-        Refresh(); SelectSpace(sp.Id); Status = T("space.added", SpaceFinder.AreaMm2(sp.Outline) / 1e6);
+        if (SpaceAt(click) != null) { SpaceHover = null; Status = T("space.exists"); return; }   // one room per place: select it instead
+        // the outline shown under the cursor when the click falls in it, else a fresh probe (fast once the walls are rasterised)
+        var probe = SpaceHover is { Outline: { } ho } h && SpaceFinder.Contains(ho, click) ? h : SpaceFinder.Probe(GridFor(l), click);
+        SpaceHover = null;
+        if (probe.Outline == null) { Status = T("space.open"); return; }
+        var n = l.Spaces.Count + 1; var sp = Actions.AddSpace(l.Id, probe.Outline, Token("space.default.name", n), NewSpaceKind);
+        Refresh(); SelectSpace(sp.Id);
+        Status = probe.Leaks.Count > 0 ? T("space.added.gaps", SpaceFinder.AreaMm2(sp.Outline) / 1e6, probe.Leaks.Count) : T("space.added", SpaceFinder.AreaMm2(sp.Outline) / 1e6);
+    }
+
+    // ---- room tool: the walls are rasterised once per wall set, probes under the cursor run off the UI thread ----
+    [ObservableProperty] private bool _spaceBusy;
+    /// <summary>Room found under the cursor after it rested there (outline and bridged openings), null while it moves.</summary>
+    public SpaceProbe? SpaceHover { get; set; }
+    private SpaceGrid? _spaceGrid; private (Guid Level, int Key) _spaceGridFor;
+    private CancellationTokenSource? _probeCts;
+
+    private static int WallsKey(Level l)
+    {
+        var h = new HashCode();
+        foreach (var w in l.Walls) { foreach (var p in w.Footprint) h.Add(p); foreach (var r in w.Holes) foreach (var p in r) h.Add(p); h.Add(-1); }
+        return h.ToHashCode();
+    }
+    private SpaceGrid GridFor(Level l)
+    {
+        var key = (l.Id, WallsKey(l));
+        if (_spaceGrid == null || _spaceGridFor != key) { _spaceGrid = new SpaceGrid(l.Walls); _spaceGridFor = key; }
+        return _spaceGrid;
+    }
+
+    /// <summary>Finds the room under a point in the background (the walls are copied first); null when cancelled by a newer probe.</summary>
+    public async Task<SpaceProbe?> ProbeSpaceAsync(PointMm at)
+    {
+        if (CurrentLevel is not { } l) return null;
+        _probeCts?.Cancel(); var cts = _probeCts = new CancellationTokenSource();
+        var key = (l.Id, WallsKey(l)); var grid = _spaceGrid != null && _spaceGridFor == key ? _spaceGrid : null;
+        var walls = grid == null ? l.Walls.Select(w => new Wall { Footprint = w.Footprint.ToList(), Holes = w.Holes.Select(r => r.ToList()).ToList() }).ToList() : null;
+        SpaceBusy = true;
+        try
+        {
+            var (g, probe) = await Task.Run(() => { var g = grid ?? new SpaceGrid(walls!); return (g, SpaceFinder.Probe(g, at, ct: cts.Token)); }, cts.Token);
+            _spaceGrid = g; _spaceGridFor = key;
+            return cts.IsCancellationRequested ? null : probe;
+        }
+        catch (OperationCanceledException) { return null; }
+        finally { if (_probeCts == cts) SpaceBusy = false; }
     }
 
     public void NumberClick(PointMm click)
@@ -559,17 +650,16 @@ public partial class MainViewModel : ObservableObject
     {
         if (Building.Levels.Count == 0) return [];
         var (types, spacing) = RiserTypes(); var dia = RiserTemplate == "tpl.drain" ? Math.Max(RiserDiameter, 100) : RiserDiameter;
-        var p = RiserSnap.SnapRow(at, spacing, types.Count, dia, CurrentLevel?.Walls.Select(w => (IReadOnlyList<PointMm>)w.Footprint) ?? [], quarterTurns: RiserTurns); var (sx, sy) = RiserSnap.RowStep(RiserTurns);
+        var p = RiserSnap.SnapRow(at, spacing, types.Count, dia, [], quarterTurns: RiserTurns); var (sx, sy) = RiserSnap.RowStep(RiserTurns);     // risers go where clicked: no pull towards the walls
         return types.Select((t, i) => (new PointMm(p.X + sx * i * spacing, p.Y + sy * i * spacing), t, dia)).ToList();
     }
 
-    /// <summary>Places a riser (or a template of several) at the point, snapped 50 mm from wall faces. One history step.</summary>
+    /// <summary>Places a riser (or a template of several) at the point. One history step.</summary>
     public void PlaceRiser(PointMm at)
     {
         if (Building.Levels.Count == 0) return;
-        var polys = CurrentLevel?.Walls.Select(w => (IReadOnlyList<PointMm>)w.Footprint) ?? [];
         var (types, spacing) = RiserTypes(); var dia = RiserTemplate == "tpl.drain" ? Math.Max(RiserDiameter, 100) : RiserDiameter;
-        var p = RiserSnap.SnapRow(at, spacing, types.Count, dia, polys, quarterTurns: RiserTurns);
+        var p = RiserSnap.SnapRow(at, spacing, types.Count, dia, [], quarterTurns: RiserTurns);                                  // where clicked, same as the preview
         var lo = Math.Clamp(RiserFromIndex, 0, Building.Levels.Count - 1); var hi = Math.Clamp(RiserToIndex, 0, Building.Levels.Count - 1);
         var from = RiserWholeBuilding ? Building.Levels[0].AltitudeMm : Building.Levels[Math.Min(lo, hi)].AltitudeMm;
         var to = RiserWholeBuilding ? Building.Levels[^1].AltitudeMm + Building.Levels[^1].HeightMm : Building.Levels[Math.Max(lo, hi)].AltitudeMm + Building.Levels[Math.Max(lo, hi)].HeightMm;
@@ -582,9 +672,46 @@ public partial class MainViewModel : ObservableObject
     {
         if (CurrentLevel is not { } l || pts.Count < 2) return;
         var z = l.AltitudeMm + PipeElevation;
-        var net = Building.Networks.FirstOrDefault(n => n.Type == PipeType && !n.Locked) is { } ex ? ex : Actions.AddNetwork(PipeType.ToString(), PipeType);
-        Actions.AddPipeRun(net.Id, pts.Select(p => new PointMm3(p.X, p.Y, z)).ToList(), PipeDiameter);
-        Status = T("pipe.segments", pts.Count - 1); Refresh();
+        CommitRun(pts.Select(p => new PointMm3(p.X, p.Y, z)).ToList(), askEnd: true);
+    }
+
+    /// <summary>Set by the plan view: shows the heights a pipe can join a riser at (label, Z) and calls back with the chosen Z, or null when dismissed. Unset: the pipe joins at its own height.</summary>
+    public Action<IReadOnlyList<(string Label, int Z)>, Action<int?>>? AskRiserHeight { get; set; }
+
+    /// <summary>Adds a pipe run; an end that lands on a riser goes to its exact X, Y and joins it, so the pipe takes the riser's network (type, colour) whatever the tool's type; the fitting follows from the topology.</summary>
+    private void CommitRun(List<PointMm3> pts, bool askEnd = false)
+    {
+        Network? onRiser = null; PointMm3? column = null;
+        foreach (var i in new[] { 0, pts.Count - 1 })
+        {
+            var q = pts[i];
+            var hit = NetworkQueries.Nearest(Building, q, 250, s => NetworkQueries.IsVertical(s) && !s.Network.Locked && (onRiser == null || s.Network == onRiser)
+                && q.Z >= Math.Min(s.A.Z, s.B.Z) && q.Z <= Math.Max(s.A.Z, s.B.Z));
+            if (hit is { } h) { onRiser = h.Segment.Network; pts[i] = new PointMm3(h.Segment.A.X, h.Segment.A.Y, q.Z); column ??= pts[i]; }
+        }
+        if (askEnd && column is { } col && onRiser != null && AskRiserHeight is { } ask)
+        {   // the column spans several heights: top, bottom or where the pipe is
+            var same = NetworkQueries.All(Building).Where(x => x.Network == onRiser && NetworkQueries.IsVertical(x) && x.A.X == col.X && x.A.Y == col.Y).ToList();
+            int lo = same.Min(x => Math.Min(x.A.Z, x.B.Z)), hi = same.Max(x => Math.Max(x.A.Z, x.B.Z)); string M(int z) => (z / 1000.0).ToString("0.00");
+            var options = new List<(string, int)>();
+            if (hi != col.Z) options.Add((T("riser.end.top", M(hi)), hi));
+            if (lo != col.Z) options.Add((T("riser.end.bottom", M(lo)), lo));
+            if (options.Count > 0)
+            {
+                options.Add((T("riser.end.here", M(col.Z)), col.Z));
+                ask(options, z => { if (z is not { } cz) { Status = T("nochange"); return; } FinishRun(pts.Select(p => p with { Z = cz }).ToList(), onRiser); });
+                return;
+            }
+        }
+        FinishRun(pts, onRiser);
+    }
+
+    private void FinishRun(List<PointMm3> pts, Network? onRiser)
+    {
+        if (pts.Zip(pts.Skip(1)).Any(x => x.First == x.Second)) { Status = T("nochange"); return; }
+        var net = onRiser ?? (Building.Networks.FirstOrDefault(n => n.Type == PipeType && !n.Locked) is { } ex ? ex : Actions.AddNetwork(PipeType.ToString(), PipeType));
+        Actions.AddPipeRun(net.Id, pts, PipeDiameter);
+        Status = onRiser != null ? T("pipe.joined") : T("pipe.segments", pts.Count - 1); Refresh();
     }
 
     // ---- Palette objects ----
@@ -592,26 +719,37 @@ public partial class MainViewModel : ObservableObject
     {
         var e = PaletteId == null ? null : EquipmentCatalog.Find(PaletteId); if (e == null || CurrentLevel is not { } l) return null;
         if (!e.Inline) return null;
-        return FindPipeFor(at, l, e) is null ? T("valve.onpipe") : null;
+        return FindPipeFor(at, l, e) is null ? Refusal(at, l, e) : null;
     }
+
+    /// <summary>Why an inline part cannot go here: the nearest pipe refuses it (wrong network) or there is no pipe.</summary>
+    private string Refusal(PointMm at, Level l, CatalogEntry e) => NearestPipe(at, l) is { } n && !PlacementRules.Check(e, n.Point, n.Segment.Network).Valid ? PlacementRules.Check(e, n.Point, n.Segment.Network).Hint ?? T("valve.onpipe") : T("valve.onpipe");
 
     /// <summary>Where the palette object would land at this point (same snapping as the real placement). Inline parts (valves…) land on the nearest pipe; <c>Valid</c> is false when there is none.</summary>
-    public (CatalogEntry Entry, PointMm At, bool Valid)? PalettePreview(PointMm at)
+    public (CatalogEntry Entry, PointMm At, bool Valid, int RotationDeg, string Info)? PalettePreview(PointMm at)
     {
         var e = PaletteId == null ? null : EquipmentCatalog.Find(PaletteId); if (e == null || CurrentLevel is not { } l) return null;
-        if (e.Inline) return FindPipeFor(at, l, e) is { } hit ? (e, new PointMm(hit.P.X, hit.P.Y), true) : (e, at, false);
-        return (e, RiserSnap.Snap(at, l.Walls.Select(w => (IReadOnlyList<PointMm>)w.Footprint), offsetMm: e.DepthMm / 2, reachMm: 400), true);
+        if (e.Inline)
+            return FindPipeFor(at, l, e) is { } hit
+                ? (e, new PointMm(hit.P.X, hit.P.Y), true, PipeAngleDeg(hit.Seg), $"{e.Name} · {ImmoCad.Core.Translations.Enum_(hit.Seg.Network.Type)} Ø{hit.Seg.Segment.DiameterMm}")
+                : (e, at, false, NearestPipe(at, l) is { } n ? PipeAngleDeg(n.Segment) : 0, Refusal(at, l, e));
+        return (e, RiserSnap.Snap(at, l.Walls.Select(w => (IReadOnlyList<PointMm>)w.Footprint), offsetMm: e.DepthMm / 2, reachMm: 400), true, 0, e.Name);
     }
+
+    /// <summary>Direction of a pipe on the plan in degrees: inline parts are drawn along it (vertical risers read 0).</summary>
+    public static int PipeAngleDeg(SegmentRef s) => (int)Math.Round(Math.Atan2(s.B.Y - s.A.Y, s.B.X - s.A.X) * 180 / Math.PI);
 
     /// <summary>Outline of the room a click would create with the space tool (null when the walls are not closed there).</summary>
-    public List<PointMm>? SpacePreview(PointMm at) => CurrentLevel is { } l ? SpaceFinder.Find(l, at) : null;
+    public List<PointMm>? SpacePreview(PointMm at) => CurrentLevel is { } l ? SpaceFinder.Probe(GridFor(l), at).Outline : null;
 
-    private (SegmentRef Seg, PointMm3 P)? FindPipeFor(PointMm at, Level l, CatalogEntry e)
+    private (SegmentRef Segment, PointMm3 Point, double Distance)? NearestPipe(PointMm at, Level l)
     {
         var near = NetworkQueries.Nearest(Building, new PointMm3(at.X, at.Y, l.AltitudeMm + PipeElevation), 250, s => !s.Network.Locked && !NetworkQueries.IsVertical(s) && s.A.Z >= l.AltitudeMm && s.A.Z < l.AltitudeMm + l.HeightMm);
-        near ??= NetworkQueries.Nearest(Building, new PointMm3(at.X, at.Y, l.AltitudeMm + 1000), 250, s => !s.Network.Locked && NetworkQueries.IsVertical(s));
-        return near is { } n && PlacementRules.Check(e, n.Point, n.Segment.Network).Valid ? (n.Segment, n.Point) : null;
+        return near ?? NetworkQueries.Nearest(Building, new PointMm3(at.X, at.Y, l.AltitudeMm + 1000), 250, s => !s.Network.Locked && NetworkQueries.IsVertical(s));
     }
+
+    private (SegmentRef Seg, PointMm3 P)? FindPipeFor(PointMm at, Level l, CatalogEntry e) =>
+        NearestPipe(at, l) is { } n && PlacementRules.Check(e, n.Point, n.Segment.Network).Valid ? (n.Segment, n.Point) : null;
 
     public void PlaceFromPalette(PointMm at)
     {
@@ -702,6 +840,9 @@ public partial class MainViewModel : ObservableObject
     public bool IsMeasureTool => Tool == ToolKind.Measure;
     public bool IsNumberTool => Tool == ToolKind.NumberCellars;
     public bool IsStraightenTool => Tool == ToolKind.Straighten;
+    /// <summary>The Options tab only shows what the active tool has; a tool without options says so.</summary>
+    public bool HasToolOptions => Tool is ToolKind.DrawWall or ToolKind.Riser or ToolKind.DrawPipe or ToolKind.Align or ToolKind.Straighten;
+    public bool HasNoToolOptions => !HasToolOptions;
     public bool IsStretchTool => Tool == ToolKind.Stretch;
     public string SelectionText => SelectedEquipment is { } se ? T("eq.selected", EquipmentCatalog.Find(se.CatalogId)?.Name ?? se.CatalogId) : SelectedSpaceId != null ? T("space.selected") : SelectedOpening != null ? T("opening.selected") : SelectedSegment != null ? T("pipe.selected") : SelectedWalls.Count == 0 ? T("no.selection") : T("walls.selected", SelectedWalls.Count);
 
@@ -734,8 +875,9 @@ public partial class MainViewModel : ObservableObject
     partial void OnModeChanged(ViewMode value) { if (value == ViewMode.Site) { FocusSite(); PanelTab = 4; } OnPropertyChanged(nameof(ShowSideControls)); OnPropertyChanged(nameof(Is3D)); OnPropertyChanged(nameof(ShowPlan)); OnPropertyChanged(nameof(Show3D)); OnPropertyChanged(nameof(IsElevation)); OnPropertyChanged(nameof(IsPlan)); OnPropertyChanged(nameof(IsSite)); Changed?.Invoke(); }
     partial void OnToolChanged(ToolKind value)
     {
-        OnPropertyChanged(nameof(IsSelectTool)); OnPropertyChanged(nameof(IsDrawTool)); OnPropertyChanged(nameof(IsAlignTool)); OnPropertyChanged(nameof(IsRiserTool)); OnPropertyChanged(nameof(IsPipeTool)); OnPropertyChanged(nameof(IsPlaceTool)); OnPropertyChanged(nameof(IsDoorTool)); OnPropertyChanged(nameof(IsWindowTool)); OnPropertyChanged(nameof(IsSpaceTool)); OnPropertyChanged(nameof(IsMeasureTool)); OnPropertyChanged(nameof(IsNumberTool)); OnPropertyChanged(nameof(IsStraightenTool)); OnPropertyChanged(nameof(IsStretchTool)); OnPropertyChanged(nameof(IsCutWallTool)); OnPropertyChanged(nameof(IsMergeRegionTool)); CutPoints.Clear(); CutAwaitSide = false; MeasurePoints.Clear(); NumberPending.Clear();
+        OnPropertyChanged(nameof(IsSelectTool)); OnPropertyChanged(nameof(IsDrawTool)); OnPropertyChanged(nameof(IsAlignTool)); OnPropertyChanged(nameof(IsRiserTool)); OnPropertyChanged(nameof(IsPipeTool)); OnPropertyChanged(nameof(IsPlaceTool)); OnPropertyChanged(nameof(IsDoorTool)); OnPropertyChanged(nameof(IsWindowTool)); OnPropertyChanged(nameof(IsSpaceTool)); OnPropertyChanged(nameof(IsMeasureTool)); OnPropertyChanged(nameof(IsNumberTool)); OnPropertyChanged(nameof(IsStraightenTool)); OnPropertyChanged(nameof(IsStretchTool)); OnPropertyChanged(nameof(IsCutWallTool)); OnPropertyChanged(nameof(IsMergeRegionTool)); CutPoints.Clear(); CutAwaitSide = false; MeasurePoints.Clear(); NumberPending.Clear(); SpaceHover = null;
         Hint = value switch { ToolKind.DrawWall => T("hint.draw.wall"), ToolKind.Riser => T("hint.riser"), ToolKind.DrawPipe => T("hint.draw.pipe"), ToolKind.Place => T("hint.place"), ToolKind.Align => T("hint.align"), ToolKind.Door => T("hint.door"), ToolKind.Window => T("hint.window"), ToolKind.Space => T("hint.space"), ToolKind.Measure => T("hint.measure"), ToolKind.NumberCellars => T("hint.number"), ToolKind.Straighten => T("hint.straighten"), ToolKind.Stretch => T("hint.stretch"), ToolKind.CutWall => T("hint.cutwall"), ToolKind.MergeRegion => T("hint.mergeregion"), _ => T("hint.select") }; if (value != ToolKind.Align) AlignCancel();
+        OnPropertyChanged(nameof(HasToolOptions)); OnPropertyChanged(nameof(HasNoToolOptions)); if (HasToolOptions) PanelTab = 1;       // choosing a tool shows its options
         Changed?.Invoke();
     }
 

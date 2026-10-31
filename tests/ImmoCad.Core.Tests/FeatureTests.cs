@@ -163,6 +163,45 @@ public class GeometryTests
         Assert.Null(ImmoCad.Core.Geometry.SpaceFinder.Find(l, new(1500, 1500)));
     }
 
+    [Fact] public void SpaceFinder_closes_a_door_gap_and_reports_it()
+    {
+        static Wall W(int x0, int y0, int x1, int y1) => new() { Footprint = [new(x0, y0), new(x1, y0), new(x1, y1), new(x0, y1)] };
+        // two rooms side by side; the wall between them has a 900 mm door from y = 1000 to 1900
+        var walls = new List<Wall> { W(0, 0, 8000, 200), W(0, 2800, 8000, 3000), W(0, 0, 200, 3000), W(7800, 0, 8000, 3000), W(4000, 0, 4200, 1000), W(4000, 1900, 4200, 3000) };
+        var g = new ImmoCad.Core.Geometry.SpaceGrid(walls);
+        Assert.True(ImmoCad.Core.Geometry.SpaceFinder.AreaMm2(ImmoCad.Core.Geometry.SpaceFinder.Probe(g, new(2000, 1500), maxGapMm: 0).Outline!) > 7000L * 2600);   // without closing: both rooms are one
+        var p = ImmoCad.Core.Geometry.SpaceFinder.Probe(g, new(2000, 1500));
+        Assert.NotNull(p.Outline);
+        var area = ImmoCad.Core.Geometry.SpaceFinder.AreaMm2(p.Outline!);
+        Assert.InRange(area, 3800L * 2600 * 97 / 100, 3800L * 2600 * 103 / 100);              // the left room only, not a bounding box of both
+        var leak = Assert.Single(p.Leaks);
+        Assert.InRange(leak.At.X, 3800, 4300); Assert.InRange(leak.At.Y, 1250, 1650); Assert.InRange(leak.RadiusMm, 300, 700);
+        Assert.InRange(p.GapMm, 900, 1200);
+    }
+
+    [Fact] public void SpaceFinder_follows_slanted_walls_and_wall_holes()
+    {
+        // one scanned wall group: outer square with a room hole (even-odd), the room cut by a 45° corner
+        var wall = new Wall { Footprint = [new(0, 0), new(5000, 0), new(5000, 4000), new(0, 4000)],
+                              Holes = [[new(200, 200), new(4800, 200), new(4800, 3800), new(1700, 3800), new(200, 2300)]] };
+        var o = ImmoCad.Core.Geometry.SpaceFinder.Find(new Level { Walls = [wall] }, new(3000, 2000))!;
+        var exact = 4600L * 3600 - 1500L * 1500 / 2;
+        Assert.InRange(ImmoCad.Core.Geometry.SpaceFinder.AreaMm2(o), exact * 97 / 100, exact * 103 / 100);
+        Assert.True(o.Count < 12, $"{o.Count} vertices");                                         // the staircase is simplified to a slanted side
+    }
+
+    [Fact] public void SpaceFinder_does_not_report_a_notch_in_a_wall_as_a_leak()
+    {
+        static Wall W(int x0, int y0, int x1, int y1) => new() { Footprint = [new(x0, y0), new(x1, y0), new(x1, y1), new(x0, y1)] };
+        // closed room with a 300 mm wide, 400 mm deep notch cut into the bottom wall (scan artefact), plus a door to a second room
+        var walls = new List<Wall> { W(0, 2800, 8000, 3000), W(0, 0, 200, 3000), W(7800, 0, 8000, 3000), W(4000, 0, 4200, 1000), W(4000, 1900, 4200, 3000),
+                                     W(0, -400, 2000, 200), W(2300, -400, 8000, 200), W(2000, -400, 2300, -200) };
+        var p = ImmoCad.Core.Geometry.SpaceFinder.Probe(new ImmoCad.Core.Geometry.SpaceGrid(walls), new(2000, 1500));
+        Assert.NotNull(p.Outline);
+        var leak = Assert.Single(p.Leaks);                                                        // the door only
+        Assert.InRange(leak.At.X, 3800, 4300);
+    }
+
     [Fact] public void Valve_only_drops_on_pipe()
     {
         var b = new Building(); var a = new BuildingActions(b, new BuildingHistory(), new BuildingEventsService());
@@ -171,6 +210,35 @@ public class GeometryTests
         Assert.True(ImmoCad.Core.Catalog.PlacementRules.Check(valve, new(500, 50, 0), n).Valid);
         Assert.False(ImmoCad.Core.Catalog.PlacementRules.Check(valve, new(500, 900, 0), n).Valid);
         Assert.True(ImmoCad.Core.Catalog.PlacementRules.Check(ImmoCad.Core.Catalog.EquipmentCatalog.Find("radiator")!, new(0, 0, 0), null).Valid);
+    }
+
+    [Fact] public void Heating_parts_are_refused_on_water_pipes_with_the_reason()
+    {
+        var b = new Building(); var a = new BuildingActions(b, new BuildingHistory(), new BuildingEventsService());
+        var cold = a.AddNetwork("EF", NetworkType.ColdWater); a.AddPipeRun(cold.Id, [new(0, 0, 0), new(1000, 0, 0)]);
+        var heat = a.AddNetwork("CH", NetworkType.HeatingSupply); a.AddPipeRun(heat.Id, [new(0, 0, 0), new(1000, 0, 0)]);
+        var trv = ImmoCad.Core.Catalog.EquipmentCatalog.Find("thermostatic-valve")!;
+        var refused = ImmoCad.Core.Catalog.PlacementRules.Check(trv, new(500, 0, 0), cold);
+        Assert.False(refused.Valid); Assert.Equal(ImmoCad.Core.Translations.T("valve.heatingonly"), refused.Hint);
+        Assert.True(ImmoCad.Core.Catalog.PlacementRules.Check(trv, new(500, 0, 0), heat).Valid);
+        Assert.True(ImmoCad.Core.Catalog.PlacementRules.Check(ImmoCad.Core.Catalog.EquipmentCatalog.Find("shutoff-valve")!, new(500, 0, 0), cold).Valid);
+    }
+
+    [Fact] public void Every_object_has_its_own_symbol_and_inline_parts_a_code()
+    {
+        var shapes = new HashSet<string>();
+        foreach (var e in ImmoCad.Core.Catalog.EquipmentCatalog.Default)
+        {
+            var figs = ImmoCad.Core.Catalog.Symbol.Figures(e, new(0, 0), 0, centre: true);
+            Assert.NotEmpty(figs);
+            Assert.True(shapes.Add(string.Join("|", figs.Select(f => f.Centre is { } c ? $"C{c.X},{c.Y},{f.Radius},{f.Fill}" : string.Join(",", f.Points.Select(p => $"{p.X}:{p.Y}")) + f.Fill))), $"{e.Id} looks like another object");
+            if (e.Inline) Assert.True(e.Code.Length is >= 2 and <= 3, e.Id);
+        }
+        var valve = ImmoCad.Core.Catalog.EquipmentCatalog.Find("shutoff-valve")!;
+        var tri = ImmoCad.Core.Catalog.Symbol.Figures(valve, new(0, 0), 0, centre: true);
+        Assert.Equal(2, tri.Count(f => f.Fill == ImmoCad.Core.Catalog.SymbolFill.White && f.Points.Count == 3));          // two triangles tip to tip
+        Assert.All(ImmoCad.Core.Catalog.Symbol.Figures(valve, new(0, 0), 90, centre: true).SelectMany(f => f.Points), p => Assert.InRange(Math.Abs(p.X), 0, valve.WidthMm));   // turned a quarter: the length lies along Y
+        Assert.Equal("VA", valve.Code); ImmoCad.Core.Translations.Language = "en"; try { Assert.Equal("SV", valve.Code); } finally { ImmoCad.Core.Translations.Language = "fr"; }
     }
 
     [Fact] public void Catalog_entries_valid() =>
@@ -593,16 +661,17 @@ public class PipeEditTests
         h.Undo(b); Assert.Equal(3, b.Networks[0].Segments.Count);
     }
 
-    [Fact] public void Move_run_stretches_connected_segments_and_refuses_diagonals()
+    [Fact] public void Move_run_stretches_connected_segments_and_keeps_every_segment_axis_aligned()
     {
         // U shape: up 0→2400 on x=0, across to x=3000, down. Moving the top run up (Z) stretches both risers.
         var (b, a, h, n) = Pipe(new(0, 0, 0), new(0, 0, 2400), new(3000, 0, 2400), new(3000, 0, 0));
         Assert.True(a.MoveRun(n.Id, n.Segments[1].Id, 0, 0, 300));
         Assert.Equal(2700, b.Networks[0].Nodes[1].Position.Z); Assert.Equal(2700, b.Networks[0].Nodes[2].Position.Z); Assert.Equal(0, b.Networks[0].Nodes[0].Position.Z);
         Assert.Empty(FittingResolver.Validate(b.Networks[0]).Where(w => w.Contains("axis")));
-        // moving the same run sideways (Y) would turn the risers diagonal → refused, nothing changes
-        var s = BuildingJson.Serialize(b); var steps = h.Items.Count;
-        Assert.False(a.MoveRun(n.Id, n.Segments[1].Id, 0, 400, 0)); Assert.Equal(s, BuildingJson.Serialize(b)); Assert.Equal(steps, h.Items.Count);
+        // moving the same run sideways (Y) would turn the risers diagonal: the risers stay, a jog is added at each top and nothing is oblique
+        var steps = h.Items.Count; var segs = b.Networks[0].Segments.Count;
+        Assert.True(a.MoveRun(n.Id, n.Segments[1].Id, 0, 400, 0)); Assert.Equal(steps + 1, h.Items.Count); Assert.Equal(segs + 2, b.Networks[0].Segments.Count);
+        Assert.Empty(NetworkQueries.All(b).Where(q => ((q.A.X != q.B.X ? 1 : 0) + (q.A.Y != q.B.Y ? 1 : 0) + (q.A.Z != q.B.Z ? 1 : 0)) != 1).Select(q => $"{q.A}->{q.B}"));
     }
 
     [Fact] public void Move_run_includes_collinear_chained_segments()
@@ -668,12 +737,13 @@ public class PipeHandleToolTests
         Assert.Equal(before, BuildingJson.Serialize(b2)); Assert.Equal(steps, h2.Items.Count); Assert.Equal(ToolState.Idle, t2.State);
     }
 
-    [Fact] public void Refused_move_reports_and_changes_nothing()
+    [Fact] public void Sideways_move_of_a_run_ending_in_a_drop_adds_a_jog_instead_of_a_diagonal()
     {
         var (b, a, h, n) = Pipe(); a.AddElbow(n.Id, n.Nodes[1].Id, new(2000, 0, 0));    // end goes down: moving the horizontal run sideways makes the drop diagonal
         var steps = h.Items.Count; var t = new PipeHandleTool(a, n.Id, n.Segments[0].Id, PipeHandle.Body);
         t.Down(P(1000, 0)); t.Move(P(1000, 500)); t.Up(P(1000, 500));
-        Assert.False(t.Committed); Assert.NotNull(t.Refused); Assert.Equal(steps, h.Items.Count);
+        Assert.True(t.Committed); Assert.Null(t.Refused); Assert.Equal(steps + 1, h.Items.Count);
+        Assert.All(NetworkQueries.All(b), sg => Assert.True(((sg.A.X != sg.B.X ? 1 : 0) + (sg.A.Y != sg.B.Y ? 1 : 0) + (sg.A.Z != sg.B.Z ? 1 : 0)) <= 1));
     }
 }
 
@@ -1233,5 +1303,28 @@ public class PolygonSubtractTests
         Assert.Equal(1, a.CutWallsRegion(l.Id, Z(20000, -500, 30000, -500, 30000, 700, 20000, 700))); Assert.Equal(steps + 1, h.Items.Count); Assert.Equal(2, b.Levels[0].Walls.Count);
         Assert.Equal(0, a.CutWallsRegion(l.Id, Z(20000, -500, 30000, -500, 30000, 700, 20000, 700)));                                    // nothing left under it
         h.Undo(b); Assert.Single(b.Levels[0].Walls);
+    }
+
+    [Fact] public void A_pipe_ending_on_a_riser_splits_it_and_joins_it_in_one_step()
+    {
+        var b = new Building(); var h = new BuildingHistory(); var a = new BuildingActions(b, h, new BuildingEventsService()); a.AddLevel("RDC", 0); var n = a.AddNetwork("EF", NetworkType.ColdWater);
+        a.AddPipeRun(n.Id, [new(0, 0, 0), new(0, 0, 2700)], 20); var steps = h.Items.Count;
+        a.AddPipeRun(n.Id, [new(0, 0, 1000), new(1500, 0, 1000)], 20);
+        Assert.Equal(steps + 1, h.Items.Count); Assert.Equal(4, n.Nodes.Count); Assert.Equal(3, n.Segments.Count);       // riser cut in two + the new pipe
+        Assert.Contains(FittingResolver.Resolve(n), f => f.Kind == FittingKind.Tee);
+        h.Undo(b); Assert.Equal(2, b.Networks[0].Nodes.Count); Assert.Single(b.Networks[0].Segments);
+    }
+}
+public class MoveRunAnchorTests
+{
+    [Fact] public void A_run_joined_to_a_riser_moves_sideways_through_a_jog_and_the_riser_stays()
+    {
+        var b = new Building(); var h = new BuildingHistory(); var a = new BuildingActions(b, h, new BuildingEventsService()); a.AddLevel("RDC", 0); var n = a.AddNetwork("EF", NetworkType.ColdWater);
+        a.AddPipeRun(n.Id, [new(0, 0, 0), new(0, 0, 2700)], 20); a.AddPipeRun(n.Id, [new(0, 2000, 2700), new(0, 0, 2700), new(3000, 0, 2700)], 20);   // riser top = corner of the run
+        var run = n.Segments.First(s => n.Nodes.First(x => x.Id == s.A).Position.Y == 2000 || n.Nodes.First(x => x.Id == s.B).Position.Y == 2000); var steps = h.Items.Count;
+        Assert.True(a.MoveRun(n.Id, run.Id, -500, 0, 0)); Assert.Equal(steps + 1, h.Items.Count);
+        Assert.Contains(n.Nodes, x => x.Position == new PointMm3(0, 0, 2700));                                   // the riser top did not move
+        Assert.Contains(n.Nodes, x => x.Position == new PointMm3(-500, 0, 2700)); Assert.Contains(n.Nodes, x => x.Position == new PointMm3(-500, 2000, 2700));
+        Assert.All(NetworkQueries.All(b), s => Assert.True(((s.A.X != s.B.X ? 1 : 0) + (s.A.Y != s.B.Y ? 1 : 0) + (s.A.Z != s.B.Z ? 1 : 0)) <= 1));
     }
 }

@@ -135,7 +135,7 @@ public partial class MainWindow : Window
         InitializeComponent(); CreateViewport();
         DataContextChanged += (_, _) =>
         {
-            Vm.Dialogs = new AvaloniaDialogService(this);
+            Vm.Dialogs = new AvaloniaDialogService(this); Vm.AskRiserHeight = Plan.AskRiserHeight;
             Vm.Changed += () => { Plan.Invalidate(); Cube2D.InvalidateVisual(); SyncView3D(); Elev.InvalidateVisual(); SiteMap.InvalidateVisual(); };
             Cube2D.Current = () => Vm.ViewPlane switch { ViewPlane.XZ => Vm.PlaneFlip ? ViewCube.Face.Back : ViewCube.Face.Front, ViewPlane.YZ => Vm.PlaneFlip ? ViewCube.Face.Left : ViewCube.Face.Right, _ => ViewCube.Face.Top };
             Cube2D.FaceChosen = f => { switch (f) { case ViewCube.Face.Front: Vm.ChoosePlane(ViewPlane.XZ, false); break; case ViewCube.Face.Back: Vm.ChoosePlane(ViewPlane.XZ, true); break; case ViewCube.Face.Right: Vm.ChoosePlane(ViewPlane.YZ, false); break; case ViewCube.Face.Left: Vm.ChoosePlane(ViewPlane.YZ, true); break; default: Vm.ChoosePlane(ViewPlane.XY, false); break; } };
@@ -144,6 +144,7 @@ public partial class MainWindow : Window
             Vm.RecentFiles.CollectionChanged += (_, _) => BuildMenus(); Vm.LanguageRefreshed += BuildMenus;
             Plan.CursorMoved += p => { var (h, v) = Vm.ViewPlane switch { ViewPlane.XZ => ("X", "Z"), ViewPlane.YZ => ("Y", "Z"), _ => ("X", "Y") }; Vm.Status = $"{h} {p.X / 1000.0:0.00} m   {v} {p.Y / 1000.0:0.00} m"; };
             Vm.TransitionHandler = HandleTransition;
+            Cube2D.Turned = Plan.TurnQuarter; Cube2D.Spin = () => Vm.ViewPlane == ViewPlane.XY ? Plan.ViewRotationRad : 0; Plan.ViewTurned += Cube2D.InvalidateVisual;
             Vm.PlanZoomRequested += how => Plan.Zoom(how);
             KeyDown += OnWindowKey;
             Vm.MenuCommands = () => MainViewModel.FromMenus(MenuFactory.Build(Vm, OpenLogFolder, CopySystemInfo, ShowAbout));

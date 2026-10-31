@@ -13,8 +13,10 @@ namespace ImmoCad.Desktop;
 /// OpenGL 3D view (Silk.NET inside an Avalonia OpenGlControlBase). Meshes come from ImmoCad.Scene; this class only uploads buffers and draws.
 /// If the context cannot be created or a GL call fails, <see cref="Failed"/> is raised once so the window swaps to the software viewport.
 /// </summary>
-public sealed class GlViewport3D : OpenGlControlBase, IViewport3D
+public sealed class GlViewport3D : OpenGlControlBase, IViewport3D, Avalonia.Rendering.ICustomHitTest
 {
+    /// <summary>The GL surface draws no Avalonia background: without this the wheel and clicks could pass through it.</summary>
+    public bool HitTest(Point point) => new Rect(Bounds.Size).Contains(point);
     private static readonly ILogger Log = App.Log.CreateLogger("GL");
     private MainViewModel? Vm => DataContext as MainViewModel;
     public ViewportController Controller { get; } = new();
@@ -67,7 +69,7 @@ public sealed class GlViewport3D : OpenGlControlBase, IViewport3D
         try
         {
             var dark = ActualThemeVariant == Avalonia.Styling.ThemeVariant.Dark; var scaling = (TopLevel.GetTopLevel(this))?.RenderScaling ?? 1;
-            int w = (int)(Bounds.Width * scaling), h = (int)(Bounds.Height * scaling); if (w < 1 || h < 1) return;
+            int w = (int)(Bounds.Width * scaling), h = (int)(Bounds.Height * scaling); if (w < 1 || h < 1) return; Controller.Size(Bounds.Width, Bounds.Height);
             gl.Viewport(0, 0, (uint)w, (uint)h); gl.ClearColor(dark ? 0.12f : 0.965f, dark ? 0.125f : 0.97f, dark ? 0.14f : 0.976f, 1f);
             gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit); gl.Enable(EnableCap.DepthTest);
             if (!ReferenceEquals(_uploaded, Controller.Objects)) Upload(gl);
@@ -102,7 +104,7 @@ public sealed class GlViewport3D : OpenGlControlBase, IViewport3D
         {
             var m = o.Mesh; var verts = new float[m.VertexCount * 6];
             for (var i = 0; i < m.VertexCount; i++) { for (var k = 0; k < 3; k++) { verts[i * 6 + k] = m.Positions[i * 3 + k]; verts[i * 6 + 3 + k] = m.Normals.Count > i * 3 + k ? m.Normals[i * 3 + k] : 0; } }
-            var idx = m.Indices.Select(i => (uint)i).ToArray(); var wire = WireEdges.Of(m).SelectMany(e => new[] { (uint)e.A, (uint)e.B }).ToArray();
+            var idx = m.Indices.Select(i => (uint)i).ToArray(); var wire = WireEdges.Outline(m).SelectMany(e => new[] { (uint)e.A, (uint)e.B }).ToArray();
             var vao = gl.GenVertexArray(); gl.BindVertexArray(vao);
             var vbo = gl.GenBuffer(); gl.BindBuffer(BufferTargetARB.ArrayBuffer, vbo); fixed (float* p = verts) gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(verts.Length * 4), p, BufferUsageARB.StaticDraw);
             var ibo = gl.GenBuffer(); gl.BindBuffer(BufferTargetARB.ElementArrayBuffer, ibo); fixed (uint* p = idx) gl.BufferData(BufferTargetARB.ElementArrayBuffer, (nuint)(idx.Length * 4), p, BufferUsageARB.StaticDraw);

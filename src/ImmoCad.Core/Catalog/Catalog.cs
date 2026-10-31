@@ -40,6 +40,8 @@ public sealed class CatalogEntry
     }
 
     public string Id => Source.Id; public string Category => Source.Category; public bool Inline => Source.Inline; public int DefaultElevationMm => Source.DefaultElevationMm;
+    /// <summary>Short code written under the symbol (VA, CL…), per language; empty when the object has none.</summary>
+    public string Code => Translations.Has("code." + Id, Translations.Language) ? Translations.T("code." + Id) : "";
     public string Name => Source.Names.TryGetValue(Translations.Language, out var n) ? n : Source.Names.TryGetValue("fr", out var f) ? f : Source.Id;
     public string NameIn(string lang) => Source.Names.TryGetValue(lang, out var n) ? n : Source.Id;
     public int WidthMm => (int)Get("width", 100); public int DepthMm => (int)Get("depth", 100); public int HeightMm => (int)Get("height", 100);
@@ -60,7 +62,7 @@ public sealed class CatalogEntry
         void Flush() { if (token.Length == 0) return; sb.Append(Eval(token.ToString()).ToString("0.##", CultureInfo.InvariantCulture)); token.Clear(); }
         foreach (var ch in path)
         {
-            if (ch is ' ' or ',' or 'M' or 'L' or 'Z' or 'C') { Flush(); sb.Append(ch); }
+            if (ch is ' ' or ',' or 'M' or 'L' or 'Z' or 'C' or 'E' or 'F' or 'B') { Flush(); sb.Append(ch); }
             else token.Append(ch);
         }
         Flush(); return sb.ToString();
@@ -137,9 +139,14 @@ public sealed record Placement(bool Valid, string? Hint, PointMm3? Snapped = nul
 /// <summary>Drop rules: inline components only onto a pipe.</summary>
 public static class PlacementRules
 {
+    /// <summary>Parts that only make sense on a heating pipe.</summary>
+    public static readonly HashSet<string> HeatingOnly = ["thermostatic-valve", "balancing-valve", "air-vent", "circulator-pump"];
+
     public static Placement Check(CatalogEntry entry, PointMm3 at, Network? network, int toleranceMm = 100)
     {
         if (!entry.Inline) return new(true, null, at);
+        if (network != null && HeatingOnly.Contains(entry.Id) && network.Type is not (NetworkType.HeatingSupply or NetworkType.HeatingReturn))
+            return new(false, Translations.T("valve.heatingonly"));
         if (network != null)
             foreach (var s in network.Segments)
             {

@@ -338,8 +338,9 @@
    }
   ],
   "symbol": [
-   "M0,0 L$width,0 L$width,$depth L0,$depth Z",
-   "C$width/2,$depth/2,$depth/3"
+   "F M0,0 L$width,0 L$width,$depth L0,$depth Z",
+   "F C$width/2,$depth/2,$depth/3",
+   "B M$width*0.4,$depth*0.36 L$width*0.4,$depth*0.64 L$width*0.62,$depth/2 Z"
   ],
   "shape": [
    {

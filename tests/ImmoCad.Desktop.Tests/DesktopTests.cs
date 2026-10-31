@@ -44,6 +44,20 @@ public class DesktopTests
     private readonly HeadlessFixture f = new();
     private static string Shots() { var d = Path.Combine(AppContext.BaseDirectory, "screenshots"); Directory.CreateDirectory(d); return d; }
 
+    [Fact] public Task Palette_shows_the_symbol_of_each_object() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(); var w = new MainWindow { DataContext = vm, Width = 1280, Height = 1100 }; w.Show();
+        vm.SetStepCommand.Execute("Equip"); vm.PanelTab = 0;
+        Assert.All(vm.Palette, p => Assert.NotNull(ImmoCad.Core.Catalog.EquipmentCatalog.Find(p.Id)));
+        w.CaptureRenderedFrame()!.Save(Path.Combine(Shots(), "palette-symbols.png"));
+        foreach (var q in new[] { "vanne", "robinet", "purg", "clapet", "duc", "compteur" })   // the inline parts, one search each so they all show
+        {
+            vm.Search = q; Assert.NotEmpty(vm.Palette);
+            w.CaptureRenderedFrame()!.Save(Path.Combine(Shots(), $"palette-{q}.png"));
+        }
+        w.Close();
+    }, CancellationToken.None);
+
     [Fact] public Task Main_window_shows_plan_and_levels() => f.Session.Dispatch(() =>
     {
         var vm = new MainViewModel(); var w = new MainWindow { DataContext = vm }; w.Show();
@@ -522,6 +536,21 @@ public class RoomToolsTests
         vm.ToggleCommonOnlyCommand.Execute(null); w.CaptureRenderedFrame(); w.Close();
     }, CancellationToken.None);
 
+    [Fact] public Task Resting_the_room_tool_previews_the_room_and_the_click_uses_it() => f.Session.RunAsync(async () =>
+    {
+        var vm = Basement(); vm.SetToolCommand.Execute("Space");
+        var probe = await vm.ProbeSpaceAsync(new(1000, 1000));
+        Assert.NotNull(probe?.Outline); Assert.False(vm.SpaceBusy);
+        vm.SpaceHover = probe; vm.PlaceSpace(new(1000, 1000));
+        Assert.Equal(ImmoCad.Core.Geometry.SpaceFinder.AreaMm2(probe!.Outline!), ImmoCad.Core.Geometry.SpaceFinder.AreaMm2(vm.CurrentLevel!.Spaces.Single().Outline));
+        Assert.Null(vm.SpaceHover);                                                // used once
+        vm.SetToolCommand.Execute("Select"); Assert.Null(vm.SpaceHover);
+        vm.PlaceSpace(new(1100, 1100)); Assert.Single(vm.CurrentLevel.Spaces);       // a room is already there: no second one
+        Assert.Equal(ImmoCad.Core.Translations.T("space.exists"), vm.Status);
+        Assert.Null((await vm.ProbeSpaceAsync(new(-30000, -30000)))?.Outline);       // far outside: nothing, and the next probe still works
+        Assert.NotNull((await vm.ProbeSpaceAsync(new(3000, 1200)))?.Outline);
+    }, CancellationToken.None);
+
     [Fact] public Task A_room_is_selected_when_placed_or_clicked_and_can_be_renamed() => f.Session.Dispatch(() =>
     {
         var vm = Basement(); vm.PlaceSpace(new(1000, 1000));
@@ -587,6 +616,123 @@ public class RoomToolsTests
         var vm = Basement(); var l = vm.CurrentLevel!; vm.ShowSideCommand.Execute("East");
         Assert.True(vm.ElevationLevelOnly); Assert.Equal((l.AltitudeMm, l.AltitudeMm + l.HeightMm), vm.ElevationRange());
         vm.ElevationLevelOnly = false; var all = vm.Building.Levels; Assert.Equal((all.Min(x => x.AltitudeMm), all.Max(x => x.AltitudeMm + x.HeightMm)), vm.ElevationRange());
+    }, CancellationToken.None);
+
+    [Fact] public Task A_pipe_drawn_to_a_riser_joins_it_at_its_exact_position() => f.Session.Dispatch(() =>
+    {
+        var vm = Basement(); vm.PipeType = ImmoCad.Core.Model.NetworkType.ColdWater; vm.PipeElevation = 1000;
+        var net = vm.Actions.AddVerticalPipe(new ImmoCad.Core.Geometry.ElevationPlane(new(0, 0), new(5000, 0)), 1000, ImmoCad.Core.Model.NetworkType.ColdWater, 0, 2700, 20);
+        var rx = net.Nodes[0].Position.X; var ry = net.Nodes[0].Position.Y;
+        vm.CommitPipe([new(rx + 3000, ry + 80), new(rx + 120, ry + 40)]);
+        var run = net.Nodes.Where(n => n.Position.Z == vm.CurrentLevel!.AltitudeMm + 1000).ToList();
+        Assert.Contains(run, n => n.Position.X == rx && n.Position.Y == ry);                                      // end snapped on the riser axis
+        Assert.Equal(3, net.Segments.Count); Assert.Single(vm.Building.Networks);
+    }, CancellationToken.None);
+
+    [Fact] public Task The_diameter_of_a_selected_riser_applies_to_its_whole_column() => f.Session.Dispatch(() =>
+    {
+        var vm = Basement(); vm.PipeType = ImmoCad.Core.Model.NetworkType.ColdWater; vm.PipeElevation = 1000;
+        var net = vm.Actions.AddVerticalPipe(new ImmoCad.Core.Geometry.ElevationPlane(new(0, 0), new(5000, 0)), 1000, ImmoCad.Core.Model.NetworkType.ColdWater, 0, 2700, 20);
+        vm.CommitPipe([new(net.Nodes[0].Position.X + 2000, net.Nodes[0].Position.Y), new(net.Nodes[0].Position.X, net.Nodes[0].Position.Y)]);   // splits the riser in two
+        var top = net.Segments.First(s => net.Nodes.First(n => n.Id == s.B).Position.Z == 2700 || net.Nodes.First(n => n.Id == s.A).Position.Z == 2700);
+        vm.SelectSegment(net.Id, top.Id); vm.SegDiameter = 32; vm.ApplyDiameterCommand.Execute(null);
+        var after = vm.Building.Networks.First(n => n.Id == net.Id);
+        Assert.Equal(2, after.Segments.Count(s => s.DiameterMm == 32)); Assert.Equal(vm.PipeDiameter, after.Segments.Single(s => s.DiameterMm != 32).DiameterMm);   // the branch keeps its own
+    }, CancellationToken.None);
+
+    [Fact] public Task A_pipe_ending_on_a_riser_in_plan_asks_top_or_bottom() => f.Session.Dispatch(() =>
+    {
+        var vm = Basement(); vm.PipeType = ImmoCad.Core.Model.NetworkType.ColdWater; vm.PipeElevation = 1000;
+        var net = vm.Actions.AddVerticalPipe(new ImmoCad.Core.Geometry.ElevationPlane(new(0, 0), new(5000, 0)), 1000, ImmoCad.Core.Model.NetworkType.ColdWater, 0, 2700, 20);
+        var (rx, ry) = (net.Nodes[0].Position.X, net.Nodes[0].Position.Y); IReadOnlyList<(string Label, int Z)>? asked = null; Action<int?>? answer = null;
+        vm.AskRiserHeight = (o, d) => { asked = o; answer = d; };
+        vm.CommitPipe([new(rx + 2000, ry), new(rx, ry)]);
+        Assert.NotNull(asked); Assert.Equal([2700, 0, 1000], asked!.Select(o => o.Z)); Assert.Single(vm.Building.Networks); Assert.Equal(1, net.Segments.Count);   // nothing placed before the answer
+        answer!(2700);
+        var after = vm.Building.Networks[0]; Assert.Equal(2, after.Segments.Count); Assert.Equal(3, after.Nodes.Count);                                      // joined the riser's top node: elbow, no split
+        Assert.All(after.Nodes.Where(n => n.Position.X != rx || n.Position.Y != ry), n => Assert.Equal(2700, n.Position.Z));
+        vm.CommitPipe([new(rx - 2000, ry), new(rx, ry)]); answer!(null); Assert.Equal(2, vm.Building.Networks[0].Segments.Count);                            // dismissed: nothing added
+    }, CancellationToken.None);
+
+    [Fact] public Task The_type_of_a_selected_pipe_changes_for_its_whole_connected_run() => f.Session.Dispatch(() =>
+    {
+        var vm = Basement(); var net = vm.Actions.AddNetwork("N", ImmoCad.Core.Model.NetworkType.ColdWater);
+        vm.Actions.AddPipeRun(net.Id, [new(0, 0, 1000), new(2000, 0, 1000), new(2000, 2000, 1000)], 20);
+        vm.SelectSegment(net.Id, vm.Building.Networks[0].Segments[0].Id); vm.SegType = ImmoCad.Core.Model.NetworkType.HeatingSupply; vm.ApplyPipeTypeCommand.Execute(null);
+        var n = Assert.Single(vm.Building.Networks); Assert.Equal(ImmoCad.Core.Model.NetworkType.HeatingSupply, n.Type); Assert.Equal(2, n.Segments.Count);
+        Assert.Equal(n.Id, vm.SelectedSegment!.Value.NetworkId);
+        vm.SelectSegment(n.Id, n.Segments[0].Id); vm.SetToolCommand.Execute("Select");
+        Assert.True(vm.ShowPipeProps); Assert.False(vm.ShowWallProps || vm.ShowEquipmentProps);                                // only what the selection has
+    }, CancellationToken.None);
+
+    [Fact] public Task A_pipe_joined_to_a_riser_takes_the_risers_type() => f.Session.Dispatch(() =>
+    {
+        var vm = Basement(); vm.PipeType = ImmoCad.Core.Model.NetworkType.HeatingSupply; vm.PipeElevation = 1000;
+        var net = vm.Actions.AddVerticalPipe(new ImmoCad.Core.Geometry.ElevationPlane(new(0, 0), new(5000, 0)), 1000, ImmoCad.Core.Model.NetworkType.DomesticHotWater, 0, 2700, 20);
+        vm.CommitPipe([new(net.Nodes[0].Position.X + 2000, net.Nodes[0].Position.Y), new(net.Nodes[0].Position.X, net.Nodes[0].Position.Y)]);
+        Assert.Single(vm.Building.Networks); Assert.Equal(ImmoCad.Core.Model.NetworkType.DomesticHotWater, vm.Building.Networks[0].Type); Assert.Equal(3, vm.Building.Networks[0].Segments.Count);
+    }, CancellationToken.None);
+
+    [Fact] public Task Choosing_a_tool_shows_the_options_of_that_tool_only() => f.Session.Dispatch(() =>
+    {
+        var vm = Basement(); vm.PanelTab = 6;
+        vm.SetToolCommand.Execute("DrawWall"); Assert.Equal(1, vm.PanelTab); Assert.True(vm.IsDrawTool && vm.HasToolOptions && !vm.IsPipeTool && !vm.IsRiserTool);
+        vm.SetToolCommand.Execute("DrawPipe"); Assert.True(vm.IsPipeTool && !vm.IsDrawTool);
+        vm.PanelTab = 6; vm.SetToolCommand.Execute("Measure"); Assert.True(vm.HasNoToolOptions); Assert.Equal(6, vm.PanelTab);                  // no options: the tab stays
+    }, CancellationToken.None);
+
+    [Fact] public Task A_scene_rebuild_keeps_the_3d_pan_and_zoom_and_a_level_change_only_moves_it_vertically() => f.Session.Dispatch(() =>
+    {
+        var vm = Basement(); var c = new ViewportController(); c.Rebuild(vm);
+        c.Camera.Target = (c.Camera.Target.X + 7, c.Camera.Target.Y - 3, c.Camera.Target.Z); c.Camera.Distance = 12; var panned = c.Camera.Target;
+        c.Rebuild(vm); Assert.Equal(panned, c.Camera.Target); Assert.Equal(12, c.Camera.Distance);                      // any edit rebuilds the scene: the view stays
+        var other = vm.Actions.AddLevel("up", vm.CurrentLevel!.AltitudeMm + 3000); vm.SelectLevelCommand.Execute(vm.CurrentLevel!.Id); c.Rebuild(vm); panned = c.Camera.Target; var dz = (other.AltitudeMm - vm.CurrentLevel!.AltitudeMm) / 1000.0;
+        vm.SelectLevelCommand.Execute(other.Id); c.Rebuild(vm);
+        Assert.Equal(panned.X, c.Camera.Target.X); Assert.Equal(panned.Y, c.Camera.Target.Y); Assert.Equal(panned.Z + dz, c.Camera.Target.Z, 6);
+    }, CancellationToken.None);
+
+    [Fact] public Task The_3d_pan_moves_the_model_with_the_mouse_and_the_wheel_zooms_by_its_delta() => f.Session.Dispatch(() =>
+    {
+        var c = new ViewportController(); c.Size(800, 600); var half = 300.0;
+        foreach (var (yaw, pitch) in new[] { (0.0, 0.3), (0.8, 0.6), (2.5, 1.2) })
+        {
+            c.Camera.Yaw = yaw; c.Camera.Pitch = pitch; c.Camera.Distance = 30; c.Camera.Target = (10, 20, 1);
+            Avalonia.Point Screen() { var (x, y, _) = c.Camera.Project(12, 18, 2); return new(400 + x * half, 300 - y * half); }
+            var before = Screen(); c.Down(new(100, 100), true); c.Move(new(130, 120)); c.Up(new(130, 120), null, 800, 600); var after = Screen();
+            Assert.Equal(30, after.X - before.X, 3); Assert.Equal(20, after.Y - before.Y, 3);                              // dragged right and down: the model went right and down
+        }
+        c.Camera.Distance = 30; c.Wheel(1); Assert.InRange(c.Camera.Distance, 27, 28.5); c.Wheel(0.05); Assert.InRange(c.Camera.Distance, 27, 28.5);   // a notch ≈ 8 %, a trackpad step barely moves
+    }, CancellationToken.None);
+
+    [Fact] public Task Risers_are_placed_where_clicked_without_snapping_to_the_walls() => f.Session.Dispatch(() =>
+    {
+        var vm = Basement(); var w = vm.CurrentLevel!.Walls[0].Footprint; var near = new ImmoCad.Core.Model.PointMm(w[0].X + 500, w[0].Y + 120);   // 12 cm from a wall corner face
+        vm.RiserTemplate = vm.RiserTemplates[0]; Assert.Equal(near, vm.RiserPreview(near)[0].At);
+        var before = ImmoCad.Core.Networks.NetworkQueries.All(vm.Building).Count(); vm.PlaceRiser(near);
+        Assert.Contains(ImmoCad.Core.Networks.NetworkQueries.All(vm.Building).Skip(before), s => s.A.X == near.X && s.A.Y == near.Y);
+    }, CancellationToken.None);
+
+    [Fact] public Task A_riser_click_follows_the_grid_when_it_is_on() => f.Session.Dispatch(() =>
+    {
+        var vm = Basement(); var w = new MainWindow { DataContext = vm, Width = 1280, Height = 820 }; w.Show(); w.UpdateLayout(); w.CaptureRenderedFrame();
+        var plan = w.FindControl<PlanView>("Plan")!; plan.Scale = 0.125; plan.InvalidateVisual(); w.CaptureRenderedFrame();               // 50 mm grid
+        vm.SetToolCommand.Execute("Riser"); vm.RiserTemplate = vm.RiserTemplates[0]; Assert.True(vm.SnapToGrid);
+        var raw = plan.ToMm(new Avalonia.Point(400, 300)); var at = plan.TranslatePoint(new Avalonia.Point(400, 300), w)!.Value;
+        var before = ImmoCad.Core.Networks.NetworkQueries.All(vm.Building).Count();
+        w.MouseDown(at, Avalonia.Input.MouseButton.Left); w.MouseUp(at, Avalonia.Input.MouseButton.Left);
+        var placed = ImmoCad.Core.Networks.NetworkQueries.All(vm.Building).Skip(before).First();
+        Assert.Equal(0, placed.A.X % 50); Assert.Equal(0, placed.A.Y % 50); Assert.InRange(Math.Abs(placed.A.X - raw.X), 0, 25); Assert.InRange(Math.Abs(placed.A.Y - raw.Y), 0, 25);
+        w.Close();
+    }, CancellationToken.None);
+
+    [Fact] public Task The_palette_places_objects_on_the_side_views() => f.Session.Dispatch(() =>
+    {
+        var vm = Basement();
+        foreach (var plane in new[] { "XZ", "YZ" })
+        {
+            vm.SetViewPlaneCommand.Execute(plane); vm.SelectPaletteCommand.Execute("radiator"); var n = vm.Building.Equipment.Count;
+            vm.PlaceFromPaletteSide(new(1500, vm.CurrentLevel!.AltitudeMm + 300)); Assert.Equal(n + 1, vm.Building.Equipment.Count);
+        }
     }, CancellationToken.None);
 
     [Fact] public Task The_measure_tool_works_on_the_side_views_in_along_and_height() => f.Session.Dispatch(() =>
@@ -697,11 +843,22 @@ public class RoomToolsTests
     {
         var vm = Basement(); var w = new MainWindow { DataContext = vm, Width = 1280, Height = 820 }; w.Show(); w.UpdateLayout(); w.CaptureRenderedFrame();
         var cube = w.FindControl<ViewCube>("Cube2D")!; Assert.True(cube.IsVisible);
-        Avalonia.Point Face(ViewCube.Face face) => Enumerable.Range(0, 112).SelectMany(y => Enumerable.Range(0, 112).Select(x => new Avalonia.Point(x, y))).First(q => cube.FaceAt(q) == face);
+        Avalonia.Point Face(ViewCube.Face face) => Enumerable.Range(0, 140).SelectMany(y => Enumerable.Range(0, 140).Select(x => new Avalonia.Point(x, y))).First(q => cube.FaceAt(q) == face);
         cube.Click(Face(ViewCube.Face.Front)); Assert.Equal(ViewPlane.XZ, vm.ViewPlane); Assert.False(vm.PlaneFlip);
         cube.Click(Face(ViewCube.Face.Right)); Assert.Equal(ViewPlane.YZ, vm.ViewPlane);
         cube.Click(Face(ViewCube.Face.Top)); Assert.Equal(ViewPlane.XY, vm.ViewPlane);
         w.CaptureRenderedFrame()!.Save(Path.Combine(AppContext.BaseDirectory, "screenshots", "cube2d.png"));
+        // the curved arrows turn the drawing a quarter turn about the view axis, in every plane; the cube's faces stay reachable
+        var plan2 = w.FindControl<PlanView>("Plan")!; Assert.Equal(0, plan2.UserRotationRad);
+        Avalonia.Point Arrow(int dir) => Enumerable.Range(0, 140).SelectMany(y => Enumerable.Range(0, 140).Select(x => new Avalonia.Point(x, y))).First(q => cube.ArrowAt(q) == dir);
+        var front = Face(ViewCube.Face.Front); cube.Click(Arrow(1)); Assert.Equal(Math.PI / 2, plan2.UserRotationRad, 6); Assert.NotEqual(ViewCube.Face.Front, cube.FaceAt(front));   // clockwise, the cube follows
+        Assert.Equal(ViewPlane.XY, vm.ViewPlane);
+        cube.Click(Arrow(-1)); Assert.Equal(0, plan2.UserRotationRad, 6);
+        cube.Click(Arrow(-1)); Assert.Equal(-Math.PI / 2, plan2.UserRotationRad, 6);
+        foreach (var _ in new[] { 1, 2, 3, 4 }) cube.Click(Arrow(-1)); Assert.Equal(-Math.PI / 2, plan2.UserRotationRad, 6);     // stays within one turn
+        cube.Click(Face(ViewCube.Face.Front)); cube.Click(Arrow(1)); Assert.Equal(0, plan2.UserRotationRad, 6); Assert.Equal(ViewPlane.XZ, vm.ViewPlane);
+        w.CaptureRenderedFrame()!.Save(Path.Combine(AppContext.BaseDirectory, "screenshots", "cube2d-turned.png"));
+        cube.Click(Face(ViewCube.Face.Top));
         Assert.Equal(WallDisplay.Solid, vm.WallDisplay); vm.CycleWallDisplayCommand.Execute(null); Assert.Equal(WallDisplay.Wireframe, vm.WallDisplay);
         w.CaptureRenderedFrame()!.Save(Path.Combine(AppContext.BaseDirectory, "screenshots", "wireframe2d.png"));
         vm.CycleWallDisplayCommand.Execute(null); Assert.Equal(WallDisplay.Hidden, vm.WallDisplay); w.CaptureRenderedFrame();
@@ -1447,9 +1604,9 @@ public class NorthUpTests
         var vm = new MainViewModel(startWithSample: false) { Settings = new() }; vm.NewDocumentCommand.Execute(null);
         var w = new MainWindow { DataContext = vm, Width = 1280, Height = 820 }; w.Show(); w.UpdateLayout(); w.CaptureRenderedFrame();
         var plan = w.FindControl<PlanView>("Plan")!;
-        plan.Scale = 0.1; plan.Zoom("in"); w.CaptureRenderedFrame();                          // 0.125 px/mm: a 10 px grid is 100 mm
-        Assert.True(vm.SnapToGrid); Assert.Equal(100, plan.Snapper.GridMm);
-        plan.Scale = 0.5; plan.InvalidateVisual(); w.CaptureRenderedFrame(); Assert.Equal(20, plan.Snapper.GridMm);   // zoomed in: finer grid
+        plan.Scale = 0.1; plan.Zoom("in"); w.CaptureRenderedFrame();                          // 0.125 px/mm: a 5 px grid is 40 mm, rounded up to 50
+        Assert.True(vm.SnapToGrid); Assert.Equal(50, plan.Snapper.GridMm);
+        plan.Scale = 0.5; plan.InvalidateVisual(); w.CaptureRenderedFrame(); Assert.Equal(10, plan.Snapper.GridMm);   // zoomed in: finer grid
         plan.Scale = 0.02; plan.InvalidateVisual(); w.CaptureRenderedFrame(); Assert.Equal(500, plan.Snapper.GridMm); // zoomed out: coarser grid
         Assert.Equal(new(1000, 500), plan.Snapper.Snap(new(1190, 430), []).Point);
         vm.ToggleSnapToGridCommand.Execute(null); Assert.False(vm.SnapToGrid);

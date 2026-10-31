@@ -7,6 +7,21 @@ public class SceneTests
 {
     private static readonly (int, int)[] Rect = [(0, 0), (4000, 0), (4000, 200), (0, 200)];
 
+    [Fact] public void An_elbow_stays_around_its_corner_far_from_the_origin()
+    {
+        var m = MeshBuilder.Elbow((73000, 43000, -300), (73000, 42000, -300), (67000, 43000, -300), 28);                                 // corner at 73 m, arms along -Y and -X
+        for (var i = 0; i < m.Positions.Count; i += 3) { Assert.InRange(m.Positions[i], 72.9, 73.1); Assert.InRange(m.Positions[i + 1], 42.9, 43.1); Assert.InRange(m.Positions[i + 2], -0.4, -0.2); }
+    }
+
+    [Fact] public void Wireframe_drops_the_triangulation_diagonals_of_flat_faces_and_keeps_the_outline()
+    {
+        (int, int)[] l = [(0, 0), (6000, 0), (6000, 2000), (2000, 2000), (2000, 6000), (0, 6000)];                                       // an L: concave, so its caps are fanned
+        var m = MeshBuilder.ExtrudeWall(l, 0, 200);
+        var all = WireEdges.Of(m); var outline = WireEdges.Outline(m);
+        Assert.True(outline.Count < all.Count);
+        Assert.All(outline, e => { double dx = m.Positions[e.A * 3] - m.Positions[e.B * 3], dy = m.Positions[e.A * 3 + 1] - m.Positions[e.B * 3 + 1], dz = m.Positions[e.A * 3 + 2] - m.Positions[e.B * 3 + 2]; Assert.Equal(1, (Math.Abs(dx) > 1e-6 ? 1 : 0) + (Math.Abs(dy) > 1e-6 ? 1 : 0) + (Math.Abs(dz) > 1e-6 ? 1 : 0)); });   // only axis-aligned edges of the L remain
+    }
+
     [Fact] public void Extrusion_is_deterministic()
     {
         var a = MeshBuilder.ExtrudeWall(Rect, 0, 2700).Checksum();

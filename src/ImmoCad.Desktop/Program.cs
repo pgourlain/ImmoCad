@@ -12,5 +12,7 @@ public static class Program
         return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 
-    public static AppBuilder BuildAvaloniaApp() => AppBuilder.Configure<App>().UsePlatformDetect().LogToTrace();
+    /// <summary>On macOS the window is asked to render with OpenGL (software as fallback): the 3D view is an OpenGL control and gets no context when Avalonia renders with Metal.</summary>
+    public static AppBuilder BuildAvaloniaApp() => AppBuilder.Configure<App>().UsePlatformDetect()
+        .With(new AvaloniaNativePlatformOptions { RenderingMode = [AvaloniaNativeRenderingMode.OpenGl, AvaloniaNativeRenderingMode.Software] }).LogToTrace();
 }

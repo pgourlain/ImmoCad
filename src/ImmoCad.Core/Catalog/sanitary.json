@@ -41,8 +41,10 @@
    }
   ],
   "symbol": [
-   "M0,0 L$width,0 L$width,$depth L0,$depth Z",
-   "C$width/2,$depth/2,$depth/3"
+   "F M0,0 L$width,0 L$width,$depth L0,$depth Z",
+   "F E$width/2,$depth*0.55,$width*0.38,$depth*0.34",
+   "C$width/2,$depth*0.55,$depth/16",
+   "B C$width/2,$depth/12,$depth/22"
   ],
   "shape": [
    {
@@ -121,8 +123,14 @@
    }
   ],
   "symbol": [
-   "M0,0 L$width,0 L$width,$depth L0,$depth Z",
-   "M$width/10,$depth/5 L$width*2/5,$depth/5 L$width*2/5,$depth*4/5 L$width/10,$depth*4/5 Z"
+   "F M0,0 L$width,0 L$width,$depth L0,$depth Z",
+   "F M$width/10,$depth/5 L$width*2/5,$depth/5 L$width*2/5,$depth*4/5 L$width/10,$depth*4/5 Z",
+   "C$width/4,$depth/2,$depth/12",
+   "M$width*0.52,$depth*0.3 L$width*0.9,$depth*0.3",
+   "M$width*0.52,$depth*0.45 L$width*0.9,$depth*0.45",
+   "M$width*0.52,$depth*0.6 L$width*0.9,$depth*0.6",
+   "M$width*0.52,$depth*0.75 L$width*0.9,$depth*0.75",
+   "B C$width/4,$depth/12,$depth/22"
   ],
   "shape": [
    {
@@ -201,8 +209,9 @@
    }
   ],
   "symbol": [
-   "M0,0 L$width,0 L$width,$depth/3 L0,$depth/3 Z",
-   "M$width/2,$depth/3 C$width/2,$depth*2/3,$width/2.5"
+   "F M0,0 L$width,0 L$width,$depth*0.25 L0,$depth*0.25 Z",
+   "F E$width/2,$depth*0.6,$width*0.46,$depth*0.36",
+   "E$width/2,$depth*0.62,$width*0.28,$depth*0.22"
   ],
   "shape": [
    {
@@ -274,9 +283,10 @@
    }
   ],
   "symbol": [
-   "M0,0 L$width,0 L$width,$depth L0,$depth Z",
+   "F M0,0 L$width,0 L$width,$depth L0,$depth Z",
    "M0,0 L$width,$depth",
-   "M$width,0 L0,$depth"
+   "M$width,0 L0,$depth",
+   "F C$width/2,$depth/2,$depth/12"
   ],
   "shape": [
    {
@@ -355,8 +365,9 @@
    }
   ],
   "symbol": [
-   "M0,0 L$width,0 L$width,$depth L0,$depth Z",
-   "M$width/12,$depth/8 L$width*11/12,$depth/8 L$width*11/12,$depth*7/8 L$width/12,$depth*7/8 Z"
+   "F M0,0 L$width,0 L$width,$depth L0,$depth Z",
+   "F E$width/2,$depth/2,$width*0.44,$depth*0.36",
+   "C$width*9/10,$depth/2,$depth/12"
   ],
   "shape": [
    {

@@ -79,9 +79,10 @@
 
     <!-- status bar -->
     <Border DockPanel.Dock="Bottom" Classes="bar" Padding="12,6">
-      <Grid ColumnDefinitions="*,Auto">
+      <Grid ColumnDefinitions="*,Auto,Auto">
         <TextBlock Text="{Binding Hint}" Classes="caption" VerticalAlignment="Center" />
-        <TextBlock Grid.Column="1" Text="{Binding Status}" VerticalAlignment="Center" />
+        <ProgressBar Grid.Column="1" IsIndeterminate="True" IsVisible="{Binding SpaceBusy}" Width="120" MinHeight="4" Margin="0,0,12,0" VerticalAlignment="Center" />
+        <TextBlock Grid.Column="2" Text="{Binding Status}" VerticalAlignment="Center" />
       </Grid>
     </Border>
 
@@ -143,9 +144,9 @@
                     <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,4" Padding="8,8" CornerRadius="8"
                             Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).SelectPaletteCommand}" CommandParameter="{Binding Id}">
                       <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
-                        <TextBlock Text="{Binding Glyph}" FontSize="22" Width="28" VerticalAlignment="Top" />
+                        <vm:SymbolIcon CatalogId="{Binding Id}" Width="56" Height="44" VerticalAlignment="Top" />
                         <StackPanel Grid.Column="1" Spacing="2">
-                          <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                          <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextWrapping="Wrap" />
                           <TextBlock Text="{Binding Description}" TextWrapping="Wrap" FontSize="11.5" Opacity="0.75" />
                           <TextBlock Text="{Binding Category}" Classes="caption" />
                         </StackPanel>
@@ -159,23 +160,37 @@
         </TabItem>
         <TabItem vm:L.Header="tab.options">
           <ScrollViewer><StackPanel Spacing="6" Margin="0,6">
+            <TextBlock vm:L.Text="opt.none" Classes="caption" IsVisible="{Binding HasNoToolOptions}" />
+            <StackPanel Spacing="6" IsVisible="{Binding IsDrawTool}">
+              <TextBlock vm:L.Text="opt.wall" Classes="caption" />
+              <NumericUpDown Value="{Binding WallThicknessMm}" Minimum="20" Maximum="1000" Increment="10" vm:L.Format="fmt.thickness" />
+              <TextBlock vm:L.Text="opt.wall.side" Classes="caption" />
+              <Button Content="{Binding WallAlignLabel}" Command="{Binding CycleWallAlignOptionCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+            </StackPanel>
+            <StackPanel Spacing="6" IsVisible="{Binding IsRiserTool}">
             <TextBlock vm:L.Text="opt.riser" Classes="caption" />
             <ComboBox ItemsSource="{Binding RiserTemplates}" SelectedItem="{Binding RiserTemplate}" HorizontalAlignment="Stretch"><ComboBox.ItemTemplate><DataTemplate x:DataType="x:String"><TextBlock Text="{Binding, Converter={x:Static vm:Converters.Loc}}" /></DataTemplate></ComboBox.ItemTemplate></ComboBox>
-            <ComboBox ItemsSource="{Binding NetworkTypes}" SelectedItem="{Binding RiserType}" HorizontalAlignment="Stretch"><ComboBox.ItemTemplate><DataTemplate x:DataType="x:Object"><TextBlock Text="{Binding, Converter={x:Static vm:Converters.EnumName}}" /></DataTemplate></ComboBox.ItemTemplate></ComboBox>
+            <ComboBox ItemsSource="{Binding NetworkTypes}" SelectedItem="{Binding RiserType}" HorizontalAlignment="Stretch"><ComboBox.ItemTemplate><DataTemplate x:DataType="x:Object"><StackPanel Orientation="Horizontal" Spacing="8"><Ellipse Width="14" Height="14" Fill="{Binding, Converter={x:Static vm:Converters.NetworkBrush}}" Stroke="#66000000" StrokeThickness="1" VerticalAlignment="Center" /><TextBlock Text="{Binding, Converter={x:Static vm:Converters.EnumName}}" VerticalAlignment="Center" /></StackPanel></DataTemplate></ComboBox.ItemTemplate></ComboBox>
             <NumericUpDown Value="{Binding RiserDiameter}" Minimum="8" Maximum="200" vm:L.Format="fmt.mm" />
             <NumericUpDown Value="{Binding RiserSpacing}" Minimum="50" Maximum="1000" vm:L.Format="fmt.spacing" />
             <CheckBox vm:L.Content="site.wholebuilding" IsChecked="{Binding RiserWholeBuilding}" />
+            </StackPanel>
+            <StackPanel Spacing="6" IsVisible="{Binding IsAlignTool}">
+              <TextBlock vm:L.Text="opt.align" Classes="caption" />
             <CheckBox vm:L.Content="align.movewalls" IsChecked="{Binding AlignMoveWalls}" />
-            <Separator />
+            </StackPanel>
+            <StackPanel Spacing="6" IsVisible="{Binding IsStraightenTool}">
             <TextBlock vm:L.Text="opt.straighten" Classes="caption" />
             <NumericUpDown Value="{Binding StraightenTolerance}" Minimum="0" Maximum="300" vm:L.Format="fmt.tolerance" />
             <NumericUpDown Value="{Binding StraightenAngle}" Minimum="0" Maximum="20" vm:L.Format="fmt.angle" />
             <Button vm:L.Content="straighten.rect" Command="{Binding MakeRectangularCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
-            <Separator />
+            </StackPanel>
+            <StackPanel Spacing="6" IsVisible="{Binding IsPipeTool}">
             <TextBlock vm:L.Text="opt.pipe" Classes="caption" />
-            <ComboBox ItemsSource="{Binding NetworkTypes}" SelectedItem="{Binding PipeType}" HorizontalAlignment="Stretch"><ComboBox.ItemTemplate><DataTemplate x:DataType="x:Object"><TextBlock Text="{Binding, Converter={x:Static vm:Converters.EnumName}}" /></DataTemplate></ComboBox.ItemTemplate></ComboBox>
+            <ComboBox ItemsSource="{Binding NetworkTypes}" SelectedItem="{Binding PipeType}" HorizontalAlignment="Stretch"><ComboBox.ItemTemplate><DataTemplate x:DataType="x:Object"><StackPanel Orientation="Horizontal" Spacing="8"><Ellipse Width="14" Height="14" Fill="{Binding, Converter={x:Static vm:Converters.NetworkBrush}}" Stroke="#66000000" StrokeThickness="1" VerticalAlignment="Center" /><TextBlock Text="{Binding, Converter={x:Static vm:Converters.EnumName}}" VerticalAlignment="Center" /></StackPanel></DataTemplate></ComboBox.ItemTemplate></ComboBox>
             <NumericUpDown Value="{Binding PipeDiameter}" Minimum="8" Maximum="200" vm:L.Format="fmt.mm" />
             <NumericUpDown Value="{Binding PipeElevation}" Minimum="0" Maximum="6000" Increment="50" vm:L.Format="fmt.height" />
+            </StackPanel>
           </StackPanel></ScrollViewer>
         </TabItem>
         <TabItem vm:L.Header="tab.networks">
@@ -280,6 +295,7 @@
             <StackPanel Spacing="6" IsVisible="{Binding ShowWallProps}">
               <TextBox vm:L.Watermark="wm.label" Text="{Binding PropLabel}" />
               <NumericUpDown Value="{Binding PropHeight}" Minimum="0" Maximum="10000" Increment="50" vm:L.Format="fmt.height.level" />
+              <Button vm:L.Content="btn.apply" Command="{Binding ApplyPropertiesCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
               <NumericUpDown Value="{Binding PropThickness}" Minimum="0" Maximum="1000" Increment="10" vm:L.Format="fmt.thickness" />
               <Button vm:L.Content="prop.apply.thickness" Command="{Binding ApplyThicknessCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
               <Separator />
@@ -304,6 +320,12 @@
               <Button vm:L.Content="btn.apply" Command="{Binding ApplyOpeningCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
             </StackPanel>
             <StackPanel Spacing="6" IsVisible="{Binding ShowPipeProps}">
+              <TextBlock vm:L.Text="ptype.title" Classes="caption" />
+              <ComboBox ItemsSource="{Binding NetworkTypes}" SelectedItem="{Binding SegType}" HorizontalAlignment="Stretch"><ComboBox.ItemTemplate><DataTemplate x:DataType="x:Object"><StackPanel Orientation="Horizontal" Spacing="8"><Ellipse Width="14" Height="14" Fill="{Binding, Converter={x:Static vm:Converters.NetworkBrush}}" Stroke="#66000000" StrokeThickness="1" VerticalAlignment="Center" /><TextBlock Text="{Binding, Converter={x:Static vm:Converters.EnumName}}" VerticalAlignment="Center" /></StackPanel></DataTemplate></ComboBox.ItemTemplate></ComboBox>
+              <Button vm:L.Content="ptype.apply" Command="{Binding ApplyPipeTypeCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+              <TextBlock vm:L.Text="diam.title" Classes="caption" />
+              <NumericUpDown Value="{Binding SegDiameter}" Minimum="8" Maximum="200" vm:L.Format="fmt.mm" />
+              <Button vm:L.Content="diam.apply" Command="{Binding ApplyDiameterCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
               <TextBlock vm:L.Text="extent.title" Classes="caption" />
               <TextBlock Text="{Binding ExtentInfo}" Classes="caption" />
               <Grid ColumnDefinitions="*,*" ColumnSpacing="6"><ComboBox ItemsSource="{Binding LevelNames}" SelectedIndex="{Binding ExtentFrom}" HorizontalAlignment="Stretch" /><ComboBox Grid.Column="1" ItemsSource="{Binding LevelNames}" SelectedIndex="{Binding ExtentTo}" HorizontalAlignment="Stretch" /></Grid>
@@ -335,7 +357,6 @@
             <Button vm:L.Content="bg.apply" Command="{Binding ApplyImageFieldsCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
             <Separator />
             </StackPanel>
-            <Button vm:L.Content="btn.apply" Command="{Binding ApplyPropertiesCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
           </StackPanel></ScrollViewer>
         </TabItem>
       </TabControl>
@@ -450,7 +471,7 @@
       <UniformGrid Rows="1">
         <Grid IsVisible="{Binding ShowPlan}">
           <vm:PlanView x:Name="Plan" />
-          <vm:ViewCube x:Name="Cube2D" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,10,14,0" />
+          <vm:ViewCube x:Name="Cube2D" Width="140" Height="140" HorizontalAlignment="Right" VerticalAlignment="Top" />
         </Grid>
         <Grid x:Name="View3DHost" IsVisible="{Binding Show3D}" />
       </UniformGrid>

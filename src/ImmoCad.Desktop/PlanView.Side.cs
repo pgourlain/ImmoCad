@@ -120,7 +120,8 @@ public partial class PlanView
         }
         // pipes (every network, projected on the plane)
         DrawJoints(ctx, NetworkQueries.All(b).Where(x => x.Network.Visible), q => ToScreen(UV(plane.ProjectU(new PointMm(q.X, q.Y)), q.Z)));
-        foreach (var s in NetworkQueries.All(b).Where(x => x.Network.Visible))
+        // painter's algorithm: farthest from the viewer first, the nearest tubes drawn last cover the others
+        foreach (var s in NetworkQueries.All(b).Where(x => x.Network.Visible).OrderBy(x => plane.Distance(new PointMm((x.A.X + x.B.X) / 2, (x.A.Y + x.B.Y) / 2))))
         {
             var c = NetworkQueries.ColorOf(s.Network.Type); var wpx = TubeWidthPx(s.Segment.DiameterMm);
             var a = ToScreen(UV(plane.ProjectU(new PointMm(s.A.X, s.A.Y)), s.A.Z)); var d = ToScreen(UV(plane.ProjectU(new PointMm(s.B.X, s.B.Y)), s.B.Z));
@@ -155,7 +156,7 @@ public partial class PlanView
     }
     private Point ScreenOf(ElevationPlane plane, PointMm3 q) => ToScreen(UV(plane.ProjectU(new PointMm(q.X, q.Y)), q.Z));
     private SegmentRef? SelectedSideSegment() => Vm?.SelectedSegment is { } sel ? NetworkQueries.All(Vm.Building).FirstOrDefault(x => x.Segment.Id == sel.SegmentId) : null;
-    private PointMm SnapUV(Point p) { var m = ToMm(p); var g = Snapper.GridMm; return new PointMm(Snap(m.X, g), Snap(m.Y, g)); }
+    private PointMm SnapUV(Point p) { SyncSnap(); var m = ToMm(p); var g = Snapper.GridMm; return new PointMm(Snap(m.X, g), Snap(m.Y, g)); }
 
     private (SegmentRef Seg, PipeHandle Handle)? HitSideHandle(Point p, ElevationPlane plane)
     {
@@ -236,7 +237,8 @@ public partial class PlanView
             DrawTool!.Down(TP(e)); e.Pointer.Capture(this); InvalidateVisual(); return;
         }
         if (vm.IsMeasureTool) { vm.MeasureClick(SnapUV(p)); InvalidateVisual(); return; }                         // distance in the plane of the view (along × height)
-        if (vm.IsRiserTool) { vm.PlaceRiserSide(ToMm(p).X); return; }
+        if (vm.IsRiserTool) { vm.PlaceRiserSide(MarkerSnap(ToMm(p)).Point.X); return; }
+        if (vm.IsPlaceTool) { vm.PlaceFromPaletteSide(ToMm(p)); return; }
         if (!vm.IsSelectTool) { vm.Status = T("side.unavailable"); return; }
         if (HitSideHandle(p, plane) is { } hh) { _sideDrag = (hh.Seg, hh.Handle, SnapUV(p)); _sideNow = _sideDrag.Value.Start; e.Pointer.Capture(this); return; }
         var add = e.KeyModifiers.HasFlag(KeyModifiers.Shift);

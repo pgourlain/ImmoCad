@@ -40,11 +40,13 @@ public sealed class ViewportController
         if (pts.Count > 0)
         {
             var min = (X: pts.Min(o => o.Mesh.Min().X), Y: pts.Min(o => o.Mesh.Min().Y)); var max = (X: pts.Max(o => o.Mesh.Max().X), Y: pts.Max(o => o.Mesh.Max().Y));
-            Camera.Target = ((min.X + max.X) / 2, (min.Y + max.Y) / 2, (vm.CurrentLevel?.AltitudeMm ?? 0) / 1000.0 + 1.35);   // level bar moves the camera target vertically
-            if (!_fitted) { Camera.Distance = Math.Max(max.X - min.X, max.Y - min.Y) * 1.8 + 4; _fitted = true; }
+            var levelZ = (vm.CurrentLevel?.AltitudeMm ?? 0) / 1000.0 + 1.35;
+            if (!_fitted) { Camera.Target = ((min.X + max.X) / 2, (min.Y + max.Y) / 2, levelZ); Camera.Distance = Math.Max(max.X - min.X, max.Y - min.Y) * 1.8 + 4; _fitted = true; }
+            else if (Math.Abs(levelZ - _levelZ) > 1e-9) Camera.Target = (Camera.Target.X, Camera.Target.Y, Camera.Target.Z + levelZ - _levelZ);   // level bar moves the camera target vertically; a pan or zoom is kept
+            _levelZ = levelZ;
         }
     }
-    private bool _fitted;
+    private bool _fitted; private double _levelZ;
     public void FitAll() { _fitted = false; }
 
     // ---- pipe end handles: drag constrained to the pipe's axis, gizmo drawn by the viewport ----
@@ -76,9 +78,11 @@ public sealed class ViewportController
     // ---- input ----
     public void Down(Point p, bool rightOrMiddle) { _last = p; _down = p; _pan = rightOrMiddle; if (!rightOrMiddle && HitHandle(p, _width, _height) is { } h) { ActiveHandle = h; HandlePreview = h.End; } }
     public void Size(double width, double height) { _width = width; _height = height; }
+    /// <summary>True while the view is being turned or panned with the mouse: the software viewport draws a lighter frame meanwhile.</summary>
+    public bool Dragging => _last != null && ActiveHandle == null;
     public void Up(Point p, MainViewModel? vm, double width, double height)
     {
-        _last = null; Size(width, height);
+        var wasDragging = Dragging; _last = null; Size(width, height); if (wasDragging) Invalidate?.Invoke();      // full-quality frame once the mouse is released
         if (ActiveHandle is { } ah)
         {
             var at = HandlePreview ?? ah.End; ActiveHandle = null; HandlePreview = null; Invalidate?.Invoke();
@@ -91,11 +95,17 @@ public sealed class ViewportController
     {
         if (ActiveHandle is { } ah2) { HandlePreview = OnAxis(ah2, p, _width, _height); Invalidate?.Invoke(); return; }
         if (_last is not { } l || IsAnimating) return;
-        if (_pan) { var k = Camera.Distance * 0.0012; double dx = (p.X - l.X) * k, dy = (p.Y - l.Y) * k; var (cy, sy) = (Math.Cos(Camera.Yaw), Math.Sin(Camera.Yaw)); Camera.Target = (Camera.Target.X - dx * cy + dy * Math.Sin(Camera.Pitch) * sy, Camera.Target.Y + dx * sy + dy * Math.Sin(Camera.Pitch) * cy, Camera.Target.Z); }
-        else Camera.Orbit(-(p.X - l.X) * 0.01, (p.Y - l.Y) * 0.01);
+        if (_pan)
+        {   // the model follows the mouse: the target moves against the drag along the screen's right and up directions, one pixel = Distance / viewport size
+            var half = Math.Min(_width, _height) / 2; var k = half > 1 ? Camera.Distance / (2 * half) : Camera.Distance * 0.0012; double mx = (p.X - l.X) * k, my = (p.Y - l.Y) * k;
+            var (cy, sy) = (Math.Cos(Camera.Yaw), Math.Sin(Camera.Yaw)); var (cp, sp) = (Math.Cos(Camera.Pitch), Math.Sin(Camera.Pitch));
+            Camera.Target = (Camera.Target.X - mx * cy - my * sy * sp, Camera.Target.Y - mx * sy + my * cy * sp, Camera.Target.Z + my * cp);
+        }
+        else Camera.Orbit((p.X - l.X) * 0.01, -(p.Y - l.Y) * 0.01);          // the camera follows the mouse: drag right turns the view to the right, drag up looks from higher
         _last = p; Invalidate?.Invoke();
     }
-    public void Wheel(double dy) { if (IsAnimating) return; Camera.Zoom(dy > 0 ? 0.9 : 1.1); Invalidate?.Invoke(); }
+    /// <summary>Zoom in proportion to the wheel delta: a mouse notch (1) is about 8 %, a trackpad sends many small deltas and zooms smoothly.</summary>
+    public void Wheel(double dy) { if (IsAnimating) return; Camera.Zoom(Math.Exp(-Math.Clamp(dy, -3, 3) * 0.08)); Invalidate?.Invoke(); }
     /// <summary>Looks from the given angles (animated, shortest way round), keeping target and distance.</summary>
     public void LookFrom(double yaw, double pitch)
     {
@@ -129,7 +139,7 @@ public sealed class ViewportController
     public void EnterFromPlan(double lookAtXmm, double lookAtYmm, double planScale, double viewportH, double altitudeM, Action? done = null)
     {
         var top = CameraTransition.TopFromPlan(lookAtXmm, lookAtYmm, planScale, viewportH, altitudeM);
-        _fitted = true;
+        _fitted = true; _levelZ = altitudeM + 1.35;
         var to = new CameraPose(LastPose3D.Yaw, LastPose3D.Pitch, Math.Max(LastPose3D.Distance, 2), Camera.Target.X, Camera.Target.Y, Camera.Target.Z, 0);
         Start(top, to, done);
     }

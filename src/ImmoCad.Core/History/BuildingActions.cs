@@ -351,8 +351,23 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
                 if (prev != null) { var s = new Segment { A = prev.Id, B = n.Id, DiameterMm = diameterMm }; net.Segments.Add(s); segs.Add(s); }
                 prev = n;
             }
+            foreach (var n in net.Nodes.Where(x => points.Contains(x.Position)).ToList()) SplitVerticalAt(net, n);     // an end on a riser joins it (elbow / tee)
             return (IReadOnlyList<Segment>)segs;
         }, _ => networkId);
+
+    /// <summary>When the node lies strictly inside a vertical segment of the network (same X, Y), splits that segment at the node so the two are connected.</summary>
+    private static void SplitVerticalAt(Network net, Node n)
+    {
+        var p = n.Position;
+        foreach (var seg in net.Segments.ToList())
+        {
+            if (seg.A == n.Id || seg.B == n.Id) continue;
+            var a = net.Nodes.First(x => x.Id == seg.A).Position; var b = net.Nodes.First(x => x.Id == seg.B).Position;
+            if (a.X != p.X || a.Y != p.Y || b.X != p.X || b.Y != p.Y || p.Z <= Math.Min(a.Z, b.Z) || p.Z >= Math.Max(a.Z, b.Z)) continue;
+            var oldB = seg.B; seg.B = n.Id; net.Segments.Add(new Segment { A = n.Id, B = oldB, DiameterMm = seg.DiameterMm, Material = seg.Material });
+            return;
+        }
+    }
 
     /// <summary>Inserts a component (valve, meter…) on a pipe: splits the segment at the point; the new node carries the component id.</summary>
     public Node InsertComponent(Guid networkId, Guid segmentId, PointMm3 at, string component) =>
@@ -494,16 +509,29 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
             foreach (var s in attached) { var o = s.A == nid ? s.B : s.A; var op = net.Nodes.First(n => n.Id == o).Position;
                 if (SameAxis(a, b, np, op) && run.Add(o)) queue.Enqueue(o); }
         }
-        // would any segment attached to the run (but not in it) stop being axis-aligned?
+        // a run end whose other segment (a riser, a perpendicular pipe) would stop being axis-aligned stays where it is; the run leaves it through a short jog
         PointMm3 Shift(PointMm3 p) => new(p.X + dx, p.Y + dy, p.Z + dz);
+        var anchored = new HashSet<Guid>();
         foreach (var s in net.Segments)
         {
             var inA = run.Contains(s.A); var inB = run.Contains(s.B); if (inA == inB) continue;
             var pa = net.Nodes.First(n => n.Id == s.A).Position; var pb = net.Nodes.First(n => n.Id == s.B).Position;
-            if (!AxisAligned(inA ? Shift(pa) : pa, inB ? Shift(pb) : pb)) return false;
+            if (!AxisAligned(inA ? Shift(pa) : pa, inB ? Shift(pb) : pb)) anchored.Add(inA ? s.A : s.B);
         }
+        if (anchored.Count > 0 && !AxisAligned(default, new PointMm3(dx, dy, dz))) return false;                      // the jog itself must be along one axis
         Edit("Move pipe run", BuildingEventKind.NetworkChanged, () =>
-        { foreach (var n in net.Nodes.Where(n => run.Contains(n.Id))) n.Position = Shift(n.Position); return networkId; }, i => i);
+        {
+            foreach (var n in net.Nodes.Where(n => run.Contains(n.Id) && !anchored.Contains(n.Id)).ToList()) n.Position = Shift(n.Position);
+            var runSegs = net.Segments.Where(s => run.Contains(s.A) && run.Contains(s.B)).ToList();
+            foreach (var id in anchored)
+            {
+                var old = net.Nodes.First(n => n.Id == id); var moved = new Node { Position = Shift(old.Position) }; net.Nodes.Add(moved);
+                var inRun = runSegs.Where(s => s.A == id || s.B == id).ToList();
+                foreach (var s in inRun) { if (s.A == id) s.A = moved.Id; else s.B = moved.Id; }
+                var like = inRun.FirstOrDefault() ?? net.Segments.First(); net.Segments.Add(new Segment { A = id, B = moved.Id, DiameterMm = like.DiameterMm, Material = like.Material });
+            }
+            return networkId;
+        }, i => i);
         return true;
     }
 
@@ -543,6 +571,31 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
 
     public void SetSegmentDiameter(Guid networkId, Guid segId, int diameterMm) =>
         Edit("Change diameter", BuildingEventKind.NetworkChanged, () => { Net(networkId).Segments.First(s => s.Id == segId).DiameterMm = diameterMm; return segId; }, i => i);
+
+    /// <summary>Changes the type of a connected run of pipes: every segment reachable from the given one moves to a network of the new type (created when there is none). Null (no change) when the type is the same or the network is locked. One history step.</summary>
+    public Network? ChangeRunType(Guid networkId, Guid segmentId, NetworkType type)
+    {
+        var src = Net(networkId); if (src.Type == type || src.Locked) return null;
+        return Edit("Change pipe type", BuildingEventKind.NetworkChanged, () =>
+        {
+            var nodes = new HashSet<Guid>(); var run = new HashSet<Guid>(); var first = src.Segments.First(x => x.Id == segmentId); nodes.Add(first.A); nodes.Add(first.B); run.Add(first.Id);
+            for (var grew = true; grew;)
+            {
+                grew = false;
+                foreach (var sg in src.Segments.Where(x => !run.Contains(x.Id) && (nodes.Contains(x.A) || nodes.Contains(x.B)))) { run.Add(sg.Id); nodes.Add(sg.A); nodes.Add(sg.B); grew = true; }
+            }
+            var dst = building.Networks.FirstOrDefault(n => n.Type == type && !n.Locked && n != src) ?? new Network { Name = type.ToString(), Type = type };
+            if (!building.Networks.Contains(dst)) building.Networks.Add(dst);
+            dst.Nodes.AddRange(src.Nodes.Where(n => nodes.Contains(n.Id))); dst.Segments.AddRange(src.Segments.Where(x => run.Contains(x.Id)));
+            src.Nodes.RemoveAll(n => nodes.Contains(n.Id)); src.Segments.RemoveAll(x => run.Contains(x.Id));
+            if (src.Segments.Count == 0 && src.Nodes.Count == 0) building.Networks.Remove(src);
+            return dst;
+        }, n => n.Id);
+    }
+
+    /// <summary>Same diameter for several segments (a whole riser) as one history step.</summary>
+    public void SetSegmentsDiameter(Guid networkId, IReadOnlyCollection<Guid> segIds, int diameterMm) =>
+        Edit("Change diameter", BuildingEventKind.NetworkChanged, () => { foreach (var s in Net(networkId).Segments.Where(x => segIds.Contains(x.Id))) s.DiameterMm = diameterMm; return networkId; }, i => i);
 
     public Equipment AddEquipment(Guid levelId, string catalogId, PointMm pos, int elevationMm = 0) =>
         Edit("Add equipment", BuildingEventKind.LevelChanged, () =>

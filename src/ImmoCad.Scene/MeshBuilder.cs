@@ -105,7 +105,7 @@ public static class MeshBuilder
         (int, int, int) Toward((int X, int Y, int Z) to) { double dx = to.X - corner.X, dy = to.Y - corner.Y, dz = to.Z - corner.Z; var l = Math.Sqrt(dx * dx + dy * dy + dz * dz); return l < 1 ? (0, 0, 0) : ((int)(dx / l * r), (int)(dy / l * r), (int)(dz / l * r)); }
         var (ax, ay, az) = Toward(armA); var (bx, by, bz) = Toward(armB);
         var pa = (corner.X + ax, corner.Y + ay, corner.Z + az); var pb = (corner.X + bx, corner.Y + by, corner.Z + bz);
-        var bulge = (pa.Item1 / 2 + pb.Item1 / 2 + corner.X / 2, pa.Item2 / 2 + pb.Item2 / 2 + corner.Y / 2, pa.Item3 / 2 + pb.Item3 / 2 + corner.Z / 2);
+        var bulge = ((pa.Item1 + pb.Item1) / 4 + corner.X / 2, (pa.Item2 + pb.Item2) / 4 + corner.Y / 2, (pa.Item3 + pb.Item3) / 4 + corner.Z / 2);   // halfway between the corner and the middle of the two arm ends
         Cylinder(pa, ((pa.Item1 + bulge.Item1) / 2, (pa.Item2 + bulge.Item2) / 2, (pa.Item3 + bulge.Item3) / 2), diameterMm, 10, m);
         Cylinder(((pa.Item1 + bulge.Item1) / 2, (pa.Item2 + bulge.Item2) / 2, (pa.Item3 + bulge.Item3) / 2), ((pb.Item1 + bulge.Item1) / 2, (pb.Item2 + bulge.Item2) / 2, (pb.Item3 + bulge.Item3) / 2), diameterMm, 10, m);
         Cylinder(((pb.Item1 + bulge.Item1) / 2, (pb.Item2 + bulge.Item2) / 2, (pb.Item3 + bulge.Item3) / 2), pb, diameterMm, 10, m);
@@ -176,5 +176,28 @@ public static class WireEdges
                 set.Add(a < b ? (a, b) : (b, a));
             }
         return set.ToList();
+    }
+
+    /// <summary>
+    /// Edges worth drawing in wireframe: the ones with a single triangle (boundary of a face) or whose two triangles are not coplanar (a real crease).
+    /// The diagonals a triangulation adds inside a flat face (fans across slabs and wall caps) are left out.
+    /// </summary>
+    public static List<(int A, int B)> Outline(Mesh m)
+    {
+        var faces = new Dictionary<(int, int), (int Count, (double X, double Y, double Z) N)>();
+        for (var i = 0; i + 2 < m.Indices.Count; i += 3)
+        {
+            int i0 = m.Indices[i], i1 = m.Indices[i + 1], i2 = m.Indices[i + 2];
+            double ux = m.Positions[i1 * 3] - m.Positions[i0 * 3], uy = m.Positions[i1 * 3 + 1] - m.Positions[i0 * 3 + 1], uz = m.Positions[i1 * 3 + 2] - m.Positions[i0 * 3 + 2];
+            double vx = m.Positions[i2 * 3] - m.Positions[i0 * 3], vy = m.Positions[i2 * 3 + 1] - m.Positions[i0 * 3 + 1], vz = m.Positions[i2 * 3 + 2] - m.Positions[i0 * 3 + 2];
+            double nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx, l = Math.Sqrt(nx * nx + ny * ny + nz * nz);
+            var n = l < 1e-12 ? (0.0, 0.0, 0.0) : (nx / l, ny / l, nz / l);
+            for (var k = 0; k < 3; k++)
+            {
+                int a = m.Indices[i + k], b = m.Indices[i + (k + 1) % 3]; var key = a < b ? (a, b) : (b, a);
+                faces[key] = faces.TryGetValue(key, out var f) ? (f.Count + 1, f.Count == 1 && Math.Abs(f.N.X * n.Item1 + f.N.Y * n.Item2 + f.N.Z * n.Item3) < 0.9999 ? (0, 0, 0) : f.N) : (1, n);
+            }
+        }
+        return faces.Where(e => e.Value.Count == 1 || e.Value.Count > 2 || e.Value.N == (0.0, 0.0, 0.0)).Select(e => e.Key).ToList();
     }
 }

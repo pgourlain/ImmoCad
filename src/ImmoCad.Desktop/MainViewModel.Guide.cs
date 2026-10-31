@@ -68,11 +68,11 @@ public partial class MainViewModel
     public bool ShowRiserTool => ExpertMode || Step is WorkStep.Equip or WorkStep.Connect;
     public bool ShowPipeTool => ExpertMode || Step == WorkStep.Connect;
     public bool ShowExpertActions => ExpertMode;
-    // sections of the Properties panel: the ones about the selection, the background picture while working on the plan
-    public bool ShowWallProps => ExpertMode || WallsSelected;
-    public bool ShowPipeProps => ExpertMode || SelectedSegment != null;
-    public bool ShowEquipmentProps => ExpertMode || EquipmentSelected;
-    public bool ShowBackgroundProps => ExpertMode || Step == WorkStep.Plan;
+    // sections of the Properties panel: only the ones the selected object has (the background picture when nothing is selected)
+    public bool ShowWallProps => WallsSelected;
+    public bool ShowPipeProps => SelectedSegment != null;
+    public bool ShowEquipmentProps => EquipmentSelected;
+    public bool ShowBackgroundProps => !HasSelection;
     private void NotifyToolGroups()
     {
         foreach (var n in new[] { nameof(ShowPlanTools), nameof(ShowWallTools), nameof(ShowRoomTools), nameof(ShowRiserTool), nameof(ShowPipeTool), nameof(ShowExpertActions),
@@ -90,7 +90,7 @@ public partial class MainViewModel
     {
         base.OnPropertyChanged(e);
         if (e.PropertyName == nameof(SelectionText))
-            foreach (var n in new[] { nameof(HasSelection), nameof(WallsSelected), nameof(EquipmentSelected), nameof(ShowWallProps), nameof(ShowPipeProps), nameof(ShowEquipmentProps) })
+            foreach (var n in new[] { nameof(HasSelection), nameof(WallsSelected), nameof(EquipmentSelected), nameof(ShowWallProps), nameof(ShowPipeProps), nameof(ShowEquipmentProps), nameof(ShowBackgroundProps) })
                 base.OnPropertyChanged(new System.ComponentModel.PropertyChangedEventArgs(n));
     }
 
