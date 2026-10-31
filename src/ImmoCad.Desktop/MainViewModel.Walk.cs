@@ -60,6 +60,16 @@ public partial class MainViewModel
     /// <summary>Same command with the name the menus and the palette use.</summary>
     public IRelayCommand WalkCommand => WalkingCommand;
 
+    /// <summary>Room names over the walk view.</summary>
+    public bool WalkRoomNames => Settings.WalkRoomNames;
+    /// <summary>Where the names float in a room, kept between frames.</summary>
+    public WalkLabels WalkLabelCache { get; } = new();
+    [RelayCommand]
+    private void ToggleWalkRoomNames()
+    {
+        Settings.WalkRoomNames = !Settings.WalkRoomNames; OnPropertyChanged(nameof(WalkRoomNames)); Status = T(Settings.WalkRoomNames ? "walk.names.on" : "walk.names.off"); WalkChanged?.Invoke();
+    }
+
     [RelayCommand] private void LeaveWalk() => EndWalkRequest(null);
     [RelayCommand] private void WalkFromSpace(Guid id) { var s = SpaceItems.FirstOrDefault(x => x.Id == id); if (s != null) BeginWalk(s.Center, s.LevelId); }
     [RelayCommand]

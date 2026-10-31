@@ -228,4 +228,26 @@ public sealed class WalkArea
             if (label[i, j] == best && i > 0 && j > 0 && i < w - 1 && j < h - 1) { var d = (i - cx) * (i - cx) + (j - cy) * (j - cy); if (d < bestD) { bestD = d; pick = new WalkPoint(b.X0 + (i - 1 + 0.5) * cellMm, b.Y0 + (j - 1 + 0.5) * cellMm); } }
         return pick;
     }
+
+    /// <summary>
+    /// True when nothing blocks the straight line between two points of the plan at this eye height: no wall material, except through an opening that is open at this height.
+    /// Used for the room names: a name behind a wall is not shown.
+    /// </summary>
+    public bool LineOfSight(WalkPoint a, WalkPoint b, double eyeMm)
+    {
+        double lx = Math.Min(a.X, b.X), hx = Math.Max(a.X, b.X), ly = Math.Min(a.Y, b.Y), hy = Math.Max(a.Y, b.Y);
+        foreach (var s in _solids)
+        {
+            if (eyeMm > s.HeightMm || s.MaxX < lx || s.MinX > hx || s.MaxY < ly || s.MinY > hy) continue;
+            foreach (var (ax, ay, bx, by) in s.Edges)
+            {
+                double d1x = b.X - a.X, d1y = b.Y - a.Y, d2x = bx - ax, d2y = by - ay, den = d1x * d2y - d1y * d2x; if (Math.Abs(den) < 1e-9) continue;       // parallel
+                double t = ((ax - a.X) * d2y - (ay - a.Y) * d2x) / den, u = ((ax - a.X) * d1y - (ay - a.Y) * d1x) / den;
+                if (t < 0 || t > 1 || u < 0 || u > 1) continue;
+                if (InOpenGate(s, a.X + d1x * t, a.Y + d1y * t, eyeMm)) continue;
+                return false;
+            }
+        }
+        return true;
+    }
 }

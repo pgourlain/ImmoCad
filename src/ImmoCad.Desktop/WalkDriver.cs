@@ -45,6 +45,7 @@ public sealed class WalkDriver
             case Key.PageDown: _vm.LevelDownCommand.Execute(null); Touch(); return true;
             case Key.LeftShift or Key.RightShift: _shift = true; return true;
         }
+        if (e.PhysicalKey == PhysicalKey.R) { _vm.ToggleWalkRoomNamesCommand.Execute(null); Touch(); return true; }
         if (e.PhysicalKey == PhysicalKey.X) { _vm.ToggleWalkGhostCommand.Execute(null); Touch(); return true; }
         if (Letters.Contains(e.PhysicalKey)) { _letters.Add(e.PhysicalKey); _tappedLetters.Add(e.PhysicalKey); return true; }
         return true;                                                                                  // anything else is swallowed too: W, V, Delete… must not start a tool in the dark

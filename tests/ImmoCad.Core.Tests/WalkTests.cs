@@ -281,4 +281,75 @@ public class WalkTests
         var out0 = new WalkState(b, l0, new WalkPoint(8000, 1000)); out0.SetGhost(true); out0.Jump(new(8000, -800)); out0.SetGhost(false);
         Assert.True(out0.ChangeLevel(small)); Assert.Equal(-800, out0.Y, 1);                                                            // floating outside stays outside
     }
+
+    // ---- room names ----
+    private static Space Room(string name, SpaceKind kind, string? number = null, params (int X, int Y)[] pts) => new() { Name = name, Kind = kind, Number = number, Outline = pts.Select(p => new PointMm(p.X, p.Y)).ToList() };
+    private static (int, int)[] Box(int x0, int y0, int x1, int y1) => [(x0, y0), (x1, y0), (x1, y1), (x0, y1)];
+    private static void InLanguage(string lang, Action body) { var before = Translations.Language; Translations.Language = lang; try { body(); } finally { Translations.Language = before; } }
+
+    [Fact] public void A_typed_name_is_shown_as_it_is_and_a_generated_one_gives_way_to_a_more_telling_kind()
+    {
+        InLanguage("en", () =>
+        {
+            Assert.Equal("Local Vélo", WalkLabels.RoomText(Room("Local Vélo", SpaceKind.BikeRoom, null, Box(0, 0, 1000, 1000))));                         // typed: as it is, the kind adds nothing
+            Assert.Equal("Bike room", WalkLabels.RoomText(Room(Translations.Token("space.default.name", 3), SpaceKind.BikeRoom, null, Box(0, 0, 1000, 1000))));   // "Room 3" says nothing
+            Assert.Equal("Room 3", WalkLabels.RoomText(Room(Translations.Token("space.default.name", 3), SpaceKind.Room, null, Box(0, 0, 1000, 1000))));        // kind Room: the numbered name tells rooms apart
+            Assert.Equal("Cellar 12", WalkLabels.RoomText(Room(Translations.Token("space.default.name", 4), SpaceKind.Cellar, "12", Box(0, 0, 1000, 1000))));    // the number is added
+            Assert.Equal("Cave 12", WalkLabels.RoomText(Room("Cave 12", SpaceKind.Cellar, "12", Box(0, 0, 1000, 1000))));                                      // unless it is already there
+            Assert.Equal("Corridor", WalkLabels.RoomText(Room("", SpaceKind.Corridor, null, Box(0, 0, 1000, 1000))));                                          // no name at all: the kind
+        });
+        InLanguage("fr", () => Assert.Equal("Local vélos", WalkLabels.RoomText(Room(Translations.Token("space.default.name", 1), SpaceKind.BikeRoom, null, Box(0, 0, 1000, 1000)))));
+    }
+
+    [Fact] public void The_anchor_of_an_L_shaped_room_is_inside_it_and_a_long_corridor_gets_a_name_near_each_end()
+    {
+        PointMm[] l = [new(0, 0), new(6000, 0), new(6000, 1000), new(1000, 1000), new(1000, 6000), new(0, 6000)];
+        var a = WalkLabels.AnchorsOf(l); Assert.Single(a); Assert.True(ImmoCad.Core.Geometry.SpaceFinder.Contains(l, a[0]));                                  // the centre of mass of an L is outside the L
+        var corridor = Box(0, 0, 20000, 1500).Select(p => new PointMm(p.Item1, p.Item2)).ToList(); var c = WalkLabels.AnchorsOf(corridor);
+        Assert.Equal(3, c.Count); Assert.All(c, p => Assert.True(ImmoCad.Core.Geometry.SpaceFinder.Contains(corridor, p))); Assert.True(c.Max(p => p.X) - c.Min(p => p.X) > 10000);
+        Assert.Empty(WalkLabels.AnchorsOf([new PointMm(0, 0), new PointMm(10, 10)]));
+    }
+
+    [Fact] public void Walls_block_the_line_of_sight_except_through_an_opening_that_is_open_at_the_eye_height()
+    {
+        var (b, l, _) = Corridor(); var area = new WalkArea(b, l);
+        Assert.True(area.LineOfSight(new(1000, 1000), new(8000, 1000), 1600));                                                          // through the door
+        Assert.False(area.LineOfSight(new(1000, 500), new(8000, 500), 1600));                                                           // the wall beside it
+        Assert.False(area.LineOfSight(new(1000, 1000), new(8000, 1000), 2300));                                                         // eye above the lintel
+        var (b2, l2, _) = Corridor(kind: null); Assert.False(new WalkArea(b2, l2).LineOfSight(new(1000, 1000), new(8000, 1000), 1600));
+        Assert.True(area.LineOfSight(new(1000, 1000), new(4000, 1100), 1600));                                                          // nothing in between
+    }
+
+    private static (WalkState S, WalkCamera Cam) Looking(Building b, Level l, double x, double y, double yaw)
+    {
+        var s = new WalkState(b, l, new WalkPoint(x, y), yaw); var cam = new WalkCamera { Eye = (s.X / 1000, s.Y / 1000, s.EyeZ / 1000), Yaw = s.Yaw }; return (s, cam);
+    }
+
+    [Fact] public void Names_are_placed_for_rooms_in_front_that_are_visible_and_not_the_one_you_stand_in()
+    {
+        var (b, l, _) = Corridor(); l.Spaces.Add(Room("West", SpaceKind.Corridor, null, Box(200, 200, 5000, 1800))); l.Spaces.Add(Room("East", SpaceKind.Room, null, Box(5200, 200, 9800, 1800)));
+        var labels = new WalkLabels(); var (s, cam) = Looking(b, l, 1000, 1000, -Math.PI / 2);                                           // in the west part, looking east
+        var placed = labels.Place(s, cam, 1200, 800); Assert.Single(placed); Assert.Equal("East", placed[0].Text);                       // seen through the door; "West" is where we stand
+        Assert.InRange(placed[0].X, 500, 700); Assert.InRange(placed[0].Y, 0, 400);                                                       // straight ahead, above the middle of the view
+        var (s2, cam2) = Looking(b, l, 1000, 1000, Math.PI / 2); Assert.Empty(labels.Place(s2, cam2, 1200, 800));                         // looking west: nothing in front
+    }
+
+    [Fact] public void A_name_behind_a_wall_is_hidden_unless_in_ghost_mode()
+    {
+        var (b, l, _) = Corridor(kind: null); l.Spaces.Add(Room("East", SpaceKind.Room, null, Box(5200, 200, 9800, 1800)));
+        var labels = new WalkLabels(); var (s, cam) = Looking(b, l, 1000, 1000, -Math.PI / 2);
+        Assert.Empty(labels.Place(s, cam, 1200, 800));
+        s.SetGhost(true); Assert.Single(labels.Place(s, cam, 1200, 800));                                                                 // through the wall
+    }
+
+    [Fact] public void Names_fade_with_distance_and_vanish_beyond_fifteen_metres_and_at_most_a_few_are_kept()
+    {
+        var l = new Level { Name = "L", HeightMm = 2700 }; l.Walls.Add(new Wall { Footprint = Rect(-1000, -1000, -800, 1000) });
+        l.Spaces.Add(Room("Near", SpaceKind.Room, null, Box(5000, -500, 6000, 500))); l.Spaces.Add(Room("Mid", SpaceKind.Room, null, Box(11000, -500, 12000, 500))); l.Spaces.Add(Room("Far", SpaceKind.Room, null, Box(20000, -500, 21000, 500)));
+        var b = new Building(); b.Levels.Add(l); var labels = new WalkLabels(); var s = new WalkState(b, l, new WalkPoint(0, 0), -Math.PI / 2); s.SetGhost(true); var cam = new WalkCamera { Eye = (0, 0, 1.6), Yaw = -Math.PI / 2 };
+        var placed = labels.Place(s, cam, 1200, 800); Assert.Equal(["Near", "Mid"], placed.Select(p => p.Text));                           // 21 m away: not shown
+        Assert.Equal(1, placed[0].Alpha); Assert.InRange(placed[1].Alpha, 0.35, 0.99);
+        for (var i = 0; i < 12; i++) l.Spaces.Add(Room($"R{i}", SpaceKind.Room, null, Box(2000 + i * 300, 100 + i * 20, 2200 + i * 300, 300 + i * 20)));
+        Assert.True(labels.Place(s, cam, 1200, 800, max: 5).Count <= 5);
+    }
 }

@@ -14,6 +14,7 @@ public partial class MainWindow : Window
     public IViewport3D View3D { get; private set; } = null!;
     /// <summary>First-person walk: what is drawn over the view, and the real-time loop behind it.</summary>
     public WalkOverlay? Overlay { get; private set; }
+    public RoomLabelsView? Labels { get; private set; }
     public WalkDriver? Walker { get; private set; }
 
     private void CreateViewport()
@@ -126,7 +127,7 @@ public partial class MainWindow : Window
     private void SyncView3D()
     {
         var c = View3D.Controller; c.WalkMode = Vm.IsWalk && View3D is GlViewport3D; Cube.IsVisible = !Vm.IsWalk;
-        if (Overlay != null) Overlay.IsVisible = Vm.IsWalk;
+        if (Overlay != null) Overlay.IsVisible = Vm.IsWalk; if (Labels != null) Labels.IsVisible = Vm.IsWalk;
         if (Vm.IsWalk && View3D is GlViewport3D) { if (Walker is { Running: false }) View3D.Control.Focus(); Walker?.Start(); } else Walker?.Stop();
         c.Wireframe = Vm.Mode == ViewMode.Wireframe; c.XRay = Vm.XRay; c.CutAboveCurrent = Vm.CutAbove; c.Filter = Vm.LevelFilter switch { 0 => ImmoCad.Scene.LevelFilter.WholeBuilding, 1 => ImmoCad.Scene.LevelFilter.CurrentAndBelow, _ => ImmoCad.Scene.LevelFilter.CurrentOnly };
         if (Vm.Show3D) { View3D.Rebuild(); WatchGl(); }
@@ -150,8 +151,9 @@ public partial class MainWindow : Window
             Vm.Dialogs = new AvaloniaDialogService(this); Vm.AskRiserHeight = Plan.AskRiserHeight;
             if (Overlay == null)
             {
-                Overlay = new WalkOverlay(Vm, () => Walker?.Touch()); View3DHost.Children.Add(Overlay);
-                Walker = new WalkDriver(Vm, () => View3D.Controller, () => Overlay?.Refresh());
+                Labels = new RoomLabelsView(Vm, () => View3D.Controller.WalkCam); View3DHost.Children.Add(Labels);
+                Overlay = new WalkOverlay(Vm, () => Walker?.Touch()) { Labels = Labels }; View3DHost.Children.Add(Overlay);
+                Walker = new WalkDriver(Vm, () => View3D.Controller, () => Overlay?.Frame());
                 if (View3D is GlViewport3D gl) gl.Hover += (text, at) => Overlay?.ShowHover(text, at);
                 // tunnel: the walk's keys must work whichever control has the focus (a tab, a list…), those would otherwise use the arrows themselves
                 AddHandler(KeyDownEvent, (_, ke) => { if (Vm.IsWalk && ke.Source is not TextBox && Walker?.OnKeyDown(ke) == true) ke.Handled = true; }, Avalonia.Interactivity.RoutingStrategies.Tunnel);

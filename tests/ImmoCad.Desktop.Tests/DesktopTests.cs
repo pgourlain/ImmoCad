@@ -1883,4 +1883,40 @@ public class WalkUiTests
         }
         finally { MainWindow.UseOpenGL = before; }
     }, CancellationToken.None);
+
+    [Fact] public Task Room_names_float_in_the_view_in_front_of_the_stairwell_and_the_R_key_and_the_button_hide_them() => f.Session.Dispatch(() =>
+    {
+        foreach (var lang in new[] { "en", "fr" })
+        {
+            ImmoCad.Core.Translations.Language = lang;
+            var vm = new MainViewModel { Settings = new() }; var w = new MainWindow { DataContext = vm, Width = 1280, Height = 860 }; w.Show();
+            Assert.True(vm.WalkRoomNames);                                                                                                  // on by default
+            vm.WalkAvailable = true; vm.BeginWalk(new PointMm(5000, 3000)); var walk = vm.Walk!;
+            walk.Yaw = Math.Atan2(-(1200 - walk.X), 1200 - walk.Y);                                                                         // facing the stairwell (200..2200 mm)
+            w.View3D.Controller.ApplyWalk(walk); w.Overlay!.Frame(); Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+            Assert.True(w.Labels!.IsVisible);
+            var placed = vm.WalkLabelCache.Place(walk, w.View3D.Controller.WalkCam, w.Labels.Bounds.Width, w.Labels.Bounds.Height);
+            var stair = Assert.Single(placed); Assert.Equal(ImmoCad.Core.Translations.Enum_(SpaceKind.Stairwell), stair.Text);                  // the generated name gives way to the kind
+            w.CaptureRenderedFrame()!.Save(Path.Combine(Shots(), $"walk-names-{lang}.png"));
+            vm.ToggleWalkRoomNamesCommand.Execute(null); Assert.False(vm.WalkRoomNames); Assert.Equal(ImmoCad.Core.Translations.T("walk.names.off"), vm.Status);
+            var json = System.Text.Json.JsonSerializer.Serialize(vm.Settings, ImmoCad.Core.SettingsJsonContext.Default.AppSettings); Assert.Contains("\"WalkRoomNames\": false", json);
+            vm.ToggleWalkRoomNamesCommand.Execute(null); Assert.True(vm.WalkRoomNames);
+            w.Close();
+        }
+        ImmoCad.Core.Translations.Language = "fr";
+    }, CancellationToken.None);
+
+    [Fact] public Task The_R_key_toggles_the_names_while_walking() => f.Session.Dispatch(() =>
+    {
+        var before = MainWindow.UseOpenGL; MainWindow.UseOpenGL = true;
+        try
+        {
+            var vm = new MainViewModel { Settings = new() }; var w = new MainWindow { DataContext = vm, Width = 1200, Height = 800 }; w.Show();
+            w.RaiseEvent(new Avalonia.Input.KeyEventArgs { RoutedEvent = Avalonia.Input.InputElement.KeyDownEvent, Key = Avalonia.Input.Key.G }); Assert.True(vm.IsWalk);
+            w.RaiseEvent(new Avalonia.Input.KeyEventArgs { RoutedEvent = Avalonia.Input.InputElement.KeyDownEvent, Key = Avalonia.Input.Key.R, PhysicalKey = Avalonia.Input.PhysicalKey.R }); Assert.False(vm.WalkRoomNames);
+            w.RaiseEvent(new Avalonia.Input.KeyEventArgs { RoutedEvent = Avalonia.Input.InputElement.KeyDownEvent, Key = Avalonia.Input.Key.R, PhysicalKey = Avalonia.Input.PhysicalKey.R }); Assert.True(vm.WalkRoomNames);
+            w.Close();
+        }
+        finally { MainWindow.UseOpenGL = before; }
+    }, CancellationToken.None);
 }

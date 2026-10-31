@@ -24,6 +24,8 @@ public sealed class AppSettings
     public bool WalkGhost { get; set; }
     /// <summary>The first-use hint of the walk mode was shown once.</summary>
     public bool WalkHintShown { get; set; }
+    /// <summary>Walk mode: room names floating in the view (key R), on by default.</summary>
+    public bool WalkRoomNames { get; set; } = true;
     /// <summary>Every tool visible whatever the step of the guided path.</summary>
     public bool ExpertMode { get; set; }
     public List<string> RecentFiles { get; set; } = new();

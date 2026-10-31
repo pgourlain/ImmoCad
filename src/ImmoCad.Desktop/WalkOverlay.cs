@@ -16,7 +16,9 @@ public sealed class WalkOverlay : Grid
 {
     private readonly MainViewModel _vm; private readonly Action _moved;
     private readonly TextBlock _where = new() { FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center };
-    private readonly ToggleButton _ghost = new(); private readonly Button _leave = new();
+    private readonly ToggleButton _ghost = new(), _names = new(); private readonly Button _leave = new();
+    /// <summary>The room names layer, redrawn with every frame of the walk.</summary>
+    public Control? Labels { get; set; }
     private readonly MiniMapView _map; private readonly Button _mapToggle = new() { HorizontalAlignment = HorizontalAlignment.Right };
     private readonly StackPanel _legend = new() { Spacing = 3 }; private readonly Border _legendBox = new();
     private readonly Border _hint = new(); private readonly TextBlock _hintText = new() { TextWrapping = TextWrapping.Wrap }; private readonly TextBlock _hintKeys = new() { TextWrapping = TextWrapping.Wrap, Opacity = 0.75, FontSize = 12 };
@@ -32,8 +34,8 @@ public sealed class WalkOverlay : Grid
 
         var top = new Border { HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top, Padding = new Thickness(10, 6), CornerRadius = new CornerRadius(8) };
         top.Classes.Add("overlay");
-        _ghost.Click += (_, _) => _vm.ToggleWalkGhostCommand.Execute(null); _leave.Click += (_, _) => _vm.LeaveWalkCommand.Execute(null);
-        top.Child = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Children = { _where, _ghost, _leave } };
+        _ghost.Click += (_, _) => _vm.ToggleWalkGhostCommand.Execute(null); _names.Click += (_, _) => _vm.ToggleWalkRoomNamesCommand.Execute(null); _leave.Click += (_, _) => _vm.LeaveWalkCommand.Execute(null);
+        top.Child = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Children = { _where, _names, _ghost, _leave } };
         Children.Add(top);
 
         var right = new StackPanel { HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Spacing = 4, Children = { _mapToggle, _map } };
@@ -61,9 +63,14 @@ public sealed class WalkOverlay : Grid
         _hoverText.Text = text; _hover.Margin = new Thickness(Math.Max(0, at.X + 16), Math.Max(0, at.Y + 20), 0, 0); _hover.IsVisible = true;
     }
 
+    /// <summary>What changes with every frame of the walk: the line at the top, the map, the names. Light, unlike <see cref="Refresh"/>.</summary>
+    public void Frame() { _where.Text = _vm.WalkHud(); _map.InvalidateVisual(); Labels?.InvalidateVisual(); }
+
     public void Refresh()
     {
+        Labels?.InvalidateVisual();
         _ghost.Content = T("walk.ghost"); ToolTip.SetTip(_ghost, T("walk.ghost.tip")); _ghost.IsChecked = _vm.Walk?.Ghost == true;
+        _names.Content = T("walk.names"); ToolTip.SetTip(_names, T("walk.names.tip")); _names.IsChecked = _vm.WalkRoomNames;
         _leave.Content = T("walk.leave"); ToolTip.SetTip(_leave, T("walk.leave.tip"));
         _where.Text = _vm.WalkHud();
         _mapToggle.Content = T(_mapShown ? "walk.minimap.hide" : "walk.minimap.show"); _map.IsVisible = _mapShown; _map.InvalidateVisual();
@@ -86,6 +93,7 @@ public sealed class WalkOverlay : Grid
 public sealed class MiniMapView : Control
 {
     private readonly MainViewModel _vm; private readonly Action _moved;
+    private static readonly IBrush HereFill = new SolidColorBrush(Color.FromArgb(120, 255, 210, 90));
     private static readonly IBrush Back = new SolidColorBrush(Color.FromArgb(215, 28, 30, 36)), WallFill = new SolidColorBrush(Color.FromRgb(196, 196, 190)), RoomFill = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255));
     private static readonly IBrush CorridorFill = new SolidColorBrush(Color.FromArgb(70, 120, 190, 255)), Cone = new SolidColorBrush(Color.FromArgb(90, 255, 200, 60)), Me = new SolidColorBrush(Color.FromRgb(255, 190, 40));
 
@@ -119,7 +127,9 @@ public sealed class MiniMapView : Control
         ctx.DrawRectangle(Back, new Pen(new SolidColorBrush(Color.FromArgb(120, 255, 255, 255)), 1), new Rect(Bounds.Size), 8, 8);
         if (_vm.Walk is not { } w || Transform() is not { } t) return;
         StreamGeometry Poly(IEnumerable<PointMm> pts) { var g = new StreamGeometry(); using var c = g.Open(); var first = true; foreach (var p in pts) { var s = ToScreen(p.X, p.Y, t); if (first) { c.BeginFigure(s, true); first = false; } else c.LineTo(s); } if (!first) c.EndFigure(true); return g; }
-        foreach (var sp in w.Level.Spaces.Where(s => s.Outline.Count >= 3)) ctx.DrawGeometry(sp.Kind == SpaceKind.Corridor ? CorridorFill : RoomFill, null, Poly(sp.Outline));
+        var here = new PointMm((int)Math.Round(w.X), (int)Math.Round(w.Y));
+        foreach (var sp in w.Level.Spaces.Where(s => s.Outline.Count >= 3))
+            ctx.DrawGeometry(ImmoCad.Core.Geometry.SpaceFinder.Contains(sp.Outline, here) ? HereFill : sp.Kind == SpaceKind.Corridor ? CorridorFill : RoomFill, null, Poly(sp.Outline));      // the room you are in is lit
         foreach (var wall in w.Level.Walls.Where(x => x.Footprint.Count >= 3))
         {
             var g = new StreamGeometry();
@@ -131,6 +141,13 @@ public sealed class MiniMapView : Control
             }
             ctx.DrawGeometry(WallFill, null, g);
         }
+        if (_vm.WalkRoomNames)
+            foreach (var sp in w.Level.Spaces.Where(s => s.Outline.Count >= 3))
+            {   // a name only where the room is big enough on the map to hold it
+                var text = new FormattedText(WalkLabels.RoomText(sp), System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, Typeface.Default, 9, Brushes.White);
+                var wpx = (sp.Outline.Max(p => p.X) - sp.Outline.Min(p => p.X)) * t.Scale; if (wpx < text.Width * 0.9) continue;
+                var at = ToScreen(_vm.WalkLabelCache.AnchorFor(sp).X, _vm.WalkLabelCache.AnchorFor(sp).Y, t); ctx.DrawText(text, new Point(at.X - text.Width / 2, at.Y - text.Height / 2));
+            }
         var band0 = w.Level.AltitudeMm - SceneBuilder.WalkBandMarginMm; var band1 = w.Level.AltitudeMm + w.Level.HeightMm + SceneBuilder.WalkBandMarginMm;
         foreach (var n in _vm.Building.Networks.Where(n => n.Visible))
         {
