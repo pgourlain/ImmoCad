@@ -220,7 +220,7 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 
 - [x] `ImmoCad.Scene`: `MeshBuilder` producing vertex/index buffers (float positions in metres, normals, color per network/category): wall extrusion from footprint polygon and height, floor slab per level (from the outer outline or a bounding polygon), pipe cylinders, fittings (torus segment for elbows, simple tee), equipment boxes. Deterministic; pinned checksum test. *(cylinders with normals, elbows as bent cylinders, tee/reducer as boxes, slabs under each level; no per-vertex colour buffer: colour is per object)*
 - [x] `Picking`: ray vs meshes → id of the wall, equipment, node or segment under the mouse. Unit-tested.
-- [x] `Viewport3D` control (Avalonia `OpenGlControlBase` + Silk.NET.OpenGL): orbit (left drag), pan (right or middle drag), zoom (wheel), "fit all", top/front/side/isometric presets. Simple lighting (one directional light + ambient). *(`GlViewport3D` written with Silk.NET; on this Mac no GL context is created so it falls back to the software viewport automatically — the GL path has not been run on Windows/Linux)*
+- [x] `Viewport3D` control (Avalonia `OpenGlControlBase` + Silk.NET.OpenGL): orbit (left drag), pan (right or middle drag), zoom (wheel), "fit all", top/front/side/isometric presets. Simple lighting (one directional light + ambient). *(`GlViewport3D` written with Silk.NET; works on macOS, where the window asks Avalonia to render with OpenGL; falls back to the software viewport automatically — the GL path has not been run on Windows/Linux)*
 - [x] Render modes: **Solid**, **X-ray** (walls translucent, networks opaque), **Wireframe** (wall edges + networks in color). `Scene` produces an edge list per mesh for wireframe.
 - [x] Level filters: current level only / current + below / whole building; **cut above the current level** (dollhouse view) on by default; show/hide each network.
 - [x] Level bar works in 3D too: changing level moves the cut and the camera target vertically.
@@ -399,6 +399,83 @@ Place the building on its real plot, using French open data (IGN Géoplateforme,
 - [ ] The author's building placed from its address: the plan matches the cadastral footprint within 0.5 m.
 - [x] On a building with non-90° corners, Straighten with the cadastre reference keeps the real corner angles (within 1°), and the scale/stretch suggestion matches a manual calibration within 1 %. *(automated: 96° corner kept within 1°, scale suggestion exact on a synthetic 2.8 % stretch)*
 - [x] With the network off, a building opened before still shows its site from the cache. *(automated at the HTTP-cache level)*
+
+## Phase 13 — Walk mode (first-person inspection, after the MVP)
+
+Walk through the corridors of each level, at eye height, to see the pipes and objects laid out where they really are. It is an **inspection** view, not a game: nobody should need gaming habits, get stuck or get lost.
+
+**Design decisions**
+
+- **Street View model first, keyboard second.** Drag = look around; click on the floor = glide there (a disc on the floor shows the destination); click on an object = select it. Arrows and WASD also work. The mouse pointer is never captured: it stays free to point at pipes, and Avalonia has no pointer lock anyway.
+- **"You are here" = a flat minimap of the current level, not a small 3D building.** A 3D building in a corner shows the floor but not the corridor (its walls hide the marker at 200 px) and repeats what the level bar already says. So: top right, the plan of the current level, same orientation as the plan view, with a position marker and a view cone; click = jump there. The level bar stays visible and answers "which floor". The minimap replaces the ViewCube, which has no use in this mode.
+- **Whole-building overview = leaving the mode.** Esc goes back to the previous view (plan or 3D), framed on where you were, with a pin at the last position. No second renderer in the corner.
+- **The building is a guide, not a hard world limit.** Traced plans have gaps and missing doors, so strict collisions would leak or lock users in. Only wall material blocks, with sliding, from both sides, at the height of the eye: any opening is a passage, whatever its kind; pipes and objects never block. A hole in a wall is a passage both ways: a gap in an outer wall leads outside, where the user floats at the same height, and the way back in is through a hole. The world limit is the last stop, and two escapes are always available: minimap jump and ghost mode.
+- **Floors change like an elevator.** The model has no stairs. The level bar and Page Up/Down keep the XY position (or the nearest walkable point), with a short fade. Walking on stairs is out of scope for this phase.
+- **Read-only.** Moving changes nothing in the building: no history step, no dirty flag. Editing stays in the other views.
+
+**13a — Prerequisites: a building you can walk through**
+
+- [ ] Floors and ceilings for walking: flat rectangles over the bounding box of the level's walls (with a small margin), at the level's altitude and at altitude + height. `SceneLevel` already has both values. Walls hide the overflow from the inside; it only shows through windows and gaps, which is acceptable.
+- [ ] A gap between walls is already a passage: walking needs no opening data there. Check it on a traced plan (doors are usually gaps) before anything else in this phase.
+- [ ] Doors and windows placed with the tools: `Wall.Openings` never reach `SceneMapper`, so the wall stays solid at these places (only these places). Cut per height band (below the sill, opening, above the lintel), using `PolygonOps.Subtract` on the footprint for the opening band, so lintels and sills stay. A wall without openings keeps exactly the same mesh (pinned checksums unchanged).
+- [ ] Opening rectangle in Core, shared by plan, mesh and collisions: move the geometry out of `PlanView.DrawOpenings`, and handle walls where `WallGeometry.Axis` is null or merged wall groups (the opening is placed on the nearest wall section, not on the axis of the whole group).
+- [ ] Door frames, with the door number or space label shown beside the door (`Cave 12`). No door leaf and no glass: an opening is a hole, and nothing in front of it hides the pipes.
+- [ ] Sample building: add a corridor, rooms, doors and pipes along the corridor, so the mode can be tried immediately and tested.
+
+**13b — Perspective camera and rendering**
+
+- [ ] `WalkCamera` in `ImmoCad.Scene` (pure, BCL): eye position, yaw, pitch clamped to ±85°, vertical FOV 70° (30–80° with the wheel), near plane 5 cm. `Project`/`Unproject` tested. Same yaw/pitch maths and same depth along the view axis as `OrbitCamera`, with x and y divided by that depth.
+- [ ] `ViewportController` works with either camera: picking casts from the eye; orbit, pan, handles and `ViewCube` are off in walk mode.
+- [ ] `GlViewport3D`: the vertex shader already computes the depth along the view axis; in walk mode it becomes `gl_Position.w`, with `z` mapped between the near and far planes. OpenGL then does the near-plane cut and the per-pixel depth test. The orbit view keeps `w = 1` and stays identical.
+- [ ] Legible indoors: one flat grey in a corridor reads as a blank screen. Light attached to the camera with distance falloff, distinct floor / wall / ceiling colours, dark edge lines on walls (`WireEdges`).
+- [ ] Walk scene: current level only, plus pipes and fittings crossing its height band; AABB culling per object; continuous frames only while moving.
+- [ ] OpenGL only, no software fallback: `Viewport3D` does not draw this mode. Without OpenGL (`IMMOCAD_SOFTWARE=1`, failed context) the Walk entries are disabled with a translated explanation. If OpenGL fails while walking (`SwapToSoftware`), the app returns to the previous view with a status message.
+
+**13c — Walkable area and movement**
+
+- [ ] `WalkArea` (Core, pure, in mm): the walls at the height of the eye, minus the openings of any kind that are open at this height (sill ≤ eye ≤ sill + height). The kind of opening plays no part: only the presence of wall matters. `Move(from, delta)` slides along walls with a 200 mm radius, so that a 700 mm cellar door can be crossed. Tests: slide, corner, door, window with the eye above and below its sill, eye above a lintel, narrow gap, outer limit, no tunnelling at high speed.
+- [ ] Nearest walkable point, for entry, level change and minimap jumps: inside the level's outer outline when the user was inside the building or clicked inside it, and on the side of the wall the user came from when both sides are at a similar distance. A jump into a closed room is allowed. Tests: arrival in a wall, in a thick wall, outside the outline of a smaller level.
+- [ ] Level change: keeps the view direction; a status message says when the position was shifted ("Moved 0.4 m: wall at this position"). The requested XY is remembered until the next move, so going up then down returns exactly to the start. A level without walls is refused with a message; the user stays where they are. In ghost mode the position is kept as is.
+- [ ] Input loop with time step: 1.4 m/s, Shift ×2.5, short ease-in and ease-out, no head bob; eye at floor + 1 600 mm by default. Pressed keys are cleared when the window loses focus (no runaway walking).
+- [ ] Physical keys (`e.PhysicalKey`), so WASD stays in the same place on an AZERTY keyboard, plus arrows. In walk mode the tool shortcuts of `OnWindowKey` (W = Draw Wall, V, Delete…) and Tab are disabled; Esc leaves the mode.
+- [ ] Eye height: physical keys E (up) and Q (down, A on AZERTY), at 0.5 m/s, kept between floor + 200 mm and ceiling − 100 mm, shown in the heads-up line while it differs from the default. Back to 1 600 mm on a level change or with Home.
+- [ ] Click to go: floor point under the cursor with a disc preview, straight glide with sliding (what is visible is reachable, so no pathfinding), stopped by any key or drag.
+- [ ] **Ghost mode** toggle (key and on-screen button), remembered in the settings because following a pipe or a service shaft is the main use: no wall collisions, only the world limit stops the user, and the user may stay inside a wall. Leaving ghost mode outside the building keeps the position: the user floats there at the same height, with collisions active. Leaving it inside a wall moves to the nearest walkable point, with the short fade and a status message; the view direction is kept. An eye inside a slab is brought back within the current level's height range. Tests: from a wall, from outside, from a slab, then coming back in through a hole.
+- [ ] World limit, with or without collisions, automatic by default: bounding box of the walls, pipes and equipment of all levels, plus 1 m, so a pipe modelled out to the street can be followed with nothing to set up. Tests: empty building, pipe outside the walls, frame smaller than the building.
+- [ ] Optional **World frame**: `Building.WorldFrame`, a nullable axis-aligned rectangle in mm, for one building rather than per level, replacing the automatic limit. Absent from older files = automatic (schema compatible). `BuildingActions.SetWorldFrame` (one history step, in `HistoryTests.Actions`). In the plan view: draw by drag, corner and side handles, dashed outline shown only when a frame exists or its tool is active, also shown on the minimap. It limits movement only: nothing is clipped from the rendering.
+- [ ] Following a riser in ghost mode: keys E and Q are no longer stopped by the floor and ceiling; the eye crosses the slab and the current level follows the eye's altitude (level bar, minimap and scene update), between the bottom of the lowest level and the top of the highest one.
+
+**13d — Entering, leaving, finding your way**
+
+- [ ] `ViewMode.Walk`, toolbar button next to 2D / 3D, View menu, command palette, a free shortcut. Not part of the Tab cycle. Available at every step of the guided path.
+- [ ] Choosing the start: right-click "Walk from here" in the plan and in 3D, and "Walk" on a row of the Spaces panel. The toolbar button starts from the last position on this level, otherwise from the centre of the largest corridor, otherwise from the nearest walkable point to the plan's look-at; first look direction along the longest free line.
+- [ ] Transition: animated descent from the current framing to eye height (off with `AnimateTransitions`). Esc restores the previous view and centres it on the last position through `ViewState.LookAt`.
+- [ ] `MiniMapView` over the view (replaces `ViewCube` in this mode): walls, spaces, visible networks, marker with view cone; click to jump, drag on the cone to turn, button to collapse. Light control, not a `PlanView` instance. It must stay readable on a narrow side-by-side view (hidden under a minimum width).
+- [ ] Heads-up line: level and current space ("R+1 — Corridor"), using `PolygonOps.Contains` on `Level.Spaces`.
+- [ ] Hide the tool strip and palette in this mode; keep the level bar, the Networks and Properties panels.
+- [ ] First-use hint, dismissible, shown once ("Drag to look · Click the floor to walk · Esc to leave"). All new text through `Translations` (`vm:L.*`).
+
+**13e — Inspecting networks (the reason for this mode)**
+
+- [ ] Hover: outline on the pipe or object and a label under the cursor (network, diameter, material; for equipment its name and label). Thin pipes get a few pixels of tolerance around the ray.
+- [ ] Click: same selection as the other views (`Pick3D`), with the Properties panel. "Show in plan" and "Show in 3D" from the selection actions.
+- [ ] **Seeing in ghost mode** (one mode with the toggle of 13c, no separate button): walls dissolve around the eye, fully within about 0.5 m and not at all beyond about 2 m, with a dither `discard` in the fragment shader (depth writes stay on, so no sorting). Distant walls stay opaque: X-ray at 28 % on everything is unreadable up close. Networks and equipment hidden by a wall, floor or ceiling are drawn dimmed on top (second pass with reversed depth test), so that pipes in partitions and slabs can be followed.
+- [ ] Network visibility and lock from the Networks panel apply live; small colour legend over the view.
+
+**Later (not in this phase)**
+
+- [ ] Stairs in the model and walking on them; door leaves and window glass as visual details; saved viewpoints; measuring and editing handles in walk mode; follow-a-pipe navigation; VR.
+
+**Validation**
+
+- [ ] Unit tests pass for `WalkCamera` and `WalkArea`; pinned meshes of walls without openings are unchanged.
+- [ ] Headless tests (no OpenGL, so no walk image): mesh of a wall with a door, floor and ceiling rectangles, Walk entries disabled without OpenGL, minimap and heads-up line alone, in both languages. `LanguageTests` pass.
+- [ ] Manual check on each OS, with OpenGL: corridor with a door cut out, floor, ceiling and pipes render correctly.
+- [ ] Sample building: enter from the plan, cross a door, change level, press Esc, and the plan is centred on the last position; the document is still clean (no dirty flag).
+- [ ] AZERTY and QWERTY: same physical keys; no tool is activated while walking.
+- [ ] On a 6-level building with its pipes: 60 fps on an integrated GPU, on each OS.
+- [ ] On a real traced plan with gaps and missing doors: the user is never locked in, and someone who left through a gap finds the way back in.
+- [ ] A beginner, without help: finds a given valve in a corridor and says which floor and room they are in, in under 2 minutes. List friction points.
 
 ## Cross-cutting — Language
 
