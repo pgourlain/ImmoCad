@@ -216,4 +216,84 @@ public class TriangulatorTests
         var area = Math.Abs(Triangulator.Area2(comb)) / 2.0; var hole = new (int, int)[] { (2000, -800), (4000, -800), (4000, -200), (2000, -200) };
         var (p, t) = Triangulator.Triangulate(comb, [hole]); Assert.Equal(area - 2000.0 * 600, TriArea(p, t), 3);
     }
+
+    // ---- walk mode ----
+    [Fact] public void A_point_straight_ahead_projects_to_the_centre_and_one_behind_the_eye_is_not_visible()
+    {
+        var c = new WalkCamera { Eye = (1, 2, 1.6), Yaw = 0 };                                                       // looking along +Y
+        var (x, y, d) = c.Project(1, 12, 1.6); Assert.Equal(0, x, 9); Assert.Equal(0, y, 9); Assert.Equal(10, d, 9);
+        Assert.True(c.Project(1, -5, 1.6).Depth < 0);
+        Assert.True(c.Project(4, 12, 1.6).X > 0);                                                                    // to the right
+        Assert.True(c.Project(1, 12, 3.0).Y > 0);                                                                    // above
+        Assert.True(c.Project(-2, 12, 1.6).X < 0);
+    }
+
+    [Fact] public void Further_points_get_smaller_on_screen_and_a_left_turn_moves_the_world_to_the_right()
+    {
+        var c = new WalkCamera { Eye = (0, 0, 1.6), Yaw = 0 };
+        Assert.True(Math.Abs(c.Project(1, 10, 1.6).X) > Math.Abs(c.Project(1, 20, 1.6).X));                          // perspective division
+        c.Turn(0.3, 0); Assert.True(c.Project(0, 10, 1.6).X > 0);                                                    // turned left: what was ahead is now on the right
+        var east = new WalkCamera { Eye = (0, 0, 0), Yaw = -Math.PI / 2 };                                           // yaw -90° looks along +X
+        Assert.Equal(1, east.Forward.X, 9);
+    }
+
+    [Fact] public void Pitch_is_clamped_and_looking_up_raises_the_view()
+    {
+        var c = new WalkCamera { Eye = (0, 0, 1.6) }; c.Turn(0, 5); Assert.Equal(WalkCamera.MaxPitch, c.Pitch, 9);
+        c.Turn(0, -20); Assert.Equal(-WalkCamera.MaxPitch, c.Pitch, 9);
+        c.SetFov(500); Assert.Equal(80, c.FovDegrees); c.SetFov(1); Assert.Equal(30, c.FovDegrees);
+    }
+
+    [Fact] public void Unproject_inverts_Project_for_any_direction()
+    {
+        var c = new WalkCamera { Eye = (3, -2, 1.4), Yaw = 0.7 }; c.SetPitch(-0.25);
+        foreach (var (x, y, z) in new[] { (8.0, 5.0, 2.0), (-1.0, 9.0, 0.2), (4.0, 3.0, 2.5) })
+        {
+            var (sx, sy, depth) = c.Project(x, y, z, 1.6); Assert.True(depth > 0);
+            var (o, d) = c.Unproject(sx, sy, 1.6);
+            var t = Math.Sqrt(Math.Pow(x - o.X, 2) + Math.Pow(y - o.Y, 2) + Math.Pow(z - o.Z, 2));
+            Assert.Equal(x, o.X + d.X * t, 6); Assert.Equal(y, o.Y + d.Y * t, 6); Assert.Equal(z, o.Z + d.Z * t, 6);
+        }
+    }
+
+    private static SceneInput TwoLevels(out Guid l0, out Guid l1)
+    {
+        l0 = Guid.NewGuid(); l1 = Guid.NewGuid();
+        (int, int)[] r = [(0, 0), (6000, 0), (6000, 200), (0, 200)];
+        var walls = new[] { new SceneWall(Guid.NewGuid(), 0, r, [], 0, 2700), new SceneWall(Guid.NewGuid(), 1, r, [], 3000, 2700) };
+        var pipes = new[]
+        {
+            new ScenePipe(Guid.NewGuid(), Guid.NewGuid(), (100, 100, -2000), (100, 100, 9000), 28, (1, 0, 0), true),      // a riser through the whole building
+            new ScenePipe(Guid.NewGuid(), Guid.NewGuid(), (500, 100, 1000), (3000, 100, 1000), 22, (0, 0, 1), true),     // along level 0
+            new ScenePipe(Guid.NewGuid(), Guid.NewGuid(), (500, 100, 4000), (3000, 100, 4000), 22, (0, 1, 0), true),     // along level 1
+        };
+        return new SceneInput([new(l0, 0, 0, 2700), new(l1, 1, 3000, 2700)], walls, pipes, [], []);
+    }
+
+    [Fact] public void Walk_scene_has_the_current_level_only_with_a_floor_a_ceiling_and_the_pipes_of_its_height_band()
+    {
+        var input = TwoLevels(out var l0, out _);
+        var objs = SceneBuilder.Build(input, new SceneOptions(l0, Walk: true));
+        Assert.Single(objs, o => o.Kind == SceneKind.Wall);
+        Assert.Single(objs, o => o.Kind == SceneKind.Floor); Assert.Single(objs, o => o.Kind == SceneKind.Ceiling);
+        Assert.DoesNotContain(objs, o => o.Kind == SceneKind.Slab);
+        Assert.Equal(2, objs.Count(o => o.Kind == SceneKind.Pipe));                                                  // the riser and the pipe of level 0, not the one of level 1
+    }
+
+    [Fact] public void Floor_is_at_the_altitude_and_ceiling_at_altitude_plus_height_and_neither_is_pickable()
+    {
+        var input = TwoLevels(out _, out var l1);
+        var objs = SceneBuilder.Build(input, new SceneOptions(l1, Walk: true));
+        var floor = objs.Single(o => o.Kind == SceneKind.Floor).Mesh; var ceiling = objs.Single(o => o.Kind == SceneKind.Ceiling).Mesh;
+        Assert.Equal(3.0, floor.Max().Z, 6); Assert.Equal(5.7, ceiling.Min().Z, 6);
+        Assert.Null(SceneBuilder.Pick(objs.Where(o => o.Kind is SceneKind.Floor or SceneKind.Ceiling), (3, 0.1f, 10), (0, 0, -1)));
+    }
+
+    [Fact] public void Orbit_scene_is_unchanged_by_the_walk_option_defaults()
+    {
+        var input = TwoLevels(out var l0, out _);
+        var a = SceneBuilder.Build(input, new SceneOptions(l0)); var b = SceneBuilder.Build(input, new SceneOptions(l0, Walk: false));
+        Assert.Equal(a.Select(o => o.Mesh.Checksum()), b.Select(o => o.Mesh.Checksum()));
+        Assert.DoesNotContain(a, o => o.Kind is SceneKind.Floor or SceneKind.Ceiling);
+    }
 }
