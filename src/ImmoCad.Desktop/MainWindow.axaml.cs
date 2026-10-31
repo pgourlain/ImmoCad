@@ -164,6 +164,7 @@ public partial class MainWindow : Window
                 var c = new[] { new Avalonia.Point(0, 0), new Avalonia.Point(Plan.Bounds.Width, 0), new Avalonia.Point(Plan.Bounds.Width, Plan.Bounds.Height), new Avalonia.Point(0, Plan.Bounds.Height) }.Select(Plan.ToMm).ToList();
                 return (new ImmoCad.Core.Model.PointMm(c.Min(p => p.X), c.Min(p => p.Y)), new ImmoCad.Core.Model.PointMm(c.Max(p => p.X), c.Max(p => p.Y)));
             };
+            Vm.WalkAvailable = View3D is GlViewport3D;
             Vm.Changed += () => { Plan.Invalidate(); Cube2D.InvalidateVisual(); SyncView3D(); Elev.InvalidateVisual(); SiteMap.InvalidateVisual(); };
             Cube2D.Current = () => Vm.ViewPlane switch { ViewPlane.XZ => Vm.PlaneFlip ? ViewCube.Face.Back : ViewCube.Face.Front, ViewPlane.YZ => Vm.PlaneFlip ? ViewCube.Face.Left : ViewCube.Face.Right, _ => ViewCube.Face.Top };
             Cube2D.FaceChosen = f => { switch (f) { case ViewCube.Face.Front: Vm.ChoosePlane(ViewPlane.XZ, false); break; case ViewCube.Face.Back: Vm.ChoosePlane(ViewPlane.XZ, true); break; case ViewCube.Face.Right: Vm.ChoosePlane(ViewPlane.YZ, false); break; case ViewCube.Face.Left: Vm.ChoosePlane(ViewPlane.YZ, true); break; default: Vm.ChoosePlane(ViewPlane.XY, false); break; } };

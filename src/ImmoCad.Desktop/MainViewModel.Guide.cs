@@ -80,6 +80,8 @@ public partial class MainViewModel
     }
 
     // ---- Action bar on the selection ----
+    /// <summary>The actions on the selection edit the building: not offered while walking, which is read-only.</summary>
+    public bool ShowSelectionActions => HasSelection && NotWalk;
     public bool HasSelection => SelectedWalls.Count > 0 || SelectedSegment != null || SelectedEquipmentId != null || SelectedSpaceId != null || SelectedOpening != null;
     public bool WallsSelected => SelectedWalls.Count > 0 && SelectedOpening == null;
     public bool EquipmentSelected => SelectedEquipmentId != null;
@@ -90,7 +92,7 @@ public partial class MainViewModel
     {
         base.OnPropertyChanged(e);
         if (e.PropertyName == nameof(SelectionText))
-            foreach (var n in new[] { nameof(HasSelection), nameof(WallsSelected), nameof(EquipmentSelected), nameof(ShowWallProps), nameof(ShowPipeProps), nameof(ShowEquipmentProps), nameof(ShowBackgroundProps) })
+            foreach (var n in new[] { nameof(HasSelection), nameof(ShowSelectionActions), nameof(WallsSelected), nameof(EquipmentSelected), nameof(ShowWallProps), nameof(ShowPipeProps), nameof(ShowEquipmentProps), nameof(ShowBackgroundProps) })
                 base.OnPropertyChanged(new System.ComponentModel.PropertyChangedEventArgs(n));
     }
 

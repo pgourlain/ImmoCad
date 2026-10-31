@@ -1751,7 +1751,8 @@ public class WalkUiTests
         vm.BeginWalk(new PointMm(4000, 3000));
         Assert.Equal(ViewMode.Walk, vm.Mode); Assert.NotNull(vm.Walk); Assert.True(vm.Show3D); Assert.False(vm.ShowPlan); Assert.True(vm.IsWalk); Assert.False(vm.NotWalk);
         vm.Walk!.Update(0.5, new(1, 0, 0, false));
-        vm.LeaveWalkCommand.Execute(null);
+        vm.SelectedWalls.Add(vm.CurrentLevel!.Walls[0].Id); vm.Refresh(); vm.AfterEdit(); Assert.False(vm.ShowSelectionActions);                    // selecting is allowed, the editing actions are not offered while walking
+        vm.LeaveWalkCommand.Execute(null); Assert.True(vm.HasSelection);
         Assert.Equal(ViewMode.Plan, vm.Mode); Assert.Null(vm.Walk); Assert.NotNull(vm.WalkPin); Assert.Equal(vm.WalkPin, focused);
         Assert.Equal((items, pointer, dirty), (vm.History.Items.Count, vm.History.Pointer, vm.History.IsDirty));                       // not a single history step, not dirty
         var pin = vm.WalkPin!.Value; vm.BeginWalk(null); Assert.Equal(pin.X, vm.Walk!.X, 0); Assert.Null(vm.WalkPin);                                                           // the next walk on this level starts where this one ended
@@ -1829,5 +1830,20 @@ public class WalkUiTests
         vm.BeginWalk(null); Assert.Equal(40000, vm.Walk!.Area.Bounds.MaxX); vm.LeaveWalkCommand.Execute(null);
         vm.ClearWorldFrameCommand.Execute(null); Assert.Null(vm.Building.WorldFrame); Assert.Equal(steps + 2, vm.History.Items.Count);
         vm.ClearWorldFrameCommand.Execute(null); Assert.Equal(steps + 2, vm.History.Items.Count);                                        // already automatic: nothing recorded
+    }, CancellationToken.None);
+
+    [Fact] public Task With_the_OpenGL_viewport_the_Walk_entries_are_available_and_the_G_key_starts_the_walk() => f.Session.Dispatch(() =>
+    {
+        var before = MainWindow.UseOpenGL; MainWindow.UseOpenGL = true;
+        try
+        {
+            var vm = new MainViewModel { Settings = new() }; var w = new MainWindow { DataContext = vm, Width = 1200, Height = 800 }; w.Show();
+            Assert.IsType<GlViewport3D>(w.View3D); Assert.True(vm.WalkAvailable); Assert.True(vm.WalkCommand.CanExecute(null)); Assert.Equal(ImmoCad.Core.Translations.T("tip.walk"), vm.WalkTip);
+            w.RaiseEvent(new Avalonia.Input.KeyEventArgs { RoutedEvent = Avalonia.Input.InputElement.KeyDownEvent, Key = Avalonia.Input.Key.G });
+            Assert.Equal(ViewMode.Walk, vm.Mode); Assert.NotNull(vm.Walk); Assert.True(w.Walker!.Running);
+            w.RaiseEvent(new Avalonia.Input.KeyEventArgs { RoutedEvent = Avalonia.Input.InputElement.KeyDownEvent, Key = Avalonia.Input.Key.Escape });
+            Assert.Equal(ViewMode.Plan, vm.Mode); Assert.False(w.Walker.Running); w.Close();
+        }
+        finally { MainWindow.UseOpenGL = before; }
     }, CancellationToken.None);
 }

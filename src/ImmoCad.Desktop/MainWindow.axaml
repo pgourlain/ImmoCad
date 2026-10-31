@@ -120,7 +120,7 @@
     <Border DockPanel.Dock="Left" Classes="bar" Width="270" Padding="8" BorderBrush="{DynamicResource SystemBaseLowColor}" BorderThickness="1,0,0,0">
       <DockPanel>
       <!-- what is selected, and what can be done with it (above the tabs, so the canvas never moves) -->
-      <Border x:Name="ActionBar" DockPanel.Dock="Top" Classes="overlay" IsVisible="{Binding HasSelection}" Padding="8" Margin="0,0,0,8" BoxShadow="0 0 0 0 Transparent">
+      <Border x:Name="ActionBar" DockPanel.Dock="Top" Classes="overlay" IsVisible="{Binding ShowSelectionActions}" Padding="8" Margin="0,0,0,8" BoxShadow="0 0 0 0 Transparent">
         <StackPanel Spacing="6">
           <TextBlock Text="{Binding SelectionText}" FontWeight="SemiBold" TextWrapping="Wrap" />
           <WrapPanel ItemSpacing="4" LineSpacing="4">
