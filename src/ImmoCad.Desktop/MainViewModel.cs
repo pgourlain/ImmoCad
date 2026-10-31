@@ -514,7 +514,7 @@ public partial class MainViewModel : ObservableObject
         if (CurrentLevel is not { } l) return;
         if (SpaceAt(click) != null) { SpaceHover = null; Status = T("space.exists"); return; }   // one room per place: select it instead
         // the outline shown under the cursor when the click falls in it, else a fresh probe (fast once the walls are rasterised)
-        var probe = SpaceHover is { Outline: { } ho } h && SpaceFinder.Contains(ho, click) ? h : SpaceFinder.Probe(GridFor(l), click);
+        var probe = SpaceHover is { Outline: { } ho } h && SpaceFinder.Contains(ho, click) ? h : SpaceFinder.ProbeWide(GridFor(l), click);
         SpaceHover = null;
         if (probe.Outline == null) { Status = T("space.open"); return; }
         var n = l.Spaces.Count + 1; var sp = Actions.AddSpace(l.Id, probe.Outline, Token("space.default.name", n), NewSpaceKind);
@@ -552,7 +552,7 @@ public partial class MainViewModel : ObservableObject
         SpaceBusy = true;
         try
         {
-            var (g, probe) = await Task.Run(() => { var g = grid ?? new SpaceGrid(walls!); return (g, SpaceFinder.Probe(g, at, ct: cts.Token)); }, cts.Token);
+            var (g, probe) = await Task.Run(() => { var g = grid ?? new SpaceGrid(walls!); return (g, SpaceFinder.ProbeWide(g, at, cts.Token)); }, cts.Token);
             _spaceGrid = g; _spaceGridFor = key;
             return cts.IsCancellationRequested ? null : probe;
         }
@@ -741,7 +741,7 @@ public partial class MainViewModel : ObservableObject
     public static int PipeAngleDeg(SegmentRef s) => (int)Math.Round(Math.Atan2(s.B.Y - s.A.Y, s.B.X - s.A.X) * 180 / Math.PI);
 
     /// <summary>Outline of the room a click would create with the space tool (null when the walls are not closed there).</summary>
-    public List<PointMm>? SpacePreview(PointMm at) => CurrentLevel is { } l ? SpaceFinder.Probe(GridFor(l), at).Outline : null;
+    public List<PointMm>? SpacePreview(PointMm at) => CurrentLevel is { } l ? SpaceFinder.ProbeWide(GridFor(l), at).Outline : null;
 
     private (SegmentRef Segment, PointMm3 Point, double Distance)? NearestPipe(PointMm at, Level l)
     {

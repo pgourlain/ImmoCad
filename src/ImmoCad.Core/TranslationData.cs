@@ -495,7 +495,7 @@ internal static class TranslationData
         ("space.area.fmt", "{0} m²", "{0} m²"),
         ("space.clickin", "Click inside a space", "Cliquez dans un espace"),
         ("space.default.name", "Room {0}", "Pièce {0}"),
-        ("space.open", "Room is not closed: the walls do not fully surround it", "Pièce non fermée : les murs ne l'entourent pas complètement"),
+        ("space.open", "Room is not closed: the walls do not fully surround it (openings up to 2 m are closed)", "Pièce non fermée : les murs ne l'entourent pas complètement (les ouvertures jusqu'à 2 m sont fermées)"),
         ("spaces.numbered", "{0} space(s) numbered", "{0} espace(s) numéroté(s)"),
         ("status.need.selection", "Select some walls first", "Sélectionnez d'abord des murs"),
         ("status.no.level.there", "No level in that direction", "Pas d'étage dans cette direction"),

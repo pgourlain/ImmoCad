@@ -163,6 +163,24 @@ public class GeometryTests
         Assert.Null(ImmoCad.Core.Geometry.SpaceFinder.Find(l, new(1500, 1500)));
     }
 
+    [Fact] public void SpaceFinder_closes_a_wide_opening_only_when_ordinary_doors_do_not_close_the_room()
+    {
+        static Wall W(int x0, int y0, int x1, int y1) => new() { Footprint = [new(x0, y0), new(x1, y0), new(x1, y1), new(x0, y1)] };
+        // a room 5.8 m x 4.6 m whose south wall has a 1.5 m opening (from x = 2000 to 3500): too wide for a door, fine for a bay
+        var walls = new List<Wall> { W(0, 0, 2000, 200), W(3500, 0, 6000, 200), W(0, 4800, 6000, 5000), W(0, 0, 200, 5000), W(5800, 0, 6000, 5000) };
+        var g = new ImmoCad.Core.Geometry.SpaceGrid(walls); var at = new PointMm(3000, 2500);
+        Assert.Null(ImmoCad.Core.Geometry.SpaceFinder.Probe(g, at).Outline);                                                              // 1 m: not closed, the preview used to stay empty
+        var wide = ImmoCad.Core.Geometry.SpaceFinder.ProbeWide(g, at);
+        Assert.NotNull(wide.Outline); Assert.NotEmpty(wide.Leaks); Assert.InRange(ImmoCad.Core.Geometry.SpaceFinder.AreaMm2(wide.Outline!), 5800L * 4800 * 90 / 100, 5800L * 4800 * 105 / 100);
+        // 3 m opening: still not a room
+        var open = new List<Wall> { W(0, 0, 1000, 200), W(4500, 0, 6000, 200), W(0, 4800, 6000, 5000), W(0, 0, 200, 5000), W(5800, 0, 6000, 5000) };
+        Assert.Null(ImmoCad.Core.Geometry.SpaceFinder.ProbeWide(new ImmoCad.Core.Geometry.SpaceGrid(open), at).Outline);
+        // a room that closes with ordinary doors is not grown by the second chance
+        var door = new List<Wall> { W(0, 0, 8000, 200), W(0, 2800, 8000, 3000), W(0, 0, 200, 3000), W(7800, 0, 8000, 3000), W(4000, 0, 4200, 1000), W(4000, 1900, 4200, 3000) };
+        var dg = new ImmoCad.Core.Geometry.SpaceGrid(door); Assert.Equal(ImmoCad.Core.Geometry.SpaceFinder.Probe(dg, new(2000, 1500)).Outline!.Count, ImmoCad.Core.Geometry.SpaceFinder.ProbeWide(dg, new(2000, 1500)).Outline!.Count);
+        Assert.Equal(ImmoCad.Core.Geometry.SpaceFinder.Probe(dg, new(2000, 1500)).GapMm, ImmoCad.Core.Geometry.SpaceFinder.ProbeWide(dg, new(2000, 1500)).GapMm);
+    }
+
     [Fact] public void SpaceFinder_closes_a_door_gap_and_reports_it()
     {
         static Wall W(int x0, int y0, int x1, int y1) => new() { Footprint = [new(x0, y0), new(x1, y0), new(x1, y1), new(x0, y1)] };

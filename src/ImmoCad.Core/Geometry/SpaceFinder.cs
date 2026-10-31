@@ -91,6 +91,16 @@ public static class SpaceFinder
         return new(null, [], 0);
     }
 
+    /// <summary>
+    /// <see cref="Probe"/> with a second chance: when no room is found closing openings up to <paramref name="firstMm"/> (1 m: doors, windows), openings up to
+    /// <paramref name="lastMm"/> (2 m: double doors, a wide bay) are closed instead. Only tried when the first fails, so a room that closes with ordinary doors is never grown.
+    /// </summary>
+    public static SpaceProbe ProbeWide(SpaceGrid g, PointMm at, CancellationToken ct = default, int firstMm = 1000, int lastMm = 2000)
+    {
+        var narrow = Probe(g, at, firstMm, ct); if (narrow.Outline != null) return narrow;
+        var wide = Probe(g, at, lastMm, ct); return wide.Outline != null ? wide : narrow;
+    }
+
     /// <summary>4-connected fill through cells farther than r from any wall; null when it reaches the border (open).</summary>
     private static bool[]? Flood(SpaceGrid g, int seed, int r)
     {
