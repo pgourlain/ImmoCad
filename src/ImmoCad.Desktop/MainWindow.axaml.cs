@@ -12,6 +12,9 @@ public partial class MainWindow : Window
     private MainViewModel Vm => (MainViewModel)DataContext!;
     private bool _closing;
     public IViewport3D View3D { get; private set; } = null!;
+    /// <summary>First-person walk: what is drawn over the view, and the real-time loop behind it.</summary>
+    public WalkOverlay? Overlay { get; private set; }
+    public WalkDriver? Walker { get; private set; }
 
     private void CreateViewport()
     {
@@ -44,6 +47,7 @@ public partial class MainWindow : Window
         Log.LogWarning("OpenGL unavailable ({Reason}); using the software 3D viewport", reason);
         var old = View3D; var sw = new Viewport3D { DataContext = Vm }; sw.Controller.Wireframe = old.Controller.Wireframe; sw.Controller.XRay = old.Controller.XRay;
         View3DHost.Children.Remove(old.Control); View3D = sw; View3DHost.Children.Insert(0, sw.Control); AttachCube(); if (Vm.Is3D) sw.Rebuild();
+        Vm.WalkAvailable = false; if (Vm.IsWalk) Vm.EndWalkRequest(T("walk.nogl"));            // walking is drawn with OpenGL only
     }
 
     // Tab (and the segmented control) switches 2D / 3D / wireframe without losing context: the 3D camera starts as a top view matching the plan's framing.
@@ -51,7 +55,12 @@ public partial class MainWindow : Window
     {
         if (e.Handled || e.Source is TextBox || !Vm.HasDocument) return;
         var K = e.Key;
-        if (K == Avalonia.Input.Key.Tab) { Vm.CycleViewCommand.Execute(null); e.Handled = true; return; }
+        if (Vm.IsWalk)
+        {   // walking: the keys belong to the walk (Esc leaves it); only ⌘/Ctrl combinations (save…) go on to the code below
+            if (Walker?.OnKeyDown(e) == true) { e.Handled = true; return; }
+        }
+        else if (K == Avalonia.Input.Key.G && e.KeyModifiers == Avalonia.Input.KeyModifiers.None) { Vm.WalkCommand.Execute(null); e.Handled = true; return; }
+        if (K == Avalonia.Input.Key.Tab && !Vm.IsWalk) { Vm.CycleViewCommand.Execute(null); e.Handled = true; return; }
         var cmd = MenuFactory.CommandModifiers; var mods = e.KeyModifiers;
         if (mods.HasFlag(cmd))
         {   // ⌘ on macOS, Ctrl elsewhere; fallback for when the menu accelerators do not reach the focused control
@@ -116,7 +125,10 @@ public partial class MainWindow : Window
 
     private void SyncView3D()
     {
-        var c = View3D.Controller; c.Wireframe = Vm.Mode == ViewMode.Wireframe; c.XRay = Vm.XRay; c.CutAboveCurrent = Vm.CutAbove; c.Filter = Vm.LevelFilter switch { 0 => ImmoCad.Scene.LevelFilter.WholeBuilding, 1 => ImmoCad.Scene.LevelFilter.CurrentAndBelow, _ => ImmoCad.Scene.LevelFilter.CurrentOnly };
+        var c = View3D.Controller; c.WalkMode = Vm.IsWalk && View3D is GlViewport3D; Cube.IsVisible = !Vm.IsWalk;
+        if (Overlay != null) Overlay.IsVisible = Vm.IsWalk;
+        if (Vm.IsWalk && View3D is GlViewport3D) Walker?.Start(); else Walker?.Stop();
+        c.Wireframe = Vm.Mode == ViewMode.Wireframe; c.XRay = Vm.XRay; c.CutAboveCurrent = Vm.CutAbove; c.Filter = Vm.LevelFilter switch { 0 => ImmoCad.Scene.LevelFilter.WholeBuilding, 1 => ImmoCad.Scene.LevelFilter.CurrentAndBelow, _ => ImmoCad.Scene.LevelFilter.CurrentOnly };
         if (Vm.Show3D) { View3D.Rebuild(); WatchGl(); }
     }
 
@@ -126,7 +138,7 @@ public partial class MainWindow : Window
     {
         if (_watching || View3D is not GlViewport3D gl || gl.Initialized) return; _watching = true;
         var t = new Avalonia.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) };
-        t.Tick += (_, _) => { t.Stop(); _watching = false; if (View3D is GlViewport3D g && !g.Initialized && Vm.Is3D) SwapToSoftware("no OpenGL context was created"); };
+        t.Tick += (_, _) => { t.Stop(); _watching = false; if (View3D is GlViewport3D g && !g.Initialized && (Vm.Is3D || Vm.IsWalk)) SwapToSoftware("no OpenGL context was created"); };
         t.Start();
     }
 
@@ -136,6 +148,14 @@ public partial class MainWindow : Window
         DataContextChanged += (_, _) =>
         {
             Vm.Dialogs = new AvaloniaDialogService(this); Vm.AskRiserHeight = Plan.AskRiserHeight;
+            if (Overlay == null)
+            {
+                Overlay = new WalkOverlay(Vm, () => Walker?.Touch()); View3DHost.Children.Add(Overlay);
+                Walker = new WalkDriver(Vm, () => View3D.Controller, () => Overlay?.Refresh());
+                if (View3D is GlViewport3D gl) gl.Hover += (text, at) => Overlay?.ShowHover(text, at);
+                KeyUp += (_, ke) => Walker?.OnKeyUp(ke); Deactivated += (_, _) => Walker?.Clear();
+            }
+            Vm.PlanLookAt = () => Plan.LookAtMm; Vm.WalkAvailable = View3D is GlViewport3D;
             Vm.Changed += () => { Plan.Invalidate(); Cube2D.InvalidateVisual(); SyncView3D(); Elev.InvalidateVisual(); SiteMap.InvalidateVisual(); };
             Cube2D.Current = () => Vm.ViewPlane switch { ViewPlane.XZ => Vm.PlaneFlip ? ViewCube.Face.Back : ViewCube.Face.Front, ViewPlane.YZ => Vm.PlaneFlip ? ViewCube.Face.Left : ViewCube.Face.Right, _ => ViewCube.Face.Top };
             Cube2D.FaceChosen = f => { switch (f) { case ViewCube.Face.Front: Vm.ChoosePlane(ViewPlane.XZ, false); break; case ViewCube.Face.Back: Vm.ChoosePlane(ViewPlane.XZ, true); break; case ViewCube.Face.Right: Vm.ChoosePlane(ViewPlane.YZ, false); break; case ViewCube.Face.Left: Vm.ChoosePlane(ViewPlane.YZ, true); break; default: Vm.ChoosePlane(ViewPlane.XY, false); break; } };

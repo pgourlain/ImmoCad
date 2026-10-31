@@ -18,7 +18,7 @@ namespace ImmoCad.Desktop;
 
 public enum ViewPlane { XY, XZ, YZ }
 public enum WallDisplay { Solid, Wireframe, Hidden }
-public enum ViewMode { Plan, Solid, Wireframe, Elevation, Site }
+public enum ViewMode { Plan, Solid, Wireframe, Elevation, Site, Walk }
 public enum ToolKind { Select, DrawWall, Align, Riser, DrawPipe, Place, Door, Window, Space, Measure, NumberCellars, Straighten, Stretch, CutWall, MergeRegion }
 
 /// <summary>One button of the level bar.</summary>
@@ -106,6 +106,7 @@ public partial class MainViewModel : ObservableObject
         }
         if (kind == ImmoCad.Scene.SceneKind.Pipe)
             foreach (var n in Building.Networks.Where(n => n.Segments.Any(s => s.Id == id))) { SelectSegment(n.Id, id); State.Select(id); return; }
+        if (IsWalk && kind == ImmoCad.Scene.SceneKind.Equipment) { SelectEquipment(id); State.Select(id); return; }
         State.Select(id); Status = kind.ToString();
     }
 
@@ -823,7 +824,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _sideBySide;
     partial void OnSideBySideChanged(bool value) { OnPropertyChanged(nameof(ShowPlan)); OnPropertyChanged(nameof(Show3D)); Changed?.Invoke(); }
     public bool ShowPlan => IsPlan || Is3D && SideBySide;
-    public bool Show3D => Is3D || IsPlan && SideBySide;
+    public bool Show3D => Is3D || IsWalk || IsPlan && SideBySide;
     public bool IsSite => Mode == ViewMode.Site;
     public static readonly Guid SiteLevelId = new("00000000-0000-0000-0000-00000000517e");
     public string Title => ActiveIndex < 0 ? "ImmoCad" : $"{(History.IsDirty ? "• " : "")}{Active.Title} — ImmoCad";
@@ -872,7 +873,7 @@ public partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(HasDocument)); OnPropertyChanged(nameof(ShowWelcome)); Refresh();
     }
 
-    partial void OnModeChanged(ViewMode value) { if (value == ViewMode.Site) { FocusSite(); PanelTab = 4; } OnPropertyChanged(nameof(ShowSideControls)); OnPropertyChanged(nameof(Is3D)); OnPropertyChanged(nameof(ShowPlan)); OnPropertyChanged(nameof(Show3D)); OnPropertyChanged(nameof(IsElevation)); OnPropertyChanged(nameof(IsPlan)); OnPropertyChanged(nameof(IsSite)); Changed?.Invoke(); }
+    partial void OnModeChanged(ViewMode value) { if (value != ViewMode.Walk) EndWalk(); else PanelTab = 2; OnPropertyChanged(nameof(IsWalk)); OnPropertyChanged(nameof(NotWalk)); if (value == ViewMode.Site) { FocusSite(); PanelTab = 4; } OnPropertyChanged(nameof(ShowSideControls)); OnPropertyChanged(nameof(Is3D)); OnPropertyChanged(nameof(ShowPlan)); OnPropertyChanged(nameof(Show3D)); OnPropertyChanged(nameof(IsElevation)); OnPropertyChanged(nameof(IsPlan)); OnPropertyChanged(nameof(IsSite)); Changed?.Invoke(); }
     partial void OnToolChanged(ToolKind value)
     {
         OnPropertyChanged(nameof(IsSelectTool)); OnPropertyChanged(nameof(IsDrawTool)); OnPropertyChanged(nameof(IsAlignTool)); OnPropertyChanged(nameof(IsRiserTool)); OnPropertyChanged(nameof(IsPipeTool)); OnPropertyChanged(nameof(IsPlaceTool)); OnPropertyChanged(nameof(IsDoorTool)); OnPropertyChanged(nameof(IsWindowTool)); OnPropertyChanged(nameof(IsSpaceTool)); OnPropertyChanged(nameof(IsMeasureTool)); OnPropertyChanged(nameof(IsNumberTool)); OnPropertyChanged(nameof(IsStraightenTool)); OnPropertyChanged(nameof(IsStretchTool)); OnPropertyChanged(nameof(IsCutWallTool)); OnPropertyChanged(nameof(IsMergeRegionTool)); CutPoints.Clear(); CutAwaitSide = false; MeasurePoints.Clear(); NumberPending.Clear(); SpaceHover = null;
@@ -885,7 +886,7 @@ public partial class MainViewModel : ObservableObject
     public void Refresh()
     {
         Tabs.Clear(); for (var i = 0; i < Docs.Count; i++) Tabs.Add(new TabItem(i, Docs[i].Title, i == ActiveIndex, Docs[i].History.IsDirty));
-        OnPropertyChanged(nameof(Title));
+        OnPropertyChanged(nameof(Title)); WalkSync();
         if (ActiveIndex < 0) { Levels.Clear(); Networks.Clear(); HistoryRows.Clear(); Changed?.Invoke(); return; }
         HistoryRows.Clear(); HistoryRows.Add(new HistoryRow(-1, T("history.initial"), History.Pointer == -1, false));
         for (var i = 0; i < History.Items.Count; i++) HistoryRows.Add(new HistoryRow(i, T("action." + History.Items[i].Name), i == History.Pointer, i > History.Pointer));

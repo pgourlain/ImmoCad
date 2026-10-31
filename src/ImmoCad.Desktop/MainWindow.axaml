@@ -87,7 +87,7 @@
     </Border>
 
     <!-- tool strip -->
-    <Border DockPanel.Dock="Left" Classes="bar" Padding="8,8,4,8">
+    <Border DockPanel.Dock="Left" Classes="bar" Padding="8,8,4,8" IsVisible="{Binding NotWalk}">
       <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="0,0,4,0">
         <ToggleButton Classes="tool" Content="↖" vm:L.Tip="tip.select" IsChecked="{Binding IsSelectTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Select" />
         <ToggleButton Classes="tool" Content="▭" vm:L.Tip="tip.drawwall" IsChecked="{Binding IsDrawTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="DrawWall" IsVisible="{Binding ShowWallTools}" />
@@ -134,7 +134,7 @@
         </StackPanel>
       </Border>
       <TabControl SelectedIndex="{Binding PanelTab}">
-        <TabItem vm:L.Header="tab.palette">
+        <TabItem vm:L.Header="tab.palette" IsVisible="{Binding NotWalk}">
           <DockPanel>
             <TextBox DockPanel.Dock="Top" vm:L.Watermark="wm.search" Text="{Binding Search}" Margin="0,4,0,6" />
             <ScrollViewer>
@@ -158,7 +158,7 @@
             </ScrollViewer>
           </DockPanel>
         </TabItem>
-        <TabItem vm:L.Header="tab.options">
+        <TabItem vm:L.Header="tab.options" IsVisible="{Binding NotWalk}">
           <ScrollViewer><StackPanel Spacing="6" Margin="0,6">
             <TextBlock vm:L.Text="opt.none" Classes="caption" IsVisible="{Binding HasNoToolOptions}" />
             <StackPanel Spacing="6" IsVisible="{Binding IsDrawTool}">
@@ -277,11 +277,15 @@
               <ItemsControl ItemsSource="{Binding SpaceItems}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="vm:SpaceItem">
-                    <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="8,4" Margin="0,0,0,2" Background="Transparent"
-                            Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).FocusSpaceCommand}" CommandParameter="{Binding Id}">
-                      <Grid ColumnDefinitions="*,Auto"><StackPanel><TextBlock Text="{Binding Name}" FontWeight="SemiBold" /><TextBlock Text="{Binding Kind}" Classes="caption" /></StackPanel>
-                        <TextBlock Grid.Column="1" Text="{Binding Area}" VerticalAlignment="Center" Classes="caption" /></Grid>
-                    </Button>
+                    <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,2">
+                      <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="8,4" Background="Transparent"
+                              Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).FocusSpaceCommand}" CommandParameter="{Binding Id}">
+                        <Grid ColumnDefinitions="*,Auto"><StackPanel><TextBlock Text="{Binding Name}" FontWeight="SemiBold" /><TextBlock Text="{Binding Kind}" Classes="caption" /></StackPanel>
+                          <TextBlock Grid.Column="1" Text="{Binding Area}" VerticalAlignment="Center" Classes="caption" /></Grid>
+                      </Button>
+                      <Button Grid.Column="1" vm:L.Content="walk.space" Margin="4,0,0,0" VerticalAlignment="Center" IsEnabled="{Binding $parent[Window].((vm:MainViewModel)DataContext).CanWalk}"
+                              Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).WalkFromSpaceCommand}" CommandParameter="{Binding Id}" />
+                    </Grid>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
@@ -418,6 +422,7 @@
           <NumericUpDown Value="{Binding ElevationDepth}" Minimum="0" Maximum="50000" Increment="100" Width="200" vm:L.Format="fmt.depth.pipes" IsVisible="{Binding ShowSideControls}" />
           <Button vm:L.Content="view.3d" Command="{Binding SetModeCommand}" CommandParameter="Solid" />
           <Button vm:L.Content="view.wire" Command="{Binding SetModeCommand}" CommandParameter="Wireframe" />
+          <Button vm:L.Content="view.walk" Command="{Binding WalkCommand}" ToolTip.Tip="{Binding WalkTip}" />
           <ToggleButton vm:L.Content="view.xray" IsChecked="{Binding XRay, Mode=OneWay}" Command="{Binding ToggleXRayCommand}" IsVisible="{Binding Is3D}" />
           <ToggleButton vm:L.Content="view.cut" IsChecked="{Binding CutAbove, Mode=OneWay}" Command="{Binding ToggleCutCommand}" IsVisible="{Binding Is3D}" vm:L.Tip="tip.cut" />
           <Button vm:L.Content="view.levels" Command="{Binding CycleLevelFilterCommand}" IsVisible="{Binding Is3D}" />

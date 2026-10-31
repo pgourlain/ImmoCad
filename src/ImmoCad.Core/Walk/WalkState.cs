@@ -30,6 +30,7 @@ public sealed class WalkState
 
     public Building Building { get; }
     public Level Level { get; private set; }
+    public Guid LevelId => Level.Id;
     public WalkArea Area { get; private set; }
     public double X { get; private set; }
     public double Y { get; private set; }
@@ -52,6 +53,14 @@ public sealed class WalkState
         Building = building; Level = level; Area = new WalkArea(building, level); Yaw = yaw;
         EyeZ = level.AltitudeMm + ClampAbove(DefaultEyeMm, level);
         var p = start ?? DefaultStart(); var s = Area.NearestWalkable(p, EyeAboveFloor); X = s.X; Y = s.Y;
+    }
+
+    /// <summary>After an undo or a redo the model objects are new ones: finds the level again by id and rebuilds what blocks. Returns false when the level no longer exists.</summary>
+    public bool Rebind()
+    {
+        var l = Building.Levels.FirstOrDefault(x => x.Id == Level.Id); if (l == null) return false;
+        Level = l; Area = new WalkArea(Building, l); if (!Ghost && Area.Collides(Position, EyeAboveFloor)) { var to = Area.NearestWalkable(Position, EyeAboveFloor); X = to.X; Y = to.Y; }
+        return true;
     }
 
     private static double ClampAbove(double mm, Level l) => Math.Clamp(mm, MinAboveFloorMm, Math.Max(MinAboveFloorMm, l.HeightMm - BelowCeilingMm));

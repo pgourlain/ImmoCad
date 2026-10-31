@@ -156,4 +156,17 @@ public sealed class WalkArea
         }
         return at;
     }
+
+    /// <summary>The direction (yaw, radians, as in <see cref="WalkState.Yaw"/>) with the longest free line from a point: where a first look shows the most corridor.</summary>
+    public double LongestFreeYaw(WalkPoint from, double eyeMm)
+    {
+        double bestYaw = 0, best = -1;
+        for (var k = 0; k < 16; k++)
+        {
+            var yaw = k * Math.PI / 8; double dx = -Math.Sin(yaw) * 100, dy = Math.Cos(yaw) * 100; var p = from; double run = 0;
+            for (; run < 40000; run += 100) { var q = Move(p, dx, dy, eyeMm, false); if (Math.Sqrt((q.X - p.X) * (q.X - p.X) + (q.Y - p.Y) * (q.Y - p.Y)) < 98) break; p = q; }    // sliding along a wall is not a free line
+            if (run > best + 1) { best = run; bestYaw = yaw; }
+        }
+        return bestYaw;
+    }
 }

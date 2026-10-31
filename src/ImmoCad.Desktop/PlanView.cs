@@ -90,6 +90,16 @@ public partial class PlanView : Control
         menu.Open(this);
     }
 
+    /// <summary>Right-click on the plan with the Select tool: start walking from this point (disabled with the reason when walking is not available).</summary>
+    private void ShowWalkMenu(PointMm at)
+    {
+        if (Vm is not { } vm) return;
+        var menu = new ContextMenu(); var item = new MenuItem { Header = T("walk.from"), IsEnabled = vm.CanWalk };
+        if (!vm.CanWalk) ToolTip.SetTip(item, vm.WalkUnavailable);
+        item.Click += (_, _) => vm.BeginWalk(at);
+        menu.Items.Add(item); menu.Open(this);
+    }
+
     private void ShowChainMenu(DrawChainTool t)
     {
         var menu = new ContextMenu();
@@ -236,7 +246,9 @@ public partial class PlanView : Control
         if (props.IsRightButtonPressed)
         {
             if (IsChain && DrawTool is { Points.Count: > 0 } dt) { ShowChainMenu(dt); return; }
-            DrawTool?.Cancel(); _gesture = Gesture.None; InvalidateVisual(); return;
+            DrawTool?.Cancel(); _gesture = Gesture.None; InvalidateVisual();
+            if (vm.Tool == ToolKind.Select && !Side && vm.HasDocument) ShowWalkMenu(ToMm(p));
+            return;
         }
         if (Side) { SidePressed(e, p); return; }
         if (vm.IsAlignTool) { var m = ToMm(p); vm.AlignClick(m.X, m.Y); if (vm.AlignPairs.Count == 2 && vm.AlignPending == null) { vm.AlignApply(); vm.SetToolCommand.Execute("Select"); } InvalidateVisual(); return; }   // two pairs are enough: applied at once (undo reverts it)
@@ -524,6 +536,13 @@ public partial class PlanView : Control
             ac.EndFigure(false);
         }
         ctx.DrawGeometry(null, dash, arc);
+    }
+
+    /// <summary>Where the walk ended, until the next walk: a small pin so the way back is easy to find.</summary>
+    private void DrawWalkPin(DrawingContext ctx)
+    {
+        if (Vm?.WalkPin is not { } pin) return; var s = ToScreen(pin); var pen = new Pen(Brushes.White, 2);
+        ctx.DrawEllipse(Brushes.OrangeRed, pen, s, 7, 7); ctx.DrawEllipse(Brushes.White, null, s, 2.5, 2.5);
     }
 
     private void DrawOpenings(DrawingContext ctx, Level l, bool dark)
@@ -841,7 +860,7 @@ public partial class PlanView : Control
         }
         DrawSiteOverlay(ctx, dark);
         DrawSpaces(ctx, l, dark);
-        DrawOpenings(ctx, l, dark);
+        DrawOpenings(ctx, l, dark); DrawWalkPin(ctx);
         DrawNetworks(ctx, l, dark);
         DrawHandles(ctx, l);
         if (_lasso is { Count: > 1 } lz)

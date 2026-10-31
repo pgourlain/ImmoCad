@@ -227,4 +227,19 @@ public class WalkTests
         h.Undo(b); Assert.Null(b.WorldFrame); h.Redo(b); Assert.NotNull(b.WorldFrame);
         Assert.Null(BuildingJson.Deserialize("{\"SchemaVersion\":1,\"Name\":\"old\",\"Levels\":[],\"Networks\":[],\"Equipment\":[]}").WorldFrame);
     }
+
+    [Fact] public void The_first_look_is_along_the_longest_free_line_of_the_corridor()
+    {
+        var (b, l, _) = Corridor(kind: null); var area = new WalkArea(b, l);
+        var yaw = area.LongestFreeYaw(new(2000, 1000), 1600);                                                                          // 7.6 m to the east, only 1.8 m to the west
+        var s = new WalkState(b, l, new WalkPoint(2000, 1000), yaw); Assert.True(s.Forward.X > 0.99);
+    }
+
+    [Fact] public void Rebind_finds_the_level_again_after_an_undo_replaced_the_objects()
+    {
+        var (b, l, _) = Corridor(); var s = new WalkState(b, l, new WalkPoint(1000, 1000));
+        var json = ImmoCad.Core.History.BuildingJson.Serialize(b); ImmoCad.Core.History.BuildingJson.Restore(b, json);                 // new objects, same ids
+        Assert.NotSame(l, b.Levels[0]); Assert.True(s.Rebind()); Assert.Same(b.Levels[0], s.Level);
+        b.Levels.Clear(); Assert.False(s.Rebind());
+    }
 }

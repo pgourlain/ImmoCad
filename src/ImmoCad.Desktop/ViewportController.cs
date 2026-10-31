@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Input;
 using Avalonia.Threading;
 using ImmoCad.Core;
+using ImmoCad.Core.Walk;
 using ImmoCad.Scene;
 
 namespace ImmoCad.Desktop;
@@ -22,6 +23,22 @@ public sealed class ViewportController
     public bool Animate { get; set; } = true;
     public double OrthoBlend { get; private set; }            // 1 = orthographic top view (plan framing), 0 = perspective
     public Action? Invalidate { get; set; }
+
+    // ---- walk mode (first person): perspective camera driven by the view model's WalkState; OpenGL only ----
+    public WalkCamera WalkCam { get; } = new();
+    public bool WalkMode { get; set; }
+    public bool Ghost => WalkSource?.Invoke()?.Ghost == true;
+    public Func<WalkState?>? WalkSource { get; set; }
+    /// <summary>A click on the floor: where to glide to, in millimetres.</summary>
+    public Action<double, double>? WalkGoTo { get; set; }
+    public Guid? HoverId { get; private set; }
+    /// <summary>The object under the cursor (null when none) and the cursor position, for the label.</summary>
+    public Action<(Guid Id, SceneKind Kind)?, Point>? Hovered { get; set; }
+    private DateTime _lastHover;
+    private double _aspect = 1;
+
+    /// <summary>Puts the camera where the walk state is.</summary>
+    public void ApplyWalk(WalkState w) { WalkCam.Eye = (w.X / 1000, w.Y / 1000, w.EyeZ / 1000); WalkCam.Yaw = w.Yaw; WalkCam.SetPitch(w.Pitch); }
     public Action<Guid, SceneKind>? Picked { get; set; }
     /// <summary>When the active tool works on the plan (riser, palette object, door…), a click is converted to millimetres on the current level's plane and given to the same view-model methods the plan uses.</summary>
     public Func<bool>? PlaneToolActive { get; set; }
@@ -35,6 +52,11 @@ public sealed class ViewportController
     public void Rebuild(MainViewModel? vm)
     {
         if (vm == null || vm.Building.Levels.Count == 0) { Objects = new(); return; }
+        if (vm.IsWalk && vm.Walk is { } walk)
+        {   // the current level only, floor and ceiling, what crosses its height band; the camera is the walker's eyes
+            Objects = SceneBuilder.Build(SceneMapper.Map(vm.Building), new SceneOptions(walk.LevelId, LevelFilter.CurrentOnly, false, false, false, vm.SelectedWalls, vm.HiddenLevels, true));
+            ApplyWalk(walk); return;
+        }
         Objects = SceneBuilder.Build(SceneMapper.Map(vm.Building), new SceneOptions(vm.CurrentLevel?.Id, Filter, CutAboveCurrent, XRay, true, vm.SelectedWalls, vm.HiddenLevels));
         var pts = Objects.Where(o => o.Kind == SceneKind.Wall).ToList();
         if (pts.Count > 0)
@@ -76,12 +98,13 @@ public sealed class ViewportController
     }
 
     // ---- input ----
-    public void Down(Point p, bool rightOrMiddle) { _last = p; _down = p; _pan = rightOrMiddle; if (!rightOrMiddle && HitHandle(p, _width, _height) is { } h) { ActiveHandle = h; HandlePreview = h.End; } }
-    public void Size(double width, double height) { _width = width; _height = height; }
+    public void Down(Point p, bool rightOrMiddle) { if (WalkMode) { _last = p; _down = p; return; } _last = p; _down = p; _pan = rightOrMiddle; if (!rightOrMiddle && HitHandle(p, _width, _height) is { } h) { ActiveHandle = h; HandlePreview = h.End; } }
+    public void Size(double width, double height) { _width = width; _height = height; if (height > 0) _aspect = width / height; }
     /// <summary>True while the view is being turned or panned with the mouse: the software viewport draws a lighter frame meanwhile.</summary>
     public bool Dragging => _last != null && ActiveHandle == null;
     public void Up(Point p, MainViewModel? vm, double width, double height)
     {
+        if (WalkMode) { var click = _last != null && Math.Abs(p.X - _down.X) + Math.Abs(p.Y - _down.Y) < 4; _last = null; Size(width, height); if (click) WalkClick(p, width, height); return; }
         var wasDragging = Dragging; _last = null; Size(width, height); if (wasDragging) Invalidate?.Invoke();      // full-quality frame once the mouse is released
         if (ActiveHandle is { } ah)
         {
@@ -93,6 +116,13 @@ public sealed class ViewportController
     }
     public void Move(Point p)
     {
+        if (WalkMode)
+        {
+            if (WalkSource?.Invoke() is not { } w) return;
+            if (_last is { } l0) { w.Turn(-(p.X - l0.X) * 0.004, -(p.Y - l0.Y) * 0.004); _last = p; ApplyWalk(w); Invalidate?.Invoke(); }     // drag = look, the pointer is never captured away from the screen
+            else Hover(p);
+            return;
+        }
         if (ActiveHandle is { } ah2) { HandlePreview = OnAxis(ah2, p, _width, _height); Invalidate?.Invoke(); return; }
         if (_last is not { } l || IsAnimating) return;
         if (_pan)
@@ -105,7 +135,7 @@ public sealed class ViewportController
         _last = p; Invalidate?.Invoke();
     }
     /// <summary>Zoom in proportion to the wheel delta: a mouse notch (1) is about 8 %, a trackpad sends many small deltas and zooms smoothly.</summary>
-    public void Wheel(double dy) { if (IsAnimating) return; Camera.Zoom(Math.Exp(-Math.Clamp(dy, -3, 3) * 0.08)); Invalidate?.Invoke(); }
+    public void Wheel(double dy) { if (WalkMode) { WalkCam.SetFov(WalkCam.FovDegrees - Math.Clamp(dy, -3, 3) * 3); Invalidate?.Invoke(); return; } if (IsAnimating) return; Camera.Zoom(Math.Exp(-Math.Clamp(dy, -3, 3) * 0.08)); Invalidate?.Invoke(); }
     /// <summary>Looks from the given angles (animated, shortest way round), keeping target and distance.</summary>
     public void LookFrom(double yaw, double pitch)
     {
@@ -124,6 +154,32 @@ public sealed class ViewportController
     {
         var half = Math.Min(width, height) / 2; double sx = (p.X - width / 2) / half, sy = -(p.Y - height / 2) / half; var (o, d) = Camera.Unproject(sx, sy, 1);
         if (Math.Abs(d.Z) < 1e-9) return null; var t = (zMeters - o.Z) / d.Z; return new((int)Math.Round((o.X + d.X * t) * 1000), (int)Math.Round((o.Y + d.Y * t) * 1000));
+    }
+
+    // ---- walk: rays from the eye ----
+    private ((double X, double Y, double Z) O, (double X, double Y, double Z) D) WalkRay(Point p, double width, double height)
+        => WalkCam.Unproject(p.X / Math.Max(width, 1) * 2 - 1, 1 - p.Y / Math.Max(height, 1) * 2, width / Math.Max(height, 1));
+
+    private (Guid Id, SceneKind Kind, float Distance)? WalkHit(Point p, double width, double height)
+    {
+        var (o, d) = WalkRay(p, width, height);
+        return SceneBuilder.Pick(Objects, ((float)o.X, (float)o.Y, (float)o.Z), ((float)d.X, (float)d.Y, (float)d.Z));
+    }
+
+    /// <summary>A click: an object under the cursor is selected; the floor is a destination (what is visible is reachable, so no path finding).</summary>
+    private void WalkClick(Point p, double width, double height)
+    {
+        var (o, d) = WalkRay(p, width, height); var hit = WalkHit(p, width, height); var floorZ = PlaneAltitudeM?.Invoke() ?? 0;
+        double? tFloor = d.Z < -1e-6 && (floorZ - o.Z) / d.Z is var t && t > 0 ? t : null;
+        if (hit is { } h && (tFloor == null || h.Distance < tFloor)) { Picked?.Invoke(h.Id, h.Kind); return; }
+        if (tFloor is { } tf) WalkGoTo?.Invoke((o.X + d.X * tf) * 1000, (o.Y + d.Y * tf) * 1000);
+    }
+
+    private void Hover(Point p)
+    {
+        if ((DateTime.UtcNow - _lastHover).TotalMilliseconds < 60) return; _lastHover = DateTime.UtcNow;
+        var hit = WalkHit(p, _width, _height); var id = hit?.Id; if (id != HoverId) { HoverId = id; Invalidate?.Invoke(); }
+        Hovered?.Invoke(hit is { } h ? (h.Id, h.Kind) : null, p);
     }
 
     /// <summary>Ray through a screen point → nearest scene object → id (wall, pipe, fitting, equipment).</summary>
