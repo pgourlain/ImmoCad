@@ -138,4 +138,12 @@ public sealed class Building
     public List<Network> Networks { get; set; } = new();
     public List<Equipment> Equipment { get; set; } = new();
     public SiteInfo? Site { get; set; }
+    /// <summary>Optional limit of the walk mode's world (the whole building, every level). Absent = the bounding box of what is modelled, plus one metre.</summary>
+    public RectMm? WorldFrame { get; set; }
+}
+
+/// <summary>Axis-aligned rectangle in millimetres (X0 ≤ X1, Y0 ≤ Y1).</summary>
+public readonly record struct RectMm(int X0, int Y0, int X1, int Y1)
+{
+    public static RectMm Of(PointMm a, PointMm b) => new(Math.Min(a.X, b.X), Math.Min(a.Y, b.Y), Math.Max(a.X, b.X), Math.Max(a.Y, b.Y));
 }

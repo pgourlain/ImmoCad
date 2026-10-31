@@ -44,6 +44,10 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
     public void DeleteLevel(Guid id) =>
         Edit("Delete level", BuildingEventKind.LevelRemoved, () => { building.Levels.RemoveAll(l => l.Id == id); return id; }, i => i);
 
+    /// <summary>Sets (or clears with null) the frame that limits the walk mode's world.</summary>
+    public void SetWorldFrame(RectMm? frame) =>
+        Edit("Set world frame", BuildingEventKind.LevelChanged, () => { building.WorldFrame = frame; return Guid.Empty; }, _ => null);
+
     public void RenameLevel(Guid id, string name) =>
         Edit("Rename level", BuildingEventKind.LevelChanged, () => { Find(id).Name = name; return id; }, i => i);
 

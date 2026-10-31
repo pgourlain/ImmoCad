@@ -15,8 +15,41 @@ public readonly record struct WallAxis(PointMm A, PointMm B, double Length, int 
 /// <summary>Where the wall lies relative to the drawn line: centred on it, or entirely on its left / right side (looking along the drawing direction).</summary>
 public enum WallAlign { Center, Left, Right }
 
+/// <summary>
+/// Where an opening cuts its wall: the two ends along the wall's centre line, half the width of the strip across the wall (a little more than the wall, so the cut goes all the way through),
+/// and the heights above the floor. Shared by the 3D mesh (the hole) and the walk collisions (the passage), whatever the kind of opening.
+/// </summary>
+public readonly record struct OpeningSpan(PointMm A, PointMm B, int HalfThicknessMm, int SillMm, int TopMm)
+{
+    /// <summary>The strip as a closed polygon (counter-clockwise or clockwise, depending on the wall's direction).</summary>
+    public List<PointMm> Zone()
+    {
+        double dx = B.X - A.X, dy = B.Y - A.Y, len = Math.Sqrt(dx * dx + dy * dy); double nx = -dy / len * HalfThicknessMm, ny = dx / len * HalfThicknessMm;
+        PointMm P(PointMm c, double s) => new((int)Math.Round(c.X + nx * s), (int)Math.Round(c.Y + ny * s));
+        return [P(A, 1), P(B, 1), P(B, -1), P(A, -1)];
+    }
+
+    /// <summary>True when the point (mm) lies in the strip: along the opening and within the half thickness across.</summary>
+    public bool Contains(double x, double y)
+    {
+        double dx = B.X - A.X, dy = B.Y - A.Y, len2 = dx * dx + dy * dy; if (len2 < 1) return false;
+        var t = ((x - A.X) * dx + (y - A.Y) * dy) / len2; var off = Math.Abs((x - A.X) * -dy + (y - A.Y) * dx) / Math.Sqrt(len2);
+        return t >= 0 && t <= 1 && off <= HalfThicknessMm;
+    }
+    public bool OpenAt(double heightAboveFloorMm) => heightAboveFloorMm >= SillMm && heightAboveFloorMm <= TopMm;
+}
+
 public static class WallGeometry
 {
+    /// <summary>The opening's strip, or null when the wall has no usable centre line (the plan does not draw such an opening either). The strip is capped at 400 mm each side of the centre line, so an odd merged outline does not lose a large part of itself.</summary>
+    public static OpeningSpan? SpanOf(Wall w, Opening o)
+    {
+        if (Axis(w) is not { } ax || o.WidthMm < 1) return null;
+        var a = ax.PointAt(o.PositionMm - o.WidthMm / 2.0); var b = ax.PointAt(o.PositionMm + o.WidthMm / 2.0); if (a == b) return null;
+        var sill = Math.Max(0, o.SillMm);
+        return new OpeningSpan(a, b, Math.Min(ax.ThicknessMm / 2, 400) + 20, sill, sill + o.HeightMm);
+    }
+
     /// <summary>Wall rectangle along the drawn line a→b with the given alignment (corners: a+side1, b+side1, b+side2, a+side2).</summary>
     public static IEnumerable<PointMm> Rectangle(PointMm a, PointMm b, int thicknessMm, WallAlign align)
     {

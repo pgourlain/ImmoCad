@@ -105,6 +105,7 @@ internal static class TranslationData
         ("action.Scale level", "Scale level", "Mettre le niveau à l'échelle"),
         ("action.Set background", "Set background", "Définir le plan de fond"),
         ("action.Set image transform", "Set image transform", "Transformer le plan de fond"),
+        ("action.Set world frame", "Set world frame", "Définir le cadre du monde"),
         ("action.Set site", "Set site", "Définir le site"),
         ("action.Set stability", "Set stability", "Définir la stabilité"),
         ("action.Space properties", "Space properties", "Propriétés de l'espace"),
