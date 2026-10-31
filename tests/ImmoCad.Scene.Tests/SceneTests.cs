@@ -317,4 +317,16 @@ public class TriangulatorTests
         var huge = SceneBuilder.Build(input, new SceneOptions(l0, Walk: true, WalkGrid: (0, 0, 5_000_000, 5_000_000))).Single(o => o.Kind == SceneKind.Grid).Mesh;
         Assert.True(huge.Indices.Count < 2000);                                                                                              // the spacing grows with the world: never thousands of lines
     }
+
+    [Fact] public void Floor_markings_are_flat_paint_just_above_the_floor_one_object_per_level_and_never_picked()
+    {
+        var input = TwoLevels(out var l0, out var l1);
+        (int, int)[] Line(int x) => [(x, 500), (x + 80, 500), (x + 80, 3000), (x, 3000)];
+        input = input with { Markings = [new SceneMarking(Guid.NewGuid(), 0, Line(1000), [], 0), new SceneMarking(Guid.NewGuid(), 0, Line(2000), [], 0), new SceneMarking(Guid.NewGuid(), 1, Line(1000), [], 3000)] };
+        var all = SceneBuilder.Build(input, new SceneOptions(null)); var marks = all.Where(o => o.Kind == SceneKind.Marking).ToList(); Assert.Equal(2, marks.Count);              // one per level
+        var low = marks.Single(o => o.Id == l0).Mesh; Assert.Equal(0.0, low.Min().Z, 6); Assert.Equal(0.003, low.Max().Z, 6);
+        Assert.Null(SceneBuilder.Pick(marks, (1.04f, 1f, 10f), (0, 0, -1)));                                                                       // clicking through the paint reaches what is under it
+        var walk = SceneBuilder.Build(input, new SceneOptions(l1, Walk: true)); Assert.Single(walk, o => o.Kind == SceneKind.Marking && o.Id == l1);       // walking: this level's paint only
+        Assert.DoesNotContain(SceneBuilder.Build(TwoLevels(out _, out _), new SceneOptions(null)), o => o.Kind == SceneKind.Marking);
+    }
 }

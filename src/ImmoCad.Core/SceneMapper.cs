@@ -59,6 +59,7 @@ public static class SceneMapper
             foreach (var p in Catalog.Symbol.Parts(cat, e.Position, baseZ, e.RotationDeg))
                 boxes.Add(new SceneBox(e.Id, e.LevelId, cat.Name, p.X, p.Y, p.Z, p.W, p.D, p.H, cat.Category == "Sanitary" ? (0.92f, 0.92f, 0.95f) : (0.35f, 0.35f, 0.8f), p.Type == "cylinder" ? p.R : 0));
         }
-        return new SceneInput(levels, walls, pipes, fittings, boxes);
+        var markings = b.Levels.SelectMany((l, i) => l.Markings.Where(m => m.Outline.Count >= 3).Select(m => new SceneMarking(m.Id, i, m.Outline.Select(p => (p.X, p.Y)).ToList(), m.Holes.Select(h => (IReadOnlyList<(int X, int Y)>)h.Select(p => (p.X, p.Y)).ToList()).ToList(), l.AltitudeMm))).ToList();
+        return new SceneInput(levels, walls, pipes, fittings, boxes, markings);
     }
 }
