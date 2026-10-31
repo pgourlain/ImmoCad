@@ -1767,7 +1767,7 @@ public class PaintTests
         foreach (var lang in new[] { "en", "fr" })
         {
             ImmoCad.Core.Translations.Language = lang;
-            var vm = Basement(out _); var w = new MainWindow { DataContext = vm, Width = 1280, Height = 860 }; w.Show(); vm.ZoomPlanCommand.Execute("fit"); Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+            var vm = Basement(out _); var w = new MainWindow { DataContext = vm, Width = 1280, Height = 860 }; w.Show(); w.CaptureRenderedFrame(); w.Plan.CenterOn(new PointMm(4000, 2000)); Avalonia.Threading.Dispatcher.UIThread.RunJobs();      // after a first render: the basement is centred in the view
             Point At(int x, int y) => w.Plan.TranslatePoint(w.Plan.ToScreen(new PointMm(x, y)), w)!.Value;
             w.MouseDown(At(500, 400), Avalonia.Input.MouseButton.Left); w.MouseMove(At(2000, 2000)); w.MouseMove(At(3500, 3300)); w.MouseUp(At(3500, 3300), Avalonia.Input.MouseButton.Left);
             await vm.PaintTask; Avalonia.Threading.Dispatcher.UIThread.RunJobs();
@@ -1777,6 +1777,61 @@ public class PaintTests
             vm.PaintApplyCommand.Execute(null); Avalonia.Threading.Dispatcher.UIThread.RunJobs(); w.CaptureRenderedFrame()!.Save(Path.Combine(Shots(), $"paint-applied-{lang}.png")); w.Close();
         }
         ImmoCad.Core.Translations.Language = "fr";
+    }, CancellationToken.None);
+
+    private static MainViewModel BasementWithPaint(out Guid levelId)
+    {
+        var vm = Basement(out levelId); vm.SetToolCommand.Execute("Select");
+        vm.SelectedWalls.Add(vm.CurrentLevel!.Walls[1].Id); vm.SelectedWalls.Add(vm.CurrentLevel.Walls[2].Id); vm.SelectedWalls.Add(vm.CurrentLevel.Walls[3].Id); vm.ConvertSelectionToMarkingsCommand.Execute(null);        // the three bay lines are paint
+        return vm;
+    }
+
+    [Fact] public Task A_floor_marking_is_selected_by_a_click_near_it_and_goes_back_to_a_wall_in_one_undoable_step() => f.Session.RunAsync(async () =>
+    {
+        foreach (var lang in new[] { "en", "fr" })
+        {
+            ImmoCad.Core.Translations.Language = lang;
+            var vm = BasementWithPaint(out _); var w = new MainWindow { DataContext = vm, Width = 1280, Height = 860 }; w.Show(); w.CaptureRenderedFrame(); w.Plan.CenterOn(new PointMm(4000, 2000)); Avalonia.Threading.Dispatcher.UIThread.RunJobs();      // after a first render: the basement is centred in the view
+            Point At(int x, int y) => w.Plan.TranslatePoint(w.Plan.ToScreen(new PointMm(x, y)), w)!.Value;
+            var target = vm.CurrentLevel!.Markings.First(m => m.Outline.Min(p => p.X) == 2000); var steps = vm.History.Items.Count; var before = ImmoCad.Core.History.BuildingJson.Serialize(vm.Building);
+            w.MouseDown(At(2040, 1500), Avalonia.Input.MouseButton.Left); w.MouseUp(At(2040, 1500), Avalonia.Input.MouseButton.Left); Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+            Assert.Equal([target.Id], vm.SelectedWalls.ToArray()); Assert.True(vm.MarkingsSelected); Assert.False(vm.WallsSelected); Assert.Equal(ImmoCad.Core.Translations.T("markings.selected", 1), vm.SelectionText); Assert.True(vm.ShowSelectionActions);
+            w.CaptureRenderedFrame()!.Save(Path.Combine(Shots(), $"marking-selected-{lang}.png"));
+            vm.ConvertSelectionToWallsCommand.Execute(null);
+            Assert.Equal(2, vm.CurrentLevel!.Markings.Count); Assert.Equal(2, vm.CurrentLevel.Walls.Count); Assert.Equal(steps + 1, vm.History.Items.Count); Assert.False(vm.MarkingsSelected);
+            vm.UndoCommand.Execute(null); Assert.Equal(before, ImmoCad.Core.History.BuildingJson.Serialize(vm.Building)); w.Close();
+        }
+        ImmoCad.Core.Translations.Language = "fr";
+    }, CancellationToken.None);
+
+    [Fact] public Task A_click_a_few_pixels_beside_the_line_still_selects_it_and_one_far_away_selects_nothing() => f.Session.RunAsync(async () =>
+    {
+        var vm = BasementWithPaint(out _); var w = new MainWindow { DataContext = vm, Width = 1280, Height = 860 }; w.Show(); w.CaptureRenderedFrame(); w.Plan.CenterOn(new PointMm(4000, 2000)); Avalonia.Threading.Dispatcher.UIThread.RunJobs();      // after a first render: the basement is centred in the view
+        Point At(int x, int y) => w.Plan.TranslatePoint(w.Plan.ToScreen(new PointMm(x, y)), w)!.Value;
+        var near = At(2080, 1500) + new Point(3, 0); w.MouseDown(near, Avalonia.Input.MouseButton.Left); w.MouseUp(near, Avalonia.Input.MouseButton.Left); Assert.True(vm.MarkingsSelected);       // 3 px beside the 80 mm line
+        var far = At(2500, 1500); w.MouseDown(far, Avalonia.Input.MouseButton.Left); w.MouseUp(far, Avalonia.Input.MouseButton.Left); Assert.False(vm.MarkingsSelected); Assert.False(vm.HasSelection);
+    }, CancellationToken.None);
+
+    [Fact] public Task A_box_selects_walls_and_paint_together_and_Delete_removes_them_in_one_step_and_a_selected_marking_moves() => f.Session.RunAsync(async () =>
+    {
+        var vm = BasementWithPaint(out _); var w = new MainWindow { DataContext = vm, Width = 1280, Height = 860 }; w.Show(); w.CaptureRenderedFrame(); w.Plan.CenterOn(new PointMm(4000, 2000)); Avalonia.Threading.Dispatcher.UIThread.RunJobs();      // after a first render: the basement is centred in the view
+        Point At(int x, int y) => w.Plan.TranslatePoint(w.Plan.ToScreen(new PointMm(x, y)), w)!.Value;
+        w.MouseDown(At(-200, 3800), Avalonia.Input.MouseButton.Left); w.MouseMove(At(1500, 2000)); w.MouseMove(At(3500, 400)); w.MouseUp(At(3500, 400), Avalonia.Input.MouseButton.Left);
+        Assert.True(vm.MarkingsSelected); Assert.True(vm.WallsSelected); Assert.Equal(ImmoCad.Core.Translations.T("walls.markings.selected", 1, 3), vm.SelectionText);
+        var steps = vm.History.Items.Count; vm.DeleteSelectionCommand.Execute(null); Assert.Empty(vm.CurrentLevel!.Markings); Assert.Empty(vm.CurrentLevel.Walls.Where(x => x.Footprint.Count > 0 && x.Footprint.Max(p => p.X) <= 3500)); Assert.Equal(steps + 1, vm.History.Items.Count);
+        vm.UndoCommand.Execute(null); Assert.Equal(3, vm.CurrentLevel!.Markings.Count);
+        vm.SelectedWalls.Clear(); vm.SelectedWalls.Add(vm.CurrentLevel.Markings[0].Id); var x0 = vm.CurrentLevel.Markings[0].Outline.Min(p => p.X); vm.MoveSelection(300, 0); Assert.Equal(x0 + 300, vm.CurrentLevel.Markings.Min(m => m.Outline.Min(p => p.X)) + (x0 == 1000 ? 0 : 0) > 0 ? vm.CurrentLevel.Markings.First().Outline.Min(p => p.X) : 0);
+    }, CancellationToken.None);
+
+    [Fact] public Task The_cut_tool_cuts_the_paint_too_and_only_the_selection_when_there_is_one() => f.Session.RunAsync(async () =>
+    {
+        var vm = BasementWithPaint(out _); vm.SetToolCommand.Execute("CutWall"); var steps = vm.History.Items.Count;
+        var total = vm.CurrentLevel!.Markings.Sum(m => Math.Abs(ImmoCad.Core.Geometry.SpaceFinder.AreaMm2(m.Outline)));
+        vm.CutWallClick(new PointMm(-500, 2000)); vm.CutWallClick(new PointMm(8500, 2000)); vm.CutWallFinish(); vm.CutWallClick(new PointMm(4000, 1000));                       // a horizontal line at y = 2 m, the side below goes
+        var after = vm.CurrentLevel!.Markings.Sum(m => Math.Abs(ImmoCad.Core.Geometry.SpaceFinder.AreaMm2(m.Outline)));
+        Assert.Equal(steps + 1, vm.History.Items.Count); Assert.InRange(after, total * 40 / 100, total * 48 / 100);                                                               // each line 600..3100 loses its part under 2000: 1.1 of 2.5 m left
+        vm.UndoCommand.Execute(null); vm.SetToolCommand.Execute("CutWall"); vm.SelectedWalls.Add(vm.CurrentLevel!.Markings[0].Id); vm.CutWallClick(new PointMm(-500, 2000)); vm.CutWallClick(new PointMm(8500, 2000)); vm.CutWallFinish(); vm.CutWallClick(new PointMm(4000, 1000));
+        Assert.Equal(1, vm.CurrentLevel!.Markings.Count(m => m.Outline.Min(p => p.Y) >= 1990)); Assert.Equal(2, vm.CurrentLevel.Markings.Count(m => m.Outline.Min(p => p.Y) == 600));   // only the selected line was shortened
     }, CancellationToken.None);
 }
 

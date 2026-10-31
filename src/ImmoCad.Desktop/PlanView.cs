@@ -227,6 +227,28 @@ public partial class PlanView : Control
     private Wall? HitWall(PointMm p) => Vm?.WallDisplay == WallDisplay.Hidden ? null : Vm?.CurrentLevel?.Walls.LastOrDefault(w =>
         ImmoCad.Core.Geometry.SpaceFinder.Contains(w.Footprint, p) && !w.Holes.Any(h => ImmoCad.Core.Geometry.SpaceFinder.Contains(h, p)));
 
+    /// <summary>
+    /// The floor marking under the point: inside it, or within a few pixels of its outline (a painted line is a few millimetres wide, hard to hit exactly).
+    /// </summary>
+    private FloorMarking? HitMarking(PointMm p)
+    {
+        if (Vm?.CurrentLevel is not { } l || Vm.WallDisplay == WallDisplay.Hidden) return null;
+        var tol = 5 / Math.Max(Scale, 1e-6);
+        foreach (var m in Enumerable.Reverse(l.Markings))
+        {
+            if (m.Outline.Count < 3) continue;
+            if (ImmoCad.Core.Geometry.SpaceFinder.Contains(m.Outline, p) && !m.Holes.Any(h => ImmoCad.Core.Geometry.SpaceFinder.Contains(h, p))) return m;
+            foreach (var ring in new[] { m.Outline }.Concat(m.Holes))
+                for (var i = 0; i < ring.Count; i++) if (DistToSegment(p, ring[i], ring[(i + 1) % ring.Count]) <= tol) return m;
+        }
+        return null;
+    }
+    private static double DistToSegment(PointMm p, PointMm a, PointMm b)
+    {
+        double dx = b.X - a.X, dy = b.Y - a.Y, l2 = dx * dx + dy * dy; var t = l2 < 1e-9 ? 0 : Math.Clamp(((p.X - a.X) * dx + (p.Y - a.Y) * dy) / l2, 0, 1);
+        return Math.Sqrt(Math.Pow(p.X - (a.X + dx * t), 2) + Math.Pow(p.Y - (a.Y + dy * t), 2));
+    }
+
     /// <summary>The snapper follows the visible grid and the Snap-to-grid toggle.</summary>
     private void SyncSnap() { if (Vm is not { } v) return; Snapper.ToleranceMm = Math.Max(1, (int)Math.Round(10 / Scale)); Snapper.SnapToGrid = v.SnapToGrid; Snapper.GridMm = v.SnapToGrid ? Math.Max(1, (int)Math.Round(NiceStepMm(GridMinPx))) : 0; }
 
@@ -303,9 +325,9 @@ public partial class PlanView : Control
         vm.ClearSegment(); if (vm.SelectedEquipmentId != null) vm.SelectEquipment(null);
         _start = _now = p;
         if (vm.HitOpening(ToMm(p)) is { } oh) { vm.SelectOpening(oh.Wall.Id, oh.Opening.Id); _openingDrag = oh; e.Pointer.Capture(this); return; } _startMm = ToMm(p); _delta = (0, 0); _addToSelection = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
-        var hit = HitWall(_startMm);
-        if (hit != null && vm.SelectedWalls.Contains(hit.Id) && !_addToSelection) _gesture = Gesture.Move;       // drag the group
-        else if (hit != null) { vm.SelectWalls([hit.Id], _addToSelection); _gesture = Gesture.Move; }            // select then drag
+        var hit = HitWall(_startMm); var paint = hit == null ? HitMarking(_startMm) : null; Guid? hitId = hit?.Id ?? paint?.Id;           // a wall first, the paint under it second
+        if (hitId is { } hid && vm.SelectedWalls.Contains(hid) && !_addToSelection) _gesture = Gesture.Move;       // drag the group
+        else if (hitId is { } hid2) { vm.SelectWalls([hid2], _addToSelection); _gesture = Gesture.Move; }          // select then drag
         else if (!_addToSelection && vm.SpaceAt(_startMm) is { } room) { vm.SelectWalls([], false); vm.ClearOpening(); vm.SelectSpace(room.Id); _gesture = Gesture.Box; }
         else { if (!_addToSelection) { vm.SelectWalls([], false); vm.ClearOpening(); vm.ClearSpace(); } _gesture = Gesture.Box; }
         e.Pointer.Capture(this); InvalidateVisual();
@@ -387,7 +409,8 @@ public partial class PlanView : Control
         {
             var a = ToMm(_start); var b = ToMm(_now); int x0 = Math.Min(a.X, b.X), x1 = Math.Max(a.X, b.X), y0 = Math.Min(a.Y, b.Y), y1 = Math.Max(a.Y, b.Y);
             if (vm.CurrentLevel is { } lv)
-                vm.SelectWalls(vm.WallDisplay == WallDisplay.Hidden ? [] : lv.Walls.Where(w => w.Footprint.Any(q => q.X >= x0 && q.X <= x1 && q.Y >= y0 && q.Y <= y1)).Select(w => w.Id), _addToSelection);
+                vm.SelectWalls(vm.WallDisplay == WallDisplay.Hidden ? [] : lv.Walls.Where(w => w.Footprint.Any(q => q.X >= x0 && q.X <= x1 && q.Y >= y0 && q.Y <= y1)).Select(w => w.Id)
+                    .Concat(lv.Markings.Where(m => m.Outline.Any(q => q.X >= x0 && q.X <= x1 && q.Y >= y0 && q.Y <= y1)).Select(m => m.Id)), _addToSelection);
         }
         _gesture = Gesture.None; _delta = (0, 0); InvalidateVisual();
     }
@@ -564,7 +587,8 @@ public partial class PlanView : Control
     {
         if (l.Markings.Count == 0 || Vm?.WallDisplay == WallDisplay.Hidden) return;
         var fill = new SolidColorBrush(dark ? Color.FromRgb(242, 242, 238) : Colors.White); var pen = new Pen(new SolidColorBrush(Color.FromRgb(150, 152, 158)), 0.7);
-        foreach (var m in l.Markings) if (m.Outline.Count >= 3) ctx.DrawGeometry(fill, pen, Shape(m.Outline, m.Holes));
+        var selFill = new SolidColorBrush(Color.FromRgb(255, 190, 110)); var selPen = new Pen(Brushes.OrangeRed, 1.6);
+        foreach (var m in l.Markings) if (m.Outline.Count >= 3) { var sel = Vm!.SelectedWalls.Contains(m.Id); ctx.DrawGeometry(sel ? selFill : fill, sel ? selPen : pen, Shape(m.Outline, m.Holes)); }
     }
 
     /// <summary>The paint tool: the rectangle being dragged, the zone, and in orange what applying would change.</summary>

@@ -853,7 +853,7 @@ public partial class MainViewModel : ObservableObject
     public bool HasToolOptions => Tool is ToolKind.DrawWall or ToolKind.Riser or ToolKind.DrawPipe or ToolKind.Align or ToolKind.Straighten or ToolKind.Space or ToolKind.PaintZone;
     public bool HasNoToolOptions => !HasToolOptions;
     public bool IsStretchTool => Tool == ToolKind.Stretch;
-    public string SelectionText => SelectedEquipment is { } se ? T("eq.selected", EquipmentCatalog.Find(se.CatalogId)?.Name ?? se.CatalogId) : SelectedSpaceId != null ? T("space.selected") : SelectedOpening != null ? T("opening.selected") : SelectedSegment != null ? T("pipe.selected") : SelectedWalls.Count == 0 ? T("no.selection") : T("walls.selected", SelectedWalls.Count);
+    public string SelectionText => SelectedEquipment is { } se ? T("eq.selected", EquipmentCatalog.Find(se.CatalogId)?.Name ?? se.CatalogId) : SelectedSpaceId != null ? T("space.selected") : SelectedOpening != null ? T("opening.selected") : SelectedSegment != null ? T("pipe.selected") : SelectedWalls.Count == 0 ? T("no.selection") : WallsAndMarkingsText();
 
     public MainViewModel() : this(startWithSample: true) { }
 
@@ -898,7 +898,7 @@ public partial class MainViewModel : ObservableObject
         if (ActiveIndex < 0) { Levels.Clear(); Networks.Clear(); HistoryRows.Clear(); Changed?.Invoke(); return; }
         HistoryRows.Clear(); HistoryRows.Add(new HistoryRow(-1, T("history.initial"), History.Pointer == -1, false));
         for (var i = 0; i < History.Items.Count; i++) HistoryRows.Add(new HistoryRow(i, T("action." + History.Items[i].Name), i == History.Pointer, i > History.Pointer));
-        SelectedWalls.IntersectWith(CurrentLevel?.Walls.Select(w => w.Id) ?? []);
+        SelectedWalls.IntersectWith((CurrentLevel?.Walls.Select(w => w.Id) ?? []).Concat(CurrentLevel?.Markings.Select(m => m.Id) ?? []));    // the set holds walls and floor markings
         Levels.Clear();
         foreach (var l in Building.Levels.AsEnumerable().Reverse()) // top level first, like an elevator
             Levels.Add(new LevelItem(l.Id, l.DisplayName, $"{l.AltitudeMm / 1000.0:0.0} m", l.Id == CurrentLevel?.Id, l.Walls.Count, T("level.tooltip", l.DisplayName, Enum_(l.Kind), (l.AltitudeMm / 1000.0).ToString("0.00"), (l.HeightMm / 1000.0).ToString("0.00")), HiddenLevels.Contains(l.Id)));

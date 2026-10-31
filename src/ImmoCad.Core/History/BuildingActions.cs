@@ -158,6 +158,11 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
                 w.Holes = w.Holes.Select(h => h.Select(p => new PointMm(p.X + dx, p.Y + dy)).ToList()).ToList();
                 if (to != from) { from.Walls.Remove(w); to.Walls.Add(w); }
             }
+            foreach (var m in from.Markings.Where(m => ids.Contains(m.Id)).ToList())                       // floor markings are selected like walls and move with them
+            {
+                m.Outline = m.Outline.Select(p => new PointMm(p.X + dx, p.Y + dy)).ToList(); m.Holes = m.Holes.Select(h => h.Select(p => new PointMm(p.X + dx, p.Y + dy)).ToList()).ToList();
+                if (to != from) { from.Markings.Remove(m); to.Markings.Add(m); }
+            }
             return levelId;
         }, i => i);
 
@@ -257,7 +262,7 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
         Edit("Delete network", BuildingEventKind.NetworkChanged, () => { building.Networks.RemoveAll(n => n.Id == networkId); return networkId; }, i => i);
 
     public void DeleteWalls(Guid levelId, IEnumerable<Guid> wallIds) =>
-        Edit("Delete walls", BuildingEventKind.WallRemoved, () => { var ids = wallIds.ToHashSet(); Find(levelId).Walls.RemoveAll(w => ids.Contains(w.Id)); return levelId; }, i => i);
+        Edit("Delete walls", BuildingEventKind.WallRemoved, () => { var ids = wallIds.ToHashSet(); var l = Find(levelId); l.Walls.RemoveAll(w => ids.Contains(w.Id)); l.Markings.RemoveAll(m => ids.Contains(m.Id)); return levelId; }, i => i);
 
     private static Geometry.Shape ShapeOf(Wall w) => new(w.Footprint.ToList(), w.Holes.Select(h => h.ToList()).ToList());
 
@@ -284,23 +289,28 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
     /// <summary>Cuts along the line through a and b and drops everything on the other side, in the given walls or, without ids, in every wall the segment ab crosses. A wall that is cut in several pieces keeps its id on the first; a wall left empty is deleted. Returns the walls changed. One history step.</summary>
     public int CutWalls(Guid levelId, PointMm a, PointMm b, bool keepLeft, IEnumerable<Guid>? wallIds = null)
     {
-        var l = Find(levelId); var ids = wallIds?.ToHashSet();
+        var l = Find(levelId); var ids = wallIds?.ToHashSet();                                           // the ids may name walls and floor markings: both are cut
         var targets = l.Walls.Where(w => w.Footprint.Count >= 3 && (ids?.Contains(w.Id) ?? Geometry.PolygonOps.Crosses(ShapeOf(w), a, b)));
-        return ApplyCuts(l, targets.Select(w => (Wall: w, Parts: Geometry.PolygonOps.KeepSide(ShapeOf(w), a, b, keepLeft))).ToList());
+        var marks = l.Markings.Where(m => m.Outline.Count >= 3 && (ids?.Contains(m.Id) ?? Geometry.PolygonOps.Crosses(ShapeOf(m), a, b)));
+        return ApplyCuts(l, targets.Select(w => (Wall: w, Parts: Geometry.PolygonOps.KeepSide(ShapeOf(w), a, b, keepLeft))).ToList(), marks.Select(m => (Mark: m, Parts: Geometry.PolygonOps.KeepSide(ShapeOf(m), a, b, keepLeft))).ToList());
     }
 
-    /// <summary>Removes what lies inside the zone from the given walls or, without ids, from every wall the zone reaches. Same rules as <see cref="CutWalls"/>; the rest of a wall that runs far beyond the zone is left exactly as it was.</summary>
+    /// <summary>Removes what lies inside the zone from the given walls (and floor markings) or, without ids, from every wall and marking the zone reaches. Same rules as <see cref="CutWalls"/>; the rest of a wall that runs far beyond the zone is left exactly as it was.</summary>
     public int CutWallsRegion(Guid levelId, IReadOnlyList<PointMm> zone, IEnumerable<Guid>? wallIds = null)
     {
         var l = Find(levelId); var ids = wallIds?.ToHashSet();
         var targets = l.Walls.Where(w => w.Footprint.Count >= 3 && (ids?.Contains(w.Id) ?? Geometry.PolygonOps.Touches(ShapeOf(w), zone)));
-        return ApplyCuts(l, targets.Select(w => (Wall: w, Parts: Geometry.PolygonOps.Subtract(ShapeOf(w), zone))).ToList());
+        var marks = l.Markings.Where(m => m.Outline.Count >= 3 && (ids?.Contains(m.Id) ?? Geometry.PolygonOps.Touches(ShapeOf(m), zone)));
+        return ApplyCuts(l, targets.Select(w => (Wall: w, Parts: Geometry.PolygonOps.Subtract(ShapeOf(w), zone))).ToList(), marks.Select(m => (Mark: m, Parts: Geometry.PolygonOps.Subtract(ShapeOf(m), zone))).ToList());
     }
 
-    private int ApplyCuts(Level l, List<(Wall Wall, List<Geometry.Shape> Parts)> all)
+    private static Geometry.Shape ShapeOf(FloorMarking m) => new(m.Outline.ToList(), m.Holes.Select(h => h.ToList()).ToList());
+
+    private int ApplyCuts(Level l, List<(Wall Wall, List<Geometry.Shape> Parts)> all, List<(FloorMarking Mark, List<Geometry.Shape> Parts)> allMarks)
     {
         var cuts = all.Where(t => !(t.Parts.Count == 1 && t.Parts[0].Outline.SequenceEqual(t.Wall.Footprint) && t.Parts[0].Holes.Count == t.Wall.Holes.Count)).ToList();
-        if (cuts.Count == 0) return 0;
+        var markCuts = allMarks.Where(t => !(t.Parts.Count == 1 && t.Parts[0].Outline.SequenceEqual(t.Mark.Outline) && t.Parts[0].Holes.Count == t.Mark.Holes.Count)).ToList();
+        if (cuts.Count == 0 && markCuts.Count == 0) return 0;
         Edit("Cut walls", BuildingEventKind.WallChanged, () =>
         {
             foreach (var (w, parts) in cuts)
@@ -310,9 +320,16 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
                 w.Footprint = parts[0].Outline; w.Holes = parts[0].Holes;
                 for (var i = 1; i < parts.Count; i++) l.Walls.Insert(at + i, new Wall { Footprint = parts[i].Outline, Holes = parts[i].Holes, Label = w.Label, Stability = w.Stability, HeightMm = w.HeightMm });
             }
+            foreach (var (m, parts) in markCuts)
+            {   // the pieces of a cut marking stay markings
+                var at = l.Markings.IndexOf(m);
+                if (parts.Count == 0) { l.Markings.RemoveAt(at); continue; }
+                m.Outline = parts[0].Outline; m.Holes = parts[0].Holes;
+                for (var i = 1; i < parts.Count; i++) l.Markings.Insert(at + i, new FloorMarking { Outline = parts[i].Outline, Holes = parts[i].Holes });
+            }
             return l.Id;
         }, i => i);
-        return cuts.Count;
+        return cuts.Count + markCuts.Count;
     }
 
     /// <summary>Sets the background transform; with <paramref name="moveWalls"/> the walls and spaces follow the same move (new ∘ old⁻¹).</summary>

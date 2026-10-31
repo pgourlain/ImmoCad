@@ -91,4 +91,13 @@ public partial class MainViewModel
         if (CurrentLevel is not { } l || SelectedWalls.Count == 0) return;
         var n = Actions.ConvertWallsToMarkings(l.Id, SelectedWalls.ToList()); SelectedWalls.Clear(); Status = T("paint.converted", n); Refresh();
     }
+
+    /// <summary>The selected floor markings become walls again (the way back when the paint was a mistake). One history step.</summary>
+    [RelayCommand]
+    private void ConvertSelectionToWalls()
+    {
+        if (CurrentLevel is not { } l) return;
+        var ids = l.Markings.Where(m => SelectedWalls.Contains(m.Id)).Select(m => m.Id).ToList(); if (ids.Count == 0) return;
+        var n = Actions.MarkingsToWalls(l.Id, ids); SelectedWalls.Clear(); Status = T("paint.done.towall", n); Refresh();
+    }
 }

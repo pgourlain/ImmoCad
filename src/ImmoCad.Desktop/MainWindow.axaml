@@ -127,6 +127,7 @@
           <WrapPanel ItemSpacing="4" LineSpacing="4">
             <Button vm:L.Content="bar.rotate" Command="{Binding RotateSelectedEquipmentCommand}" IsVisible="{Binding EquipmentSelected}" />
             <Button vm:L.Content="bar.duplicate" Command="{Binding DuplicateCommand}" IsVisible="{Binding WallsSelected}" />
+            <Button vm:L.Content="bar.towall" vm:L.Tip="tip.towall" Command="{Binding ConvertSelectionToWallsCommand}" IsVisible="{Binding MarkingsSelected}" />
             <Button vm:L.Content="bar.tomarking" vm:L.Tip="tip.tomarking" Command="{Binding ConvertSelectionToMarkingsCommand}" IsVisible="{Binding WallsSelected}" />
             <Button vm:L.Content="bar.copylevels" Command="{Binding CopySelectionToAllLevelsCommand}" IsVisible="{Binding WallsSelected}" />
             <Button vm:L.Content="bar.elevation" Command="{Binding ShowElevationCommand}" IsVisible="{Binding WallsSelected}" />

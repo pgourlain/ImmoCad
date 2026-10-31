@@ -489,7 +489,9 @@ Painted lines on a parking floor are traced as thin walls: they block the walk, 
 - [x] Import wizard option "Thin lines become floor markings (parking bays)" with its threshold, in the same single history step as the walls (off by default: thin partitions of an apartment plan are walls).
 - [x] Drawing: white with a thin grey outline in the plan, under the walls; flat 3 mm paint in the 3D views and when walking; DXF layer `MARKINGS_<level>`; SVG paint under the walls.
 - [x] Markings are not walls: they block nothing in the walk, do not cut the rooms of the room tool, are ignored by the bill of materials.
-- [ ] Not done: IFC and FreeCAD exports ignore markings; "Copy to all levels" and the MCP tools do not know them; no selecting or moving a single marking with the Select tool (the tool's other modes convert or erase a zone); the paint is not hidden by the "Common parts only" filter.
+- [x] A floor marking is selected like a wall: click (a few pixels beside a thin line is enough), Shift+click, box (walls and paint together). Selected paint shows in orange; the selection bar offers **Back to wall** and Delete; it moves with the walls (also up or down a level); one history step each.
+- [x] The **cut tool** (line or zone) cuts the paint as well as the walls, and only the selected walls and paint when there is a selection; the pieces of a cut marking stay markings.
+- [ ] Not done: IFC and FreeCAD exports ignore markings; "Copy to all levels", copy and paste, and the MCP tools do not know them; the paint is not hidden by the "Common parts only" filter.
 - [ ] Not looked at in the running application: the OpenGL rendering of the paint (checked in Scene tests and in the headless plan, on the author's plan too).
 
 **Validation**

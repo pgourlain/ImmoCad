@@ -83,7 +83,14 @@ public partial class MainViewModel
     /// <summary>The actions on the selection edit the building: not offered while walking, which is read-only.</summary>
     public bool ShowSelectionActions => HasSelection && NotWalk;
     public bool HasSelection => SelectedWalls.Count > 0 || SelectedSegment != null || SelectedEquipmentId != null || SelectedSpaceId != null || SelectedOpening != null;
-    public bool WallsSelected => SelectedWalls.Count > 0 && SelectedOpening == null;
+    /// <summary>Walls are selected (the selection set holds walls and floor markings together: same click, same box, same Delete).</summary>
+    public bool WallsSelected => SelectedWalls.Count > 0 && SelectedOpening == null && CurrentLevel is { } wl && wl.Walls.Any(w => SelectedWalls.Contains(w.Id));
+    public bool MarkingsSelected => SelectedWalls.Count > 0 && SelectedOpening == null && CurrentLevel is { } ml && ml.Markings.Any(m => SelectedWalls.Contains(m.Id));
+    private string WallsAndMarkingsText()
+    {
+        var l = CurrentLevel; var n = l?.Walls.Count(w => SelectedWalls.Contains(w.Id)) ?? 0; var m = l?.Markings.Count(x => SelectedWalls.Contains(x.Id)) ?? 0;
+        return m == 0 ? T("walls.selected", Math.Max(n, SelectedWalls.Count)) : n == 0 ? T("markings.selected", m) : T("walls.markings.selected", n, m);
+    }
     public bool EquipmentSelected => SelectedEquipmentId != null;
     [RelayCommand] private void ShowProperties() => PanelTab = 6;
     [RelayCommand] private void RotateSelectedEquipment() { if (SelectedEquipmentId == null) return; EqRotation = (EqRotation + 90) % 360; ApplyEquipmentCommand.Execute(null); }
@@ -92,7 +99,7 @@ public partial class MainViewModel
     {
         base.OnPropertyChanged(e);
         if (e.PropertyName == nameof(SelectionText))
-            foreach (var n in new[] { nameof(HasSelection), nameof(ShowSelectionActions), nameof(WallsSelected), nameof(EquipmentSelected), nameof(ShowWallProps), nameof(ShowPipeProps), nameof(ShowEquipmentProps), nameof(ShowBackgroundProps) })
+            foreach (var n in new[] { nameof(HasSelection), nameof(ShowSelectionActions), nameof(WallsSelected), nameof(MarkingsSelected), nameof(EquipmentSelected), nameof(ShowWallProps), nameof(ShowPipeProps), nameof(ShowEquipmentProps), nameof(ShowBackgroundProps) })
                 base.OnPropertyChanged(new System.ComponentModel.PropertyChangedEventArgs(n));
     }
 

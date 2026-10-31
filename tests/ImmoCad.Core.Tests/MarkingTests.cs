@@ -120,4 +120,39 @@ public class MarkingTests
         var dxf = new DxfExporter().Export(b); Assert.Contains("MARKINGS_", dxf); Assert.Contains("WALLS_", dxf);
         var svg = ImmoCad.Core.Export.SvgExporter.Export(l); Assert.Equal(3, svg.Split("fill=\"#fff\"").Length - 1); Assert.True(svg.IndexOf("#fff") < svg.IndexOf("#444"));      // paint first, walls over it
     }
+
+    private static (Building B, BuildingActions A, BuildingHistory H, Guid Level, Guid Wall, Guid Mark) WallAndMark()
+    {
+        var b = new Building(); var h = new BuildingHistory(); var a = new BuildingActions(b, h, new BuildingEventsService()); var l = a.AddLevel("SS", 0); var l2 = a.AddLevel("SS2", 3000);
+        a.ImportWalls(l.Id, new[] { Rect(0, 0, 6000, 300).ToArray(), Rect(0, 1000, 6000, 1080).ToArray() }); var wall = b.Levels[0].Walls[0].Id; a.ConvertWallsToMarkings(l.Id, [b.Levels[0].Walls[1].Id]); var mark = b.Levels[0].Markings[0].Id;     // the marking has its own id
+        return (b, a, h, l.Id, wall, mark);
+    }
+
+    [Fact] public void The_cut_tool_cuts_floor_markings_with_the_walls_by_a_line_and_by_a_zone()
+    {
+        var (b, a, h, lv, wall, mark) = WallAndMark(); var before = BuildingJson.Serialize(b);
+        Assert.Equal(2, a.CutWalls(lv, new(3000, -1000), new(3000, 3000), keepLeft: true));                                                          // a line across both: the right halves go
+        var l = b.Levels[0]; Assert.Single(l.Walls); Assert.Single(l.Markings); Assert.InRange(Area(l.Markings.Select(m => new Shape(m.Outline, m.Holes))), 3000L * 80 * 95 / 100, 3000L * 80 * 105 / 100);
+        Assert.All(l.Markings[0].Outline, p => Assert.True(p.X <= 3010));
+        h.Undo(b); Assert.Equal(before, BuildingJson.Serialize(b)); h.Redo(b);
+        Assert.Equal(1, a.CutWallsRegion(lv, FloorMarkings.RectZone(new(1000, 900), new(1500, 1200))));                                               // a zone: the paint is split in two, the wall (not reached) is left
+        l = b.Levels[0]; Assert.Equal(2, l.Markings.Count); Assert.Single(l.Walls);
+    }
+
+    [Fact] public void With_a_selection_only_the_selected_walls_and_markings_are_cut()
+    {
+        var (b, a, _, lv, wall, mark) = WallAndMark();
+        Assert.Equal(1, a.CutWalls(lv, new(3000, -1000), new(3000, 3000), true, new[] { mark })); var l = b.Levels[0];                              // the marking only
+        Assert.Equal(6000, l.Walls[0].Footprint.Max(p => p.X)); Assert.True(l.Markings[0].Outline.Max(p => p.X) <= 3010);
+        Assert.Equal(1, a.CutWalls(lv, new(3000, -1000), new(3000, 3000), true, new[] { wall })); Assert.True(b.Levels[0].Walls[0].Footprint.Max(p => p.X) <= 3010);   // then the wall only
+    }
+
+    [Fact] public void Floor_markings_move_and_are_deleted_like_walls_with_one_undoable_step()
+    {
+        var (b, a, h, lv, wall, mark) = WallAndMark(); var before = BuildingJson.Serialize(b); var steps = h.Items.Count;
+        a.MoveWalls(lv, new[] { mark }, 500, 200); Assert.Equal(steps + 1, h.Items.Count); Assert.Equal(500, b.Levels[0].Markings[0].Outline.Min(p => p.X)); Assert.Equal(1200, b.Levels[0].Markings[0].Outline.Min(p => p.Y));
+        h.Undo(b); Assert.Equal(before, BuildingJson.Serialize(b));
+        var up = b.Levels[1].Id; a.MoveWalls(lv, new[] { mark }, 0, 0, up); Assert.Empty(b.Levels[0].Markings); Assert.Single(b.Levels[1].Markings);                       // up one level with the walls
+        a.DeleteWalls(up, new[] { mark }); Assert.Empty(b.Levels[1].Markings); h.Undo(b); Assert.Single(b.Levels[1].Markings);
+    }
 }
