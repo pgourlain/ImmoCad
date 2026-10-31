@@ -91,12 +91,21 @@ public sealed class DxfExporter : IBuildingExporter
         void Line(string layer, double x1, double y1, double z1, double x2, double y2, double z2) =>
             sb.Append($"0\nLINE\n8\n{layer}\n10\n{F.N(x1 * _k)}\n20\n{F.N(y1 * _k)}\n30\n{F.N(z1 * _k)}\n11\n{F.N(x2 * _k)}\n21\n{F.N(y2 * _k)}\n31\n{F.N(z2 * _k)}\n");
         foreach (var l in b.Levels)
+        {
             foreach (var w in l.Walls)
                 for (var i = 0; i < w.Footprint.Count; i++)
                 {
                     var p = w.Footprint[i]; var q = w.Footprint[(i + 1) % w.Footprint.Count];
                     Line("WALLS_" + l.DisplayName, p.X, p.Y, l.AltitudeMm, q.X, q.Y, l.AltitudeMm);
                 }
+            foreach (var m in l.Markings)                                                                  // paint on the floor: its own layer, so it can be switched off in the CAD tool
+                foreach (var ring in new[] { m.Outline }.Concat(m.Holes))
+                    for (var i = 0; i < ring.Count; i++)
+                    {
+                        var p = ring[i]; var q = ring[(i + 1) % ring.Count];
+                        Line("MARKINGS_" + l.DisplayName, p.X, p.Y, l.AltitudeMm, q.X, q.Y, l.AltitudeMm);
+                    }
+        }
         foreach (var n in b.Networks)
             foreach (var s in n.Segments)
             {
@@ -274,6 +283,9 @@ public static class SvgExporter
         if (pts.Count == 0) return "<svg xmlns=\"http://www.w3.org/2000/svg\"/>";
         int x0 = pts.Min(p => p.X), x1 = pts.Max(p => p.X), y0 = pts.Min(p => p.Y), y1 = pts.Max(p => p.Y);
         var sb = new StringBuilder($"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"{x0} {-y1} {x1 - x0} {y1 - y0}\"><title>{System.Net.WebUtility.HtmlEncode(l.DisplayName)}</title>");
+        foreach (var m in l.Markings)                                                                      // white paint under the walls
+            sb.Append("<path fill-rule=\"evenodd\" fill=\"#fff\" stroke=\"#999\" stroke-width=\"8\" d=\"")
+              .Append(string.Join(" ", new[] { m.Outline }.Concat(m.Holes).Select(r => "M" + string.Join(" L", r.Select(p => $"{p.X},{-p.Y}")) + " Z"))).Append("\"/>");
         foreach (var w in l.Walls)
             sb.Append("<path fill-rule=\"evenodd\" fill=\"#444\" stroke=\"#000\" d=\"")
               .Append(string.Join(" ", new[] { w.Footprint }.Concat(w.Holes).Select(r => "M" + string.Join(" L", r.Select(p => $"{p.X},{-p.Y}")) + " Z"))).Append("\"/>");

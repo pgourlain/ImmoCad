@@ -478,6 +478,25 @@ Walk through the corridors of each level, at eye height, to see the pipes and ob
 - [x] On a real traced plan with gaps and missing doors: the user is never locked in, and someone who left through a gap finds the way back in. *(plan-126: walked in the SS2 basement and on RDC with OpenGL; connectivity checked by a flood fill over every level; that analysis was a scratch test and is not kept)*
 - [ ] A beginner, without help: finds a given valve in a corridor and says which floor and room they are in, in under 2 minutes. List friction points.
 
+## Phase 14 — Floor markings (parking lines that the scan made walls)
+
+Painted lines on a parking floor are traced as thin walls: they block the walk, cut the rooms and clutter the plan. A **floor marking** is paint: a flat white shape on a level, never a wall.
+
+- [x] Model: `Level.Markings` (`FloorMarking`: outline and holes, mm), saved in the file (old files have none), `BuildingActions` `ConvertWallsToMarkings`, `PaintMarkings`, `MarkingsToWalls`, `EraseMarkings` (one history step each, undo/redo exact).
+- [x] `PolygonOps.SplitThin`: material thinner than a thickness (default 150 mm) is split off a wall by a morphological opening on a raster, optionally inside a zone; small blocks left at junctions (corners of a bay) go with the paint, a real pillar stays a wall. `FloorMarkings.PlanPaint` plans it for a level, walls in parallel. *(on the author's plan: ~0.9 s for a whole basement; 311 shapes at 150 mm on SS1, far fewer at 100 mm)*
+- [x] Tool **Paint on the floor** (B, tool strip, Tools menu, command palette): drag a rectangle (or a freehand zone), an orange preview shows what would change and how many parts, Enter applies, Esc forgets the zone. Options: mode (thin walls → markings / markings → walls / erase markings), thickness, freehand zone. Nothing changes before Enter.
+- [x] Selection action **To floor marking** for whole walls already separate (click, box, Shift).
+- [x] Import wizard option "Thin lines become floor markings (parking bays)" with its threshold, in the same single history step as the walls (off by default: thin partitions of an apartment plan are walls).
+- [x] Drawing: white with a thin grey outline in the plan, under the walls; flat 3 mm paint in the 3D views and when walking; DXF layer `MARKINGS_<level>`; SVG paint under the walls.
+- [x] Markings are not walls: they block nothing in the walk, do not cut the rooms of the room tool, are ignored by the bill of materials.
+- [ ] Not done: IFC and FreeCAD exports ignore markings; "Copy to all levels" and the MCP tools do not know them; no selecting or moving a single marking with the Select tool (the tool's other modes convert or erase a zone); the paint is not hidden by the "Common parts only" filter.
+- [ ] Not looked at in the running application: the OpenGL rendering of the paint (checked in Scene tests and in the headless plan, on the author's plan too).
+
+**Validation**
+
+- [x] On `plan-126` (SS1, whole level, 150 mm): the bay lines turn into paint, the thick walls and the cellar partitions stay walls, no black dots at the bay corners (headless render checked by eye).
+- [ ] A beginner paints the bays of a parking level without help, in under 5 minutes.
+
 ## Cross-cutting — Language
 
 - [x] **One language at a time.** The whole UI is English by default (menus, tool tips, panels, dialogs, status and hint lines, wizard, errors, exported text such as bill-of-materials headings); French is a complete second language; never both in the same screen. The language is switchable at runtime (View › Language, persisted in the settings), without restarting. A test fails when a key is missing in one language or a user-visible string is a hard-coded literal. *(English default, French complete, 470 keys; `vm:L.*` attached properties for XAML (no reflection bindings); View › Language switches at runtime and is persisted; generated names (levels, rooms, cellars, sample) are language tokens, names typed by the user stay as typed; MCP tool descriptions and log lines stay English, they are not UI. Tests: key parity, no French letters in English text, no hard-coded literals in views/view-models, whole window text scanned in both languages.)*

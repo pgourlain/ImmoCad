@@ -54,6 +54,8 @@
             <TextBlock Text="{Binding MinAreaLabel}" />
             <Slider Minimum="1" Maximum="2000" Value="{Binding MinArea}" />
             <CheckBox vm:L.Content="wiz.straighten.all" IsChecked="{Binding StraightenWalls}" />
+            <CheckBox vm:L.Content="wiz.thin" vm:L.Tip="wiz.thin.tip" IsChecked="{Binding ThinToMarkings}" />
+            <NumericUpDown Value="{Binding ThinMarkingMm}" Minimum="20" Maximum="1000" Increment="10" vm:L.Format="fmt.thinmax" IsEnabled="{Binding ThinToMarkings}" />
           </StackPanel>
 
           <StackPanel x:Name="PReview" Spacing="6" IsVisible="False">

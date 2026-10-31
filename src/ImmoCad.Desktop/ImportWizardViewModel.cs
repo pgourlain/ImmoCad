@@ -21,6 +21,9 @@ public partial class ImportWizardViewModel : ObservableObject
     public byte[] Original { get; }
     [ObservableProperty] private byte[] _image;
     [ObservableProperty] private WizardStep _step = WizardStep.Straighten;
+    /// <summary>Thin lines (the painted bays of a parking) become floor markings instead of walls.</summary>
+    [ObservableProperty] private bool _thinToMarkings;
+    [ObservableProperty] private int _thinMarkingMm = 150;
     [ObservableProperty] private double _angle;
     [ObservableProperty] private double _distanceMetres = 5;
     [ObservableProperty] private bool _twoAxes;
@@ -187,7 +190,7 @@ public partial class ImportWizardViewModel : ObservableObject
         var name = $"{level.Id:N}.png"; images[name] = Image;
         var m = PlanImport.TransformFor(cal, Height); m[2] += Offset.X; m[5] += Offset.Y;
         actions.SetBackground(level.Id, name, m);
-        actions.ImportWallShapes(level.Id, shapes);
+        actions.ImportWallShapes(level.Id, shapes, ThinToMarkings ? ThinMarkingMm : 0);
         return shapes.Count;
     }
 }

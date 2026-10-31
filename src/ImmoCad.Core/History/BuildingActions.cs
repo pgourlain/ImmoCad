@@ -116,11 +116,22 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
             return levelId;
         }, i => i);
 
-    public void ImportWallShapes(Guid levelId, IEnumerable<(IEnumerable<PointMm> Outline, IEnumerable<IEnumerable<PointMm>> Holes)> shapes) =>
+    /// <summary>
+    /// Adds traced shapes as walls. With <paramref name="thinToMarkingsMm"/> above 0, material thinner than that (the painted lines of a parking, the strokes of a scan)
+    /// becomes floor markings instead of walls: still one history step.
+    /// </summary>
+    public void ImportWallShapes(Guid levelId, IEnumerable<(IEnumerable<PointMm> Outline, IEnumerable<IEnumerable<PointMm>> Holes)> shapes, int thinToMarkingsMm = 0) =>
         Edit("Import walls", BuildingEventKind.WallAdded, () =>
         {
             var l = Find(levelId);
-            foreach (var (o, holes) in shapes) l.Walls.Add(new Wall { Footprint = o.ToList(), Holes = holes.Select(h => h.ToList()).ToList() });
+            foreach (var (o, holes) in shapes)
+            {
+                var outline = o.ToList(); var hs = holes.Select(h => h.ToList()).ToList();
+                if (thinToMarkingsMm <= 0) { l.Walls.Add(new Wall { Footprint = outline, Holes = hs }); continue; }
+                var (thin, rest) = Geometry.PolygonOps.SplitThin(new Geometry.Shape(outline, hs), thinToMarkingsMm);
+                foreach (var r in rest) l.Walls.Add(new Wall { Footprint = r.Outline, Holes = r.Holes });
+                foreach (var t in thin) l.Markings.Add(new FloorMarking { Outline = t.Outline, Holes = t.Holes });
+            }
             return levelId;
         }, i => i);
 

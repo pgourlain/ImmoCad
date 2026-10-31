@@ -1,3 +1,4 @@
+using ImmoCad.Core.Export;
 using ImmoCad.Core.Geometry;
 using ImmoCad.Core.History;
 using ImmoCad.Core.IO;
@@ -99,5 +100,24 @@ public class MarkingTests
         a2.ImportWalls(l2.Id, new[] { Rect(0, 0, 8000, 200).ToArray(), Rect(0, 5800, 8000, 6000).ToArray(), Rect(0, 200, 200, 5800).ToArray(), Rect(7800, 200, 8000, 5800).ToArray() });
         l2.Markings.Add(new FloorMarking { Outline = Rect(2000, 300, 2080, 5000) }); l2.Markings.Add(new FloorMarking { Outline = Rect(4000, 300, 4080, 5000) });
         var probe = SpaceFinder.Probe(new SpaceGrid(l2.Walls), new PointMm(1000, 3000), 0); Assert.NotNull(probe.Outline); Assert.InRange(SpaceFinder.AreaMm2(probe.Outline!), 7600L * 5600 * 97 / 100, 7600L * 5600 * 103 / 100);
+    }
+
+    [Fact] public void Importing_with_the_thin_option_makes_walls_and_markings_in_one_step_and_without_it_nothing_changes()
+    {
+        var shapes = new (IEnumerable<PointMm> Outline, IEnumerable<IEnumerable<PointMm>> Holes)[] { (TShape().Outline, new List<List<PointMm>>()), (Rect(0, 6000, 80, 9000), new List<List<PointMm>>()) };   // a T (wall + line) and a lone line
+        var b = new Building(); var h = new BuildingHistory(); var a = new BuildingActions(b, h, new BuildingEventsService()); var l = a.AddLevel("SS", 0); var steps = h.Items.Count;
+        a.ImportWallShapes(l.Id, shapes, 150); Assert.Equal(steps + 1, h.Items.Count); l = b.Levels[0];
+        Assert.Single(l.Walls); Assert.Equal(2, l.Markings.Count);
+        var b2 = new Building(); var a2 = new BuildingActions(b2, new BuildingHistory(), new BuildingEventsService()); var l2 = a2.AddLevel("SS", 0); a2.ImportWallShapes(l2.Id, shapes);
+        Assert.Equal(2, b2.Levels[0].Walls.Count); Assert.Empty(b2.Levels[0].Markings);                                                                         // default: as before
+    }
+
+    [Fact] public void Markings_are_exported_on_their_own_dxf_layer_and_as_white_paint_in_the_svg_and_a_building_without_them_exports_as_before()
+    {
+        var (b, a, _, l) = Level3Thin(); var plainDxf = new DxfExporter().Export(b); var plainSvg = ImmoCad.Core.Export.SvgExporter.Export(l);
+        Assert.DoesNotContain("MARKINGS_", plainDxf); Assert.DoesNotContain("#fff", plainSvg);
+        a.ConvertWallsToMarkings(l.Id, l.Walls.Skip(1).Select(w => w.Id).ToList()); l = b.Levels[0];
+        var dxf = new DxfExporter().Export(b); Assert.Contains("MARKINGS_", dxf); Assert.Contains("WALLS_", dxf);
+        var svg = ImmoCad.Core.Export.SvgExporter.Export(l); Assert.Equal(3, svg.Split("fill=\"#fff\"").Length - 1); Assert.True(svg.IndexOf("#fff") < svg.IndexOf("#444"));      // paint first, walls over it
     }
 }

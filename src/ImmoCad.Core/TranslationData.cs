@@ -413,6 +413,8 @@ internal static class TranslationData
         ("opt.pipe", "PIPE", "TUYAU"),
         ("opt.wall", "WALL", "MUR"),
         ("opt.align", "ALIGN", "ALIGNER"),
+        ("wiz.thin", "Thin lines become floor markings (parking bays)", "Les traits fins deviennent des marquages au sol (places de parking)"),
+        ("wiz.thin.tip", "Material thinner than the value is painted on the floor instead of being a wall", "La matière plus fine que la valeur est peinte au sol au lieu d'être un mur"),
         ("tip.paintzone", "Paint on the floor: turn thin lines (parking bays) into floor markings (B)", "Peindre au sol : transformer les traits fins (places de parking) en marquages au sol (B)"),
         ("tip.tomarking", "Turn the selected walls into painted lines on the floor", "Transformer les murs sélectionnés en traits peints au sol"),
         ("bar.tomarking", "To floor marking", "En marquage au sol"),
