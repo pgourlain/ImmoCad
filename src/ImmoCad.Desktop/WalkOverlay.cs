@@ -70,10 +70,10 @@ public sealed class WalkOverlay : Grid
         ToolTip.SetTip(_map, T("walk.minimap.tip"));
         var first = !_vm.Settings.WalkHintShown; _hint.IsVisible = first; _hintText.Text = T("walk.hint"); _hintKeys.Text = T("walk.hint.keys"); _hintOk.Content = T("walk.dismiss");
         _legend.Children.Clear();
-        foreach (var n in _vm.Building.Networks.Where(n => n.Visible))
+        foreach (var type in _vm.Building.Networks.Where(n => n.Visible).Select(n => n.Type).Distinct())          // one line per kind of network, not per riser
         {
-            var c = NetworkQueries.ColorOf(n.Type);
-            _legend.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Children = { new Border { Width = 10, Height = 10, CornerRadius = new CornerRadius(5), Background = new SolidColorBrush(Color.FromRgb(c.R, c.G, c.B)), VerticalAlignment = VerticalAlignment.Center }, new TextBlock { Text = string.IsNullOrWhiteSpace(n.Name) ? Enum_(n.Type) : n.Name, FontSize = 12 } } });
+            var c = NetworkQueries.ColorOf(type);
+            _legend.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Children = { new Border { Width = 10, Height = 10, CornerRadius = new CornerRadius(5), Background = new SolidColorBrush(Color.FromRgb(c.R, c.G, c.B)), VerticalAlignment = VerticalAlignment.Center }, new TextBlock { Text = Enum_(type), FontSize = 12 } } });
         }
         _legendBox.IsVisible = _legend.Children.Count > 0;
     }

@@ -1819,4 +1819,15 @@ public class WalkUiTests
         }
         ImmoCad.Core.Translations.Language = "fr";
     }, CancellationToken.None);
+
+    [Fact] public Task The_walk_limits_can_be_set_from_the_visible_plan_and_cleared_each_as_one_history_step() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel { Settings = new() }; vm.WalkAvailable = true;
+        vm.PlanVisibleRect = () => (new PointMm(-3000, -2000), new PointMm(40000, 30000)); var steps = vm.History.Items.Count;
+        vm.SetWorldFrameFromViewCommand.Execute(null);
+        Assert.Equal(new RectMm(-3000, -2000, 40000, 30000), vm.Building.WorldFrame); Assert.Equal(steps + 1, vm.History.Items.Count);
+        vm.BeginWalk(null); Assert.Equal(40000, vm.Walk!.Area.Bounds.MaxX); vm.LeaveWalkCommand.Execute(null);
+        vm.ClearWorldFrameCommand.Execute(null); Assert.Null(vm.Building.WorldFrame); Assert.Equal(steps + 2, vm.History.Items.Count);
+        vm.ClearWorldFrameCommand.Execute(null); Assert.Equal(steps + 2, vm.History.Items.Count);                                        // already automatic: nothing recorded
+    }, CancellationToken.None);
 }

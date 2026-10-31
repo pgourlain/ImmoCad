@@ -136,11 +136,13 @@ public sealed class WalkArea
     }
 
     /// <summary>
-    /// The closest point where the user can stand, searching outwards in rings of 50 mm. Among the points of the first free ring, the one closest to
+    /// The closest point where the user can stand (inside the walls' bounding box when <paramref name="insideWalls"/>), searching outwards in rings of 50 mm. Among the points of the first free ring, the one closest to
     /// <paramref name="prefer"/> wins (the side the user came from); without a preference, the one closest to the requested point.
     /// </summary>
-    public WalkPoint NearestWalkable(WalkPoint at, double eyeMm, WalkPoint? prefer = null)
+    public WalkPoint NearestWalkable(WalkPoint at, double eyeMm, WalkPoint? prefer = null, bool insideWalls = false)
     {
+        var box = insideWalls ? WallBox() : null;
+        if (box is { } bx) at = new(Math.Clamp(at.X, bx.X0, bx.X1), Math.Clamp(at.Y, bx.Y0, bx.Y1));                          // asked to stay in the building: start from its nearest point
         at = Bounds.Clamp(at); if (!Collides(at, eyeMm)) return at;
         var target = prefer ?? at;
         for (double r = 50; r <= 30000; r += 50)
@@ -149,7 +151,7 @@ public sealed class WalkArea
             for (var k = 0; k < steps; k++)
             {
                 var a = 2 * Math.PI * k / steps; var c = new WalkPoint(at.X + Math.Cos(a) * r, at.Y + Math.Sin(a) * r);
-                if (!Bounds.Contains(c.X, c.Y) || Collides(c, eyeMm)) continue;
+                if (!Bounds.Contains(c.X, c.Y) || box is { } b2 && (c.X < b2.X0 || c.X > b2.X1 || c.Y < b2.Y0 || c.Y > b2.Y1) || Collides(c, eyeMm)) continue;
                 var d = (c.X - target.X) * (c.X - target.X) + (c.Y - target.Y) * (c.Y - target.Y); if (d < bestD) { bestD = d; best = c; }
             }
             if (best is { } found) return found;

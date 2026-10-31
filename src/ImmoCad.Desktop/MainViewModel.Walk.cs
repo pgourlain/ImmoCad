@@ -30,6 +30,21 @@ public partial class MainViewModel
     /// <summary>Tooltip of the Walk button: its purpose, or why it is disabled.</summary>
     public string WalkTip => WalkUnavailable is { Length: > 0 } why ? why : T("tip.walk");
 
+    /// <summary>The corners of what the plan shows, set by the window: the world frame is "this much of the plan".</summary>
+    public Func<(PointMm A, PointMm B)>? PlanVisibleRect { get; set; }
+    [RelayCommand]
+    private void SetWorldFrameFromView()
+    {
+        if (!HasDocument || PlanVisibleRect?.Invoke() is not { } r) return;
+        Actions.SetWorldFrame(RectMm.Of(r.A, r.B)); Status = T("world.set"); Refresh();
+    }
+    [RelayCommand]
+    private void ClearWorldFrame()
+    {
+        if (!HasDocument || Building.WorldFrame == null) { Status = T("world.none"); return; }
+        Actions.SetWorldFrame(null); Status = T("world.cleared"); Refresh();
+    }
+
     /// <summary>The plan's look-at point, set by the window: where the walk starts when nothing better is known.</summary>
     public Func<PointMm>? PlanLookAt { get; set; }
     /// <summary>Last walk position, shown as a pin on the plan after leaving.</summary>

@@ -538,6 +538,14 @@ public partial class PlanView : Control
         ctx.DrawGeometry(null, dash, arc);
     }
 
+    /// <summary>The frame that limits the walk's world, when one is set: a dashed rectangle.</summary>
+    private void DrawWorldFrame(DrawingContext ctx)
+    {
+        if (Vm?.Building.WorldFrame is not { } f) return;
+        var a = ToScreen(new PointMm(f.X0, f.Y0)); var b = ToScreen(new PointMm(f.X1, f.Y1));
+        ctx.DrawRectangle(null, new Pen(Brushes.DodgerBlue, 1.5, DashStyle.Dash), new Rect(new Point(Math.Min(a.X, b.X), Math.Min(a.Y, b.Y)), new Point(Math.Max(a.X, b.X), Math.Max(a.Y, b.Y))));
+    }
+
     /// <summary>Where the walk ended, until the next walk: a small pin so the way back is easy to find.</summary>
     private void DrawWalkPin(DrawingContext ctx)
     {
@@ -860,7 +868,7 @@ public partial class PlanView : Control
         }
         DrawSiteOverlay(ctx, dark);
         DrawSpaces(ctx, l, dark);
-        DrawOpenings(ctx, l, dark); DrawWalkPin(ctx);
+        DrawOpenings(ctx, l, dark); DrawWorldFrame(ctx); DrawWalkPin(ctx);
         DrawNetworks(ctx, l, dark);
         DrawHandles(ctx, l);
         if (_lasso is { Count: > 1 } lz)

@@ -269,4 +269,16 @@ public class WalkTests
         Assert.True(area.Region(new WalkPoint(2000, 2000), 1600).Outside);
         var hall = area.LargestRegionPoint(1600)!.Value; Assert.True(area.Region(hall, 1600).Outside);                                  // the big region wins even though it leaks, never the closet
     }
+
+    [Fact] public void Going_to_a_smaller_level_keeps_the_user_inside_the_building_but_someone_outside_stays_outside()
+    {
+        var (b, l0, _) = Corridor(); var small = new Level { Name = "S", AltitudeMm = 2900, HeightMm = 2700 };
+        small.Walls.Add(new Wall { Footprint = Rect(0, 0, 4000, 200) }); small.Walls.Add(new Wall { Footprint = Rect(0, 1800, 4000, 2000) }); small.Walls.Add(new Wall { Footprint = Rect(0, 200, 200, 1800) }); small.Walls.Add(new Wall { Footprint = Rect(3800, 200, 4000, 1800) });
+        b.Levels.Add(small);
+        var s = new WalkState(b, l0, new WalkPoint(8000, 1000)); Assert.True(s.ChangeLevel(small));                                    // 8 m east: beyond the small level's 4 m
+        Assert.InRange(s.X, 0, 4000); Assert.InRange(s.Y, 0, 2000); Assert.False(s.Area.Collides(s.Position, 1600));
+        Assert.True(s.ChangeLevel(l0)); Assert.Equal(8000, s.X, 1);                                                                     // the position asked for is remembered: back where it was
+        var out0 = new WalkState(b, l0, new WalkPoint(8000, 1000)); out0.SetGhost(true); out0.Jump(new(8000, -800)); out0.SetGhost(false);
+        Assert.True(out0.ChangeLevel(small)); Assert.Equal(-800, out0.Y, 1);                                                            // floating outside stays outside
+    }
 }

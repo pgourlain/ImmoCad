@@ -143,11 +143,12 @@ public sealed class WalkState
     {
         if (target == Level) return true;
         if (target.Walls.Count == 0) { Notice?.Invoke(new(WalkNoticeKind.LevelHasNoWalls)); return false; }
-        _want ??= Position; var above = Math.Clamp(EyeAboveFloor, MinAboveFloorMm, Math.Max(MinAboveFloorMm, target.HeightMm - BelowCeilingMm));
+        _want ??= Position; var wasInside = Area.WallBox() is { } ob && X >= ob.X0 && X <= ob.X1 && Y >= ob.Y0 && Y <= ob.Y1;       // in the building on the level being left
+        var above = Math.Clamp(EyeAboveFloor, MinAboveFloorMm, Math.Max(MinAboveFloorMm, target.HeightMm - BelowCeilingMm));
         var before = Position; Level = target; Area = new WalkArea(Building, target); EyeZ = target.AltitudeMm + above; Goal = null; _vx = _vy = 0; _ghostReturn = null;
         var want = _want.Value;
         if (Ghost) { X = want.X; Y = want.Y; return true; }
-        var to = Area.NearestWalkable(want, EyeAboveFloor, before);
+        var to = Area.NearestWalkable(want, EyeAboveFloor, before, insideWalls: wasInside);                                      // a smaller level does not drop the user outside
         X = to.X; Y = to.Y; var shift = Math.Sqrt((to.X - want.X) * (to.X - want.X) + (to.Y - want.Y) * (to.Y - want.Y));
         if (shift > 20) Notice?.Invoke(new(WalkNoticeKind.Shifted, shift / 1000));
         return true;
