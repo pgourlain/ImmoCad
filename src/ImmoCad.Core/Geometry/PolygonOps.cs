@@ -292,6 +292,26 @@ public static class PolygonOps
         return res;
     }
 
+    /// <summary>
+    /// Splits a shape into the material thinner than <paramref name="maxThicknessMm"/> (a painted line, a stroke of the scan) and the rest (the thick walls), by a morphological
+    /// opening: what survives an erosion followed by the same dilation is thick. With a <paramref name="zone"/>, only the thin material inside it is split off.
+    /// Works on a raster (as <see cref="Merge"/>), so the result is traced back to straight sides; nothing thin: <c>Thin</c> is empty and <c>Remainder</c> is the shape itself.
+    /// </summary>
+    public static (List<Shape> Thin, List<Shape> Remainder) SplitThin(Shape shape, int maxThicknessMm, IReadOnlyList<PointMm>? zone = null)
+    {
+        if (shape.Outline.Count < 3 || maxThicknessMm < 1) return ([], [shape]);
+        var (x0, y0, x1, y1) = Bounds([shape]); var (cell, w, h, ox, oy) = Grid(x0, y0, x1, y1, maxThicknessMm);
+        var mask = new byte[w * h]; Fill(mask, w, h, ox, oy, cell, shape);
+        var r = Math.Max(1, (int)Math.Round((maxThicknessMm / (double)cell - 1) / 2));                      // the window 2r+1 cells wide is the nearest to the thickness asked
+        var thick = Dilate(Erode(mask, w, h, r), w, h, r);
+        byte[]? zoneMask = null; if (zone is { Count: >= 3 }) { zoneMask = new byte[w * h]; Fill(zoneMask, w, h, ox, oy, cell, new Shape(zone.ToList(), new())); }
+        var thin = new byte[w * h]; var any = 0;
+        for (var i = 0; i < thin.Length; i++) if (mask[i] == 1 && thick[i] == 0 && (zoneMask == null || zoneMask[i] == 1)) { thin[i] = 1; any++; }
+        if (any < 8) return ([], [shape]);
+        var rest = new byte[w * h]; for (var i = 0; i < rest.Length; i++) rest[i] = (byte)(mask[i] == 1 && thin[i] == 0 ? 1 : 0);
+        return (Trace(thin, w, h, ox, oy, cell), Trace(rest, w, h, ox, oy, cell));
+    }
+
     /// <summary>Fallback for cuts that leave several pieces or cross a hole: draw the shape, erase the removed side, trace what is left.</summary>
     private static List<Shape> Rasterized(Shape shape, Func<PointMm, double> d)
     {

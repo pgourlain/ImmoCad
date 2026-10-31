@@ -50,6 +50,7 @@ public class HistoryTests
             () => a.ImportWalls(l.Id, new[] { new[] { new PointMm(0, 0), new PointMm(1, 1) } }),
             () => a.SetImageTransform(l.Id, new[] { 1.0, 0, 0, 0, 1, 0 }),
             () => a.SetWorldFrame(new RectMm(0, 0, 5000, 5000)),
+            () => { var w = a.AddWall(l.Id, new[] { new PointMm(0, 0), new PointMm(80, 0), new PointMm(80, 2000), new PointMm(0, 2000) }); a.ConvertWallsToMarkings(l.Id, [w.Id]); a.EraseMarkings(l.Id, l.Markings.Select(m => m.Id).ToList()); },
             () => a.AddSpace(l.Id, new[] { new PointMm(0, 0) }, "Cave 1", SpaceKind.Cellar, "1"),
             () => { var n = a.AddNetwork("ECS", NetworkType.DomesticHotWater); a.AddPipeRun(n.Id, new[] { new PointMm3(0, 0, 0), new PointMm3(0, 0, 2700) }); },
             () => a.AddEquipment(l.Id, "radiator", new PointMm(10, 10), 150),

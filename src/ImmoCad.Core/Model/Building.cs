@@ -69,6 +69,16 @@ public sealed class Level
     public List<Wall> Walls { get; set; } = new();
     public List<Space> Spaces { get; set; } = new();
     public List<ReferenceMesh> References { get; set; } = new();
+    /// <summary>Paint on the floor (parking bay lines, hatching): drawn flat, white; never a wall, so it blocks nothing and does not cut rooms.</summary>
+    public List<FloorMarking> Markings { get; set; } = new();
+}
+
+/// <summary>A flat painted shape on the floor of a level: an outline and the holes in it (even-odd), in millimetres.</summary>
+public sealed class FloorMarking
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public List<PointMm> Outline { get; set; } = new();
+    public List<List<PointMm>> Holes { get; set; } = new();
 }
 
 public sealed class Node

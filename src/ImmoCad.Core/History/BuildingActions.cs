@@ -48,6 +48,47 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
     public void SetWorldFrame(RectMm? frame) =>
         Edit("Set world frame", BuildingEventKind.LevelChanged, () => { building.WorldFrame = frame; return Guid.Empty; }, _ => null);
 
+    // ---- floor markings (paint on the floor: never a wall) ----
+
+    /// <summary>Whole walls become floor markings (the selection). Returns how many.</summary>
+    public int ConvertWallsToMarkings(Guid levelId, IEnumerable<Guid> wallIds) =>
+        Edit("Convert to floor marking", BuildingEventKind.LevelChanged, () =>
+        {
+            var l = Find(levelId); var ids = wallIds.ToHashSet(); var n = 0;
+            foreach (var w in l.Walls.Where(w => ids.Contains(w.Id)).ToList())
+            {
+                l.Markings.Add(new FloorMarking { Outline = w.Footprint.ToList(), Holes = w.Holes.Select(h => h.ToList()).ToList() }); l.Walls.Remove(w); n++;
+            }
+            return n;
+        }, _ => null);
+
+    /// <summary>Applies a plan of <see cref="Geometry.FloorMarkings.PlanPaint"/>: the thin parts become markings, the rest stays walls (the first piece keeps the wall's id and openings).</summary>
+    public int PaintMarkings(Guid levelId, IReadOnlyList<Geometry.WallSplit> splits) =>
+        Edit("Paint floor markings", BuildingEventKind.LevelChanged, () =>
+        {
+            var l = Find(levelId); var n = 0;
+            foreach (var sp in splits)
+            {
+                var at = l.Walls.FindIndex(x => x.Id == sp.WallId); if (at < 0) continue; var w = l.Walls[at]; l.Walls.RemoveAt(at);
+                for (var i = 0; i < sp.Rest.Count; i++)
+                    l.Walls.Insert(at + i, new Wall { Id = i == 0 ? w.Id : Guid.NewGuid(), Footprint = sp.Rest[i].Outline, Holes = sp.Rest[i].Holes, HeightMm = w.HeightMm, Label = w.Label, Stability = w.Stability, Openings = i == 0 ? w.Openings : new() });
+                foreach (var t in sp.Thin) { l.Markings.Add(new FloorMarking { Outline = t.Outline, Holes = t.Holes }); n++; }
+            }
+            return n;
+        }, _ => null);
+
+    /// <summary>Floor markings become walls again.</summary>
+    public int MarkingsToWalls(Guid levelId, IEnumerable<Guid> markingIds) =>
+        Edit("Floor markings to walls", BuildingEventKind.LevelChanged, () =>
+        {
+            var l = Find(levelId); var ids = markingIds.ToHashSet(); var n = 0;
+            foreach (var m in l.Markings.Where(m => ids.Contains(m.Id)).ToList()) { l.Walls.Add(new Wall { Footprint = m.Outline.ToList(), Holes = m.Holes.Select(h => h.ToList()).ToList() }); l.Markings.Remove(m); n++; }
+            return n;
+        }, _ => null);
+
+    public int EraseMarkings(Guid levelId, IEnumerable<Guid> markingIds) =>
+        Edit("Erase floor markings", BuildingEventKind.LevelChanged, () => { var ids = markingIds.ToHashSet(); return Find(levelId).Markings.RemoveAll(m => ids.Contains(m.Id)); }, _ => null);
+
     public void RenameLevel(Guid id, string name) =>
         Edit("Rename level", BuildingEventKind.LevelChanged, () => { Find(id).Name = name; return id; }, i => i);
 
