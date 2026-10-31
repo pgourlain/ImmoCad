@@ -296,4 +296,25 @@ public class TriangulatorTests
         Assert.Equal(a.Select(o => o.Mesh.Checksum()), b.Select(o => o.Mesh.Checksum()));
         Assert.DoesNotContain(a, o => o.Kind is SceneKind.Floor or SceneKind.Ceiling);
     }
+
+    [Fact] public void Walking_draws_a_riser_only_around_the_current_level()
+    {
+        var input = TwoLevels(out var l0, out _); var riser = input.Pipes[0];
+        var walk = SceneBuilder.Build(input, new SceneOptions(l0, Walk: true)).Single(o => o.Kind == SceneKind.Pipe && o.Id == riser.SegmentId).Mesh;
+        Assert.InRange(walk.Min().Z, -0.3 - 0.02, 0); Assert.InRange(walk.Max().Z, 2.7, 2.7 + 0.3 + 0.02);                                // level 0: 0..2.7 m, plus the 0.3 m slab margin
+        var all = SceneBuilder.Build(input, new SceneOptions(l0)).Single(o => o.Kind == SceneKind.Pipe && o.Id == riser.SegmentId).Mesh;
+        Assert.True(all.Max().Z > 8.9 && all.Min().Z < -1.9);                                                                              // the orbit views are unchanged: the whole pipe
+    }
+
+    [Fact] public void Walking_adds_a_wire_grid_in_the_floor_and_ceiling_planes_that_is_never_picked()
+    {
+        var input = TwoLevels(out var l0, out _);
+        Assert.DoesNotContain(SceneBuilder.Build(input, new SceneOptions(l0, Walk: true)), o => o.Kind == SceneKind.Grid);                  // no grid unless the world is given
+        var objs = SceneBuilder.Build(input, new SceneOptions(l0, Walk: true, WalkGrid: (-5000, -5000, 15000, 8000)));
+        var g = objs.Single(o => o.Kind == SceneKind.Grid).Mesh; Assert.True(g.Indices.Count >= 40 && g.Indices.Count % 2 == 0);
+        Assert.All(Enumerable.Range(0, g.VertexCount), i => Assert.True(Math.Abs(g.Positions[i * 3 + 2] + 0.005) < 1e-4 || Math.Abs(g.Positions[i * 3 + 2] - 2.705) < 1e-4));
+        Assert.Null(SceneBuilder.Pick(objs.Where(o => o.Kind == SceneKind.Grid), (3, 0.1f, 10), (0, 0, -1)));
+        var huge = SceneBuilder.Build(input, new SceneOptions(l0, Walk: true, WalkGrid: (0, 0, 5_000_000, 5_000_000))).Single(o => o.Kind == SceneKind.Grid).Mesh;
+        Assert.True(huge.Indices.Count < 2000);                                                                                              // the spacing grows with the world: never thousands of lines
+    }
 }

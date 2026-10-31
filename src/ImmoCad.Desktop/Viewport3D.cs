@@ -48,6 +48,7 @@ public class Viewport3D : Control, IViewport3D
         double[] xs = [], ys = [], ds = [];
         foreach (var o in Controller.Objects)
         {
+            if (o.Kind == SceneKind.Grid) continue;                                  // walk-mode wire grid: line pairs, drawn by the OpenGL viewport only
             var m = o.Mesh; var baseColor = o.Highlight ? (1f, 0.55f, 0f) : o.Color; var alpha = (byte)(o.Alpha * 255); var n = m.Positions.Count / 3;
             if (xs.Length < n) { xs = new double[n * 2]; ys = new double[n * 2]; ds = new double[n * 2]; }
             for (var v = 0; v < n; v++) { var (px, py, d) = cam.Project(m.Positions[v * 3], m.Positions[v * 3 + 1], m.Positions[v * 3 + 2]); xs[v] = cx0 + px * half; ys[v] = cy0 - py * half; ds[v] = d; }

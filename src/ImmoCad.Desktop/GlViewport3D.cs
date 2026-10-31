@@ -102,10 +102,10 @@ public sealed class GlViewport3D : OpenGlControlBase, IViewport3D, Avalonia.Rend
                 {
                     if (!_buffers.TryGetValue(o, out var b)) continue;
                     var col = o.Highlight ? (1f, 0.55f, 0f) : walk && o.Id == Controller.HoverId ? (1f, 0.75f, 0.3f) : o.Color;
-                    gl.Uniform4(_uColor, col.Item1, col.Item2, col.Item3, o.Alpha); gl.Uniform1(_uSelected, Controller.Wireframe ? 0f : 1f);
+                    gl.Uniform4(_uColor, col.Item1, col.Item2, col.Item3, o.Alpha); gl.Uniform1(_uSelected, Controller.Wireframe || o.Kind == SceneKind.Grid ? 0f : 1f);          // flat colour for wire
                     gl.Uniform1(_uDissolve, ghost && o.Kind is SceneKind.Wall or SceneKind.Floor or SceneKind.Ceiling ? 1f : 0f);          // walls fade around the eye in ghost mode
                     gl.BindVertexArray(b.Vao);
-                    if (Controller.Wireframe) { gl.BindBuffer(BufferTargetARB.ElementArrayBuffer, b.Ebo); gl.DrawElements(PrimitiveType.Lines, (uint)b.WireIndices, DrawElementsType.UnsignedInt, null); }
+                    if (Controller.Wireframe || o.Kind == SceneKind.Grid) { gl.BindBuffer(BufferTargetARB.ElementArrayBuffer, b.Ebo); gl.DrawElements(PrimitiveType.Lines, (uint)b.WireIndices, DrawElementsType.UnsignedInt, null); }
                     else
                     {
                         gl.BindBuffer(BufferTargetARB.ElementArrayBuffer, b.Ibo); gl.DrawElements(PrimitiveType.Triangles, (uint)b.Indices, DrawElementsType.UnsignedInt, null);
@@ -142,7 +142,8 @@ public sealed class GlViewport3D : OpenGlControlBase, IViewport3D, Avalonia.Rend
         {
             var m = o.Mesh; var verts = new float[m.VertexCount * 6];
             for (var i = 0; i < m.VertexCount; i++) { for (var k = 0; k < 3; k++) { verts[i * 6 + k] = m.Positions[i * 3 + k]; verts[i * 6 + 3 + k] = m.Normals.Count > i * 3 + k ? m.Normals[i * 3 + k] : 0; } }
-            var idx = m.Indices.Select(i => (uint)i).ToArray(); var wire = WireEdges.Outline(m).SelectMany(e => new[] { (uint)e.A, (uint)e.B }).ToArray();
+            var grid = o.Kind == SceneKind.Grid;                                                         // a grid is line pairs already
+            var idx = grid ? [] : m.Indices.Select(i => (uint)i).ToArray(); var wire = grid ? m.Indices.Select(i => (uint)i).ToArray() : WireEdges.Outline(m).SelectMany(e => new[] { (uint)e.A, (uint)e.B }).ToArray();
             var vao = gl.GenVertexArray(); gl.BindVertexArray(vao);
             var vbo = gl.GenBuffer(); gl.BindBuffer(BufferTargetARB.ArrayBuffer, vbo); fixed (float* p = verts) gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(verts.Length * 4), p, BufferUsageARB.StaticDraw);
             var ibo = gl.GenBuffer(); gl.BindBuffer(BufferTargetARB.ElementArrayBuffer, ibo); fixed (uint* p = idx) gl.BufferData(BufferTargetARB.ElementArrayBuffer, (nuint)(idx.Length * 4), p, BufferUsageARB.StaticDraw);

@@ -54,7 +54,7 @@ public sealed class ViewportController
         if (vm == null || vm.Building.Levels.Count == 0) { Objects = new(); return; }
         if (vm.IsWalk && vm.Walk is { } walk)
         {   // the current level only, floor and ceiling, what crosses its height band; the camera is the walker's eyes
-            Objects = SceneBuilder.Build(SceneMapper.Map(vm.Building), new SceneOptions(walk.LevelId, LevelFilter.CurrentOnly, false, false, false, vm.SelectedWalls, vm.HiddenLevels, true));
+            Objects = SceneBuilder.Build(SceneMapper.Map(vm.Building), new SceneOptions(walk.LevelId, LevelFilter.CurrentOnly, false, false, false, vm.SelectedWalls, vm.HiddenLevels, true, ((int)walk.Area.Bounds.MinX, (int)walk.Area.Bounds.MinY, (int)walk.Area.Bounds.MaxX, (int)walk.Area.Bounds.MaxY)));
             ApplyWalk(walk); return;
         }
         Objects = SceneBuilder.Build(SceneMapper.Map(vm.Building), new SceneOptions(vm.CurrentLevel?.Id, Filter, CutAboveCurrent, XRay, true, vm.SelectedWalls, vm.HiddenLevels));
