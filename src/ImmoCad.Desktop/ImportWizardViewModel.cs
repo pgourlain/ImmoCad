@@ -98,8 +98,11 @@ public partial class ImportWizardViewModel : ObservableObject
     /// <summary>Rotates the original by -Angle (straightens a tilt of Angle) and redecodes.</summary>
     public void ApplyRotation()
     {
-        Image = PlanImport.Rotate(Original, 90 * QuarterTurns - Angle); AppliedAngle = Angle; Gray = PlanImport.Decode(Image); CalibrationPoints.Clear(); Calibration = null;
+        var (png, gray) = (_source ??= new PlanImport.RotationSource(Original)).Rotate(90 * QuarterTurns - Angle);
+        Image = png; AppliedAngle = Angle; Gray = gray; CalibrationPoints.Clear(); Calibration = null;
     }
+
+    private PlanImport.RotationSource? _source;
 
     /// <summary>Clockwise quarter turns (0-3) applied to the original before the fine angle.</summary>
     public int QuarterTurns { get; private set; }

@@ -40,6 +40,27 @@ public static class PlanImport
         return img.ToByteArray(MagickFormat.Png);
     }
 
+    /// <summary>A picture decoded once, to rotate again and again (straighten step) without decoding the file each time.</summary>
+    public sealed class RotationSource
+    {
+        private readonly MagickImage _src;
+        public RotationSource(byte[] data) { _src = new MagickImage(data); }
+
+        /// <summary>PNG bytes (fast compression) and gray pixels of the picture rotated by <paramref name="degrees"/>, in one pass.</summary>
+        public (byte[] Png, GrayImage Gray) Rotate(double degrees)
+        {
+            using var img = (MagickImage)_src.Clone();
+            if (Math.Abs(degrees) > 1e-6) { img.BackgroundColor = MagickColors.White; img.Rotate(degrees); }
+            img.Settings.SetDefine(MagickFormat.Png, "compression-level", "1");
+            img.Settings.SetDefine(MagickFormat.Png, "compression-filter", "1");
+            var png = img.ToByteArray(MagickFormat.Png);
+            img.ColorSpace = ColorSpace.Gray;
+            var w = (int)img.Width; var h = (int)img.Height;
+            using var px = img.GetPixels();
+            return (png, new GrayImage(px.ToByteArray("I") ?? throw new InvalidDataException("cannot read pixels"), w, h));
+        }
+    }
+
     public static (int Width, int Height) Size(byte[] data) { var i = new MagickImageInfo(data); return ((int)i.Width, (int)i.Height); }
 
     /// <summary>Resolution stored in the picture (dots per inch), 0 when it carries none.</summary>
