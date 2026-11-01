@@ -103,11 +103,31 @@ public partial class ImportWizardViewModel : ObservableObject
     }
 
     private PlanImport.RotationSource? _source;
+    private int _rotationVersion;
+
+    /// <summary>True while a rotation computed in the background is not yet shown.</summary>
+    [ObservableProperty] private bool _isBusy;
+
+    /// <summary>Same as <see cref="ApplyRotation"/> but computed on a pool thread; only the latest request is applied. Call from the UI thread.</summary>
+    public async Task ApplyRotationAsync()
+    {
+        var version = ++_rotationVersion; var degrees = 90 * QuarterTurns - Angle; var angle = Angle;
+        var source = _source ??= new PlanImport.RotationSource(Original);
+        IsBusy = true;
+        try
+        {
+            var (png, gray) = await Task.Run(() => source.Rotate(degrees));
+            if (version != _rotationVersion) return;
+            Image = png; AppliedAngle = angle; Gray = gray; CalibrationPoints.Clear(); Calibration = null;
+        }
+        finally { if (version == _rotationVersion) IsBusy = false; }
+    }
 
     /// <summary>Clockwise quarter turns (0-3) applied to the original before the fine angle.</summary>
     public int QuarterTurns { get; private set; }
 
     /// <summary>Turns the picture by 90° (+1 clockwise, -1 counter-clockwise), keeping the fine angle.</summary>
+    public void QuarterTurn(int direction) => QuarterTurns = ((QuarterTurns + direction) % 4 + 4) % 4;
     public void RotateQuarter(int direction) { QuarterTurns = ((QuarterTurns + direction) % 4 + 4) % 4; ApplyRotation(); }
 
     /// <summary>Angle currently baked into <see cref="Image"/> (the canvas previews the difference live while the slider moves).</summary>

@@ -73,10 +73,15 @@ public partial class ImportWizard : Window
     private void PreviewMask() { var m = Vm.PreviewMask(); Canvas.SetMask(m, Vm.Gray!.Width, Vm.Gray.Height); }
     private void UpdateReview() => ReviewText.Text = T("wiz.review.count", Vm.Detected.Count - Vm.Rejected.Count, Vm.Detected.Count);
 
-    private void OnAngleChanged(object? s, Avalonia.Input.PointerReleasedEventArgs e) { Vm.ApplyRotation(); Canvas.SetImage(Vm.Image, keepView: true); }
-    private void NudgeAngle(double delta) { Vm.Angle = Math.Round(Math.Clamp(Vm.Angle + delta, -45, 45), 1); Vm.ApplyRotation(); Canvas.SetImage(Vm.Image, keepView: true); }
-    private void OnTurnLeft(object? s, RoutedEventArgs e) { Vm.RotateQuarter(-1); Canvas.SetImage(Vm.Image, keepView: false); }
-    private void OnTurnRight(object? s, RoutedEventArgs e) { Vm.RotateQuarter(1); Canvas.SetImage(Vm.Image, keepView: false); }
+    private async Task RotateAsync(bool keepView)
+    {
+        await Vm.ApplyRotationAsync();
+        if (!Vm.IsBusy) Canvas.SetImage(Vm.Image, keepView);
+    }
+    private void OnAngleChanged(object? s, Avalonia.Input.PointerReleasedEventArgs e) => _ = RotateAsync(true);
+    private void NudgeAngle(double delta) { Vm.Angle = Math.Round(Math.Clamp(Vm.Angle + delta, -45, 45), 1); _ = RotateAsync(true); }
+    private void OnTurnLeft(object? s, RoutedEventArgs e) { Vm.QuarterTurn(-1); _ = RotateAsync(false); }
+    private void OnTurnRight(object? s, RoutedEventArgs e) { Vm.QuarterTurn(1); _ = RotateAsync(false); }
     private void OnAngleDown(object? s, RoutedEventArgs e) => NudgeAngle(-0.1);
     private void OnAngleUp(object? s, RoutedEventArgs e) => NudgeAngle(0.1);
     private void OnZoomIn(object? s, RoutedEventArgs e) => Canvas.ZoomBy("in");
@@ -87,6 +92,7 @@ public partial class ImportWizard : Window
     private void OnBack(object? s, RoutedEventArgs e) { Vm.Step = Vm.Step - 1; ShowStep(); }
     private void OnNext(object? s, RoutedEventArgs e)
     {
+        if (Vm.IsBusy) return;
         try
         {
             if (Vm.Step == WizardStep.Review) { Accepted = true; Close(); return; }

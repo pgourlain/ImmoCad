@@ -22,6 +22,7 @@
               <Button Content="↺ 90°" vm:L.Tip="wiz.turn.left" Click="OnTurnLeft" />
               <Button Content="↻ 90°" vm:L.Tip="wiz.turn.right" Click="OnTurnRight" />
             </StackPanel>
+            <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsBusy}" />
             <TextBlock Text="{Binding AngleLabel}" />
             <Slider Minimum="-45" Maximum="45" Value="{Binding Angle}" TickFrequency="0.1" PointerReleased="OnAngleChanged" />
             <StackPanel Orientation="Horizontal" Spacing="6">

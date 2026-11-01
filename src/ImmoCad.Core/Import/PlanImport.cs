@@ -49,7 +49,9 @@ public static class PlanImport
         /// <summary>PNG bytes (fast compression) and gray pixels of the picture rotated by <paramref name="degrees"/>, in one pass.</summary>
         public (byte[] Png, GrayImage Gray) Rotate(double degrees)
         {
-            using var img = (MagickImage)_src.Clone();
+            MagickImage img; lock (_src) img = (MagickImage)_src.Clone();
+            using (img)
+            {
             if (Math.Abs(degrees) > 1e-6) { img.BackgroundColor = MagickColors.White; img.Rotate(degrees); }
             img.Settings.SetDefine(MagickFormat.Png, "compression-level", "1");
             img.Settings.SetDefine(MagickFormat.Png, "compression-filter", "1");
@@ -58,6 +60,7 @@ public static class PlanImport
             var w = (int)img.Width; var h = (int)img.Height;
             using var px = img.GetPixels();
             return (png, new GrayImage(px.ToByteArray("I") ?? throw new InvalidDataException("cannot read pixels"), w, h));
+            }
         }
     }
 
