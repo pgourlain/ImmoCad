@@ -40,7 +40,7 @@
                   <TextBlock Text="{Binding Title}" FontWeight="{Binding IsActive, Converter={x:Static vm:Converters.BoldIf}}" />
                 </Button>
                 <TextBlock Text="●" IsVisible="{Binding IsDirty}" FontSize="9" VerticalAlignment="Center" Foreground="OrangeRed" />
-                <Button Content="✕" Padding="4,0" FontSize="10" Background="Transparent" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).CloseTabCommand}" CommandParameter="{Binding Index}" />
+                <Button Padding="4,0" FontSize="10" Background="Transparent" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).CloseTabCommand}" CommandParameter="{Binding Index}"><Path Classes="ico" Width="12" Height="12" StrokeThickness="2" Data="{StaticResource ico.close}" /></Button>
               </StackPanel>
             </Border>
           </DataTemplate>
@@ -56,7 +56,7 @@
             <StackPanel Orientation="Horizontal" Spacing="8"><TextBlock Text="⌕" /><TextBlock vm:L.Text="cmd.search" Opacity="0.75" /><TextBlock Text="⌘K" FontSize="11" Opacity="0.55" VerticalAlignment="Center" /></StackPanel>
           </Button>
         </StackPanel>
-        <ItemsControl Grid.Column="1" ItemsSource="{Binding Steps}">
+        <ItemsControl Grid.Column="1" ItemsSource="{Binding Steps}" IsVisible="{Binding IsGuided}">
           <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="4" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="vm:StepItem">
@@ -72,7 +72,7 @@
         </ItemsControl>
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right" VerticalAlignment="Center">
           <CheckBox vm:L.Content="expert.mode" vm:L.Tip="tip.expert" IsChecked="{Binding ExpertMode}" />
-          <Button Content="{Binding NextStepLabel}" IsVisible="{Binding HasNextStep}" Command="{Binding NextStepCommand}" Classes="accent" />
+          <Button Content="{Binding NextStepLabel}" IsVisible="{Binding ShowNextStep}" Command="{Binding NextStepCommand}" Classes="accent" />
         </StackPanel>
       </Grid>
     </Border>
@@ -89,30 +89,30 @@
     <!-- tool strip -->
     <Border DockPanel.Dock="Left" Classes="bar" Padding="8,8,4,8" IsVisible="{Binding NotWalk}">
       <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="0,0,4,0">
-        <ToggleButton Classes="tool" Content="↖" vm:L.Tip="tip.select" IsChecked="{Binding IsSelectTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Select" />
-        <ToggleButton Classes="tool" Content="▭" vm:L.Tip="tip.drawwall" IsChecked="{Binding IsDrawTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="DrawWall" IsVisible="{Binding ShowWallTools}" />
-        <ToggleButton Classes="tool" Content="◎" vm:L.Tip="tip.riser" IsChecked="{Binding IsRiserTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Riser" IsVisible="{Binding ShowRiserTool}" />
-        <ToggleButton Classes="tool" Content="╋" vm:L.Tip="tip.pipe" IsChecked="{Binding IsPipeTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="DrawPipe" IsVisible="{Binding ShowPipeTool}" />
-        <ToggleButton Classes="tool" Content="⌷" vm:L.Tip="tip.door" IsChecked="{Binding IsDoorTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Door" IsVisible="{Binding ShowRoomTools}" />
-        <ToggleButton Classes="tool" Content="⊟" vm:L.Tip="tip.window" IsChecked="{Binding IsWindowTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Window" IsVisible="{Binding ShowRoomTools}" />
-        <ToggleButton Classes="tool" Content="▢" vm:L.Tip="tip.space" IsChecked="{Binding IsSpaceTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Space" IsVisible="{Binding ShowRoomTools}" />
-        <ToggleButton Classes="tool" Content="№" vm:L.Tip="tip.number" IsChecked="{Binding IsNumberTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="NumberCellars" IsVisible="{Binding ShowRoomTools}" />
+        <ToggleButton Classes="tool" vm:L.Tip="tip.select" IsChecked="{Binding IsSelectTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Select"><Path Classes="ico" Data="{StaticResource ico.select}" /></ToggleButton>
+        <ToggleButton Classes="tool" vm:L.Tip="tip.drawwall" IsChecked="{Binding IsDrawTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="DrawWall" IsVisible="{Binding ShowWallTools}"><Path Classes="ico" Data="{StaticResource ico.wall}" /></ToggleButton>
+        <ToggleButton Classes="tool" vm:L.Tip="tip.riser" IsChecked="{Binding IsRiserTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Riser" IsVisible="{Binding ShowRiserTool}"><Path Classes="ico" Data="{StaticResource ico.riser}" /></ToggleButton>
+        <ToggleButton Classes="tool" vm:L.Tip="tip.pipe" IsChecked="{Binding IsPipeTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="DrawPipe" IsVisible="{Binding ShowPipeTool}"><Path Classes="ico" Data="{StaticResource ico.pipe}" /></ToggleButton>
+        <ToggleButton Classes="tool" vm:L.Tip="tip.door" IsChecked="{Binding IsDoorTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Door" IsVisible="{Binding ShowRoomTools}"><Path Classes="ico" Data="{StaticResource ico.door}" /></ToggleButton>
+        <ToggleButton Classes="tool" vm:L.Tip="tip.window" IsChecked="{Binding IsWindowTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Window" IsVisible="{Binding ShowRoomTools}"><Path Classes="ico" Data="{StaticResource ico.window}" /></ToggleButton>
+        <ToggleButton Classes="tool" vm:L.Tip="tip.space" IsChecked="{Binding IsSpaceTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Space" IsVisible="{Binding ShowRoomTools}"><Path Classes="ico" Data="{StaticResource ico.space}" /></ToggleButton>
+        <ToggleButton Classes="tool" vm:L.Tip="tip.number" IsChecked="{Binding IsNumberTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="NumberCellars" IsVisible="{Binding ShowRoomTools}"><Path Classes="ico" Data="{StaticResource ico.number}" /></ToggleButton>
         <ToggleButton Classes="tool" vm:L.Tip="tip.measure" IsChecked="{Binding IsMeasureTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Measure">
           <Path Width="26" Height="26" Stretch="Uniform" RenderTransformOrigin="50%,50%" StrokeThickness="1.4" StrokeLineCap="Round" StrokeJoin="Round" Stroke="{Binding $parent[ToggleButton].Foreground}"
                 Data="M1,8 L23,8 L23,16 L1,16 Z M4,8 L4,12 M7,8 L7,10.5 M10,8 L10,12 M13,8 L13,10.5 M16,8 L16,12 M19,8 L19,10.5"><Path.RenderTransform><RotateTransform Angle="-35" /></Path.RenderTransform></Path>
         </ToggleButton>
-        <ToggleButton Classes="tool" Content="⧉" vm:L.Tip="tip.mergeregion" IsChecked="{Binding IsMergeRegionTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="MergeRegion" IsVisible="{Binding ShowWallTools}" />
-        <ToggleButton Classes="tool" Content="░" vm:L.Tip="tip.paintzone" IsChecked="{Binding IsPaintTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="PaintZone" IsVisible="{Binding ShowWallTools}" />
-        <ToggleButton Classes="tool" Content="✂" vm:L.Tip="tip.cutwalls" IsChecked="{Binding IsCutWallTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="CutWall" IsVisible="{Binding ShowWallTools}" />
-        <ToggleButton Classes="tool" Content="⟋" vm:L.Tip="tip.straighten" IsChecked="{Binding IsStraightenTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Straighten" IsVisible="{Binding ShowWallTools}" />
-        <ToggleButton Classes="tool" Content="⇔" vm:L.Tip="tip.stretch" IsChecked="{Binding IsStretchTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Stretch" IsVisible="{Binding ShowPlanTools}" />
-        <ToggleButton Classes="tool" Content="⌖" vm:L.Tip="tip.align" IsChecked="{Binding IsAlignTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Align" IsVisible="{Binding ShowPlanTools}" />
+        <ToggleButton Classes="tool" vm:L.Tip="tip.mergeregion" IsChecked="{Binding IsMergeRegionTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="MergeRegion" IsVisible="{Binding ShowWallTools}"><Path Classes="ico" Data="{StaticResource ico.merge}" /></ToggleButton>
+        <ToggleButton Classes="tool" vm:L.Tip="tip.paintzone" IsChecked="{Binding IsPaintTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="PaintZone" IsVisible="{Binding ShowWallTools}"><Path Classes="ico" Data="{StaticResource ico.paint}" /></ToggleButton>
+        <ToggleButton Classes="tool" vm:L.Tip="tip.cutwalls" IsChecked="{Binding IsCutWallTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="CutWall" IsVisible="{Binding ShowWallTools}"><Path Classes="ico" Data="{StaticResource ico.cut}" /></ToggleButton>
+        <ToggleButton Classes="tool" vm:L.Tip="tip.straighten" IsChecked="{Binding IsStraightenTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Straighten" IsVisible="{Binding ShowWallTools}"><Path Classes="ico" Data="{StaticResource ico.straighten}" /></ToggleButton>
+        <ToggleButton Classes="tool" vm:L.Tip="tip.stretch" IsChecked="{Binding IsStretchTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Stretch" IsVisible="{Binding ExpertMode}"><Path Classes="ico" Data="{StaticResource ico.stretch}" /></ToggleButton>
+        <ToggleButton Classes="tool" vm:L.Tip="tip.align" IsChecked="{Binding IsAlignTool, Mode=OneWay}" Command="{Binding SetToolCommand}" CommandParameter="Align" IsVisible="{Binding ExpertMode}"><Path Classes="ico" Data="{StaticResource ico.align}" /></ToggleButton>
         <StackPanel IsVisible="{Binding ShowExpertActions}">
           <Separator Margin="0,6" />
-          <Button Classes="tool" Content="⤒" vm:L.Tip="tip.moveup" Command="{Binding MoveSelectionUpCommand}" />
-          <Button Classes="tool" Content="⤓" vm:L.Tip="tip.movedown" Command="{Binding MoveSelectionDownCommand}" />
-          <Button Classes="tool" Content="⧉" vm:L.Tip="tip.copysel" Command="{Binding CopySelectionToAllLevelsCommand}" />
-          <Button Classes="tool" Content="✕" vm:L.Tip="tip.delete" Command="{Binding DeleteSelectionCommand}" />
+          <Button Classes="tool" vm:L.Tip="tip.moveup" Command="{Binding MoveSelectionUpCommand}"><Path Classes="ico" Data="{StaticResource ico.up}" /></Button>
+          <Button Classes="tool" vm:L.Tip="tip.movedown" Command="{Binding MoveSelectionDownCommand}"><Path Classes="ico" Data="{StaticResource ico.down}" /></Button>
+          <Button Classes="tool" vm:L.Tip="tip.copysel" Command="{Binding CopySelectionToAllLevelsCommand}"><Path Classes="ico" Data="{StaticResource ico.copy}" /></Button>
+          <Button Classes="tool" vm:L.Tip="tip.delete" Command="{Binding DeleteSelectionCommand}"><Path Classes="ico" Data="{StaticResource ico.delete}" /></Button>
         </StackPanel>
       </StackPanel></ScrollViewer>
     </Border>
@@ -170,6 +170,12 @@
               <NumericUpDown Value="{Binding WallThicknessMm}" Minimum="20" Maximum="1000" Increment="10" vm:L.Format="fmt.thickness" />
               <TextBlock vm:L.Text="opt.wall.side" Classes="caption" />
               <Button Content="{Binding WallAlignLabel}" Command="{Binding CycleWallAlignOptionCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+              <CheckBox vm:L.Content="wall.rounded" IsChecked="{Binding WallRounded}" vm:L.Tip="tip.wall.rounded" />
+              <TextBlock vm:L.Text="opt.wall.height" Classes="caption" />
+              <ComboBox SelectedIndex="{Binding WallHeightMode}" HorizontalAlignment="Stretch">
+                <ComboBoxItem vm:L.Content="wallheight.level" /><ComboBoxItem vm:L.Content="wallheight.building" /><ComboBoxItem vm:L.Content="wallheight.custom" />
+              </ComboBox>
+              <NumericUpDown Value="{Binding WallCustomHeightMm}" Minimum="100" Maximum="30000" Increment="50" IsVisible="{Binding WallHeightIsCustom}" vm:L.Format="fmt.mm" />
             </StackPanel>
             <StackPanel Spacing="6" IsVisible="{Binding IsRiserTool}">
             <TextBlock vm:L.Text="opt.riser" Classes="caption" />
@@ -178,6 +184,14 @@
             <NumericUpDown Value="{Binding RiserDiameter}" Minimum="8" Maximum="200" vm:L.Format="fmt.mm" />
             <NumericUpDown Value="{Binding RiserSpacing}" Minimum="50" Maximum="1000" vm:L.Format="fmt.spacing" />
             <CheckBox vm:L.Content="site.wholebuilding" IsChecked="{Binding RiserWholeBuilding}" />
+            </StackPanel>
+            <StackPanel Spacing="6" IsVisible="{Binding IsSelectTool}">
+              <TextBlock vm:L.Text="opt.select" Classes="caption" />
+              <CheckBox vm:L.Content="select.polygon" IsChecked="{Binding SelectPolygon}" />
+            </StackPanel>
+            <StackPanel Spacing="6" IsVisible="{Binding IsCutWallTool}">
+              <TextBlock vm:L.Text="opt.cut" Classes="caption" />
+              <CheckBox vm:L.Content="cutwall.split" IsChecked="{Binding CutSplit}" />
             </StackPanel>
             <StackPanel Spacing="6" IsVisible="{Binding IsAlignTool}">
               <TextBlock vm:L.Text="opt.align" Classes="caption" />
@@ -372,13 +386,6 @@
             <TextBlock vm:L.Text="bg.title" Classes="caption" />
             <CheckBox vm:L.Content="bg.show" IsChecked="{Binding BgVisible}" />
             <Slider Minimum="0" Maximum="1" Value="{Binding BgOpacity}" vm:L.Tip="tip.opacity" />
-            <CheckBox vm:L.Content="bg.difference" IsChecked="{Binding BgDifference}" />
-            <NumericUpDown Value="{Binding ImgScaleX}" Increment="0.01" vm:L.Format="fmt.scalex" />
-            <NumericUpDown Value="{Binding ImgScaleY}" Increment="0.01" vm:L.Format="fmt.scaley" />
-            <NumericUpDown Value="{Binding ImgRotation}" Increment="0.1" vm:L.Format="fmt.rotation3" />
-            <NumericUpDown Value="{Binding ImgOffsetX}" Increment="1" vm:L.Format="fmt.offx" />
-            <NumericUpDown Value="{Binding ImgOffsetY}" Increment="1" vm:L.Format="fmt.offy" />
-            <Button vm:L.Content="bg.apply" Command="{Binding ApplyImageFieldsCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
             <Separator />
             </StackPanel>
           </StackPanel></ScrollViewer>
@@ -429,14 +436,13 @@
     <Border DockPanel.Dock="Top" Classes="bar" Padding="12,6" Height="46">
       <Grid ColumnDefinitions="Auto,*,Auto">
         <StackPanel Orientation="Horizontal" Spacing="4">
-          <Button Content="↶" Command="{Binding UndoCommand}" vm:L.Tip="tip.undo" />
-          <Button Content="↷" Command="{Binding RedoCommand}" vm:L.Tip="tip.redo" />
+          <Button Command="{Binding UndoCommand}" vm:L.Tip="tip.undo"><Path Classes="ico" Data="{StaticResource ico.undo}" /></Button>
+          <Button Command="{Binding RedoCommand}" vm:L.Tip="tip.redo"><Path Classes="ico" Data="{StaticResource ico.redo}" /></Button>
         </StackPanel>
         <TextBlock Grid.Column="1" Text="{Binding SelectionText}" HorizontalAlignment="Center" VerticalAlignment="Center" Classes="caption" />
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
           <Button vm:L.Content="view.2d" Command="{Binding SetViewPlaneCommand}" CommandParameter="XY" vm:L.Tip="tip.side.xy" />
           <ToggleButton Content="⫴" vm:L.Tip="tip.sidebyside" IsChecked="{Binding SideBySide}" />
-          <Button Content="{Binding WallDisplayLabel}" Command="{Binding CycleWallDisplayCommand}" vm:L.Tip="tip.walldisplay" />
           <ToggleButton vm:L.Content="view.levelonly" IsChecked="{Binding ElevationLevelOnly}" IsVisible="{Binding ShowSideControls}" vm:L.Tip="tip.levelonly" />
           <NumericUpDown Value="{Binding ElevationDepth}" Minimum="0" Maximum="50000" Increment="100" Width="200" vm:L.Format="fmt.depth.pipes" IsVisible="{Binding ShowSideControls}" />
           <Button vm:L.Content="view.3d" Command="{Binding SetModeCommand}" CommandParameter="Solid" />
@@ -496,6 +502,7 @@
         <Grid IsVisible="{Binding ShowPlan}">
           <vm:PlanView x:Name="Plan" />
           <vm:ViewCube x:Name="Cube2D" Width="140" Height="140" HorizontalAlignment="Right" VerticalAlignment="Top" />
+          <Button Content="{Binding WallDisplayLabel}" Command="{Binding CycleWallDisplayCommand}" vm:L.Tip="tip.walldisplay" IsVisible="{Binding IsPlan}" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,190,12,0" />
         </Grid>
         <Grid x:Name="View3DHost" IsVisible="{Binding Show3D}" />
       </UniformGrid>

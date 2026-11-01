@@ -69,7 +69,7 @@ public static class SceneMapper
                 var arms = n.Segments.Where(s => s.A == f.NodeId || s.B == f.NodeId).Select(s => n.Nodes.First(x => x.Id == (s.A == f.NodeId ? s.B : s.A)).Position).ToList();
                 var d = n.Segments.Where(s => s.A == f.NodeId || s.B == f.NodeId).Max(s => s.DiameterMm);
                 (int, int, int)? A(int i) => i < arms.Count ? (arms[i].X, arms[i].Y, arms[i].Z) : null;
-                fittings.Add(new SceneFitting(n.Id, f.NodeId, f.Kind.ToString(), (f.Position.X, f.Position.Y, f.Position.Z), A(0), A(1), d, col, n.Visible));
+                fittings.Add(new SceneFitting(n.Id, f.NodeId, f.Kind.ToString(), (f.Position.X, f.Position.Y, f.Position.Z), A(0), A(1), d, col, n.Visible, n.Nodes.First(x => x.Id == f.NodeId).Component));
             }
         }
         var boxes = new List<SceneBox>();
@@ -80,7 +80,11 @@ public static class SceneMapper
             foreach (var p in Catalog.Symbol.Parts(cat, e.Position, baseZ, e.RotationDeg))
                 boxes.Add(new SceneBox(e.Id, e.LevelId, cat.Name, p.X, p.Y, p.Z, p.W, p.D, p.H, cat.Category == "Sanitary" ? (0.92f, 0.92f, 0.95f) : (0.35f, 0.35f, 0.8f), p.Type == "cylinder" ? p.R : 0));
         }
+        // the name of a parking space is painted on its floor, white like the lines (and no longer floats in the walk)
+        var painted = b.Levels.SelectMany((l, i) => l.Spaces.Where(s => s.Kind == SpaceKind.Parking && s.Outline.Count >= 3)
+            .SelectMany(s => PaintedText.ForSpace(s.Outline, Walk.WalkLabels.RoomText(s)).Select(poly => new SceneMarking(s.Id, i, poly.Select(p => (p.X, p.Y)).ToList(), [], l.AltitudeMm)))).ToList();
         var markings = b.Levels.SelectMany((l, i) => l.Markings.Where(m => m.Outline.Count >= 3).Select(m => new SceneMarking(m.Id, i, m.Outline.Select(p => (p.X, p.Y)).ToList(), m.Holes.Select(h => (IReadOnlyList<(int X, int Y)>)h.Select(p => (p.X, p.Y)).ToList()).ToList(), l.AltitudeMm))).ToList();
+        markings.AddRange(painted);
         var frames = b.Levels.SelectMany((l, i) => l.Walls.SelectMany(w => w.Openings.SelectMany(o => FramePieces(w, o, l, i)))).ToList();
         return new SceneInput(levels, walls, pipes, fittings, boxes, markings, frames);
     }

@@ -128,6 +128,37 @@ public class MarkingTests
         return (b, a, h, l.Id, wall, mark);
     }
 
+    [Fact] public void The_split_mode_cuts_a_wall_in_two_pieces_and_keeps_both_sides_in_one_undo_step()
+    {
+        var (b, a, h, lv, wall, mark) = WallAndMark(); var before = BuildingJson.Serialize(b); var steps = h.Items.Count;
+        Assert.Equal(2, a.SplitWalls(lv, new(3000, -1000), new(3000, 3000)));                              // the line crosses the wall and the paint
+        var l = b.Levels[0]; Assert.Equal(2, l.Walls.Count); Assert.Equal(2, l.Markings.Count); Assert.Equal(wall, l.Walls[0].Id); Assert.Equal(steps + 1, h.Items.Count);
+        Assert.Contains(l.Walls, w => w.Footprint.Max(p => p.X) <= 3010); Assert.Contains(l.Walls, w => w.Footprint.Min(p => p.X) >= 2990);
+        Assert.Equal(0, a.SplitWalls(lv, new(3000, -1000), new(3000, 3000), new[] { Guid.NewGuid() }));  // nothing named crosses it
+        h.Undo(b); Assert.Equal(before, BuildingJson.Serialize(b));
+    }
+
+    [Fact] public void Risers_move_together_in_one_undo_step_and_locked_networks_stay()
+    {
+        var b = new Building(); var h = new BuildingHistory(); var a = new BuildingActions(b, h, new BuildingEventsService()); a.AddLevel("RDC", 0);
+        var n1 = a.AddNetwork("A", NetworkType.ColdWater); a.AddPipeRun(n1.Id, [new(1000, 1000, 0), new(1000, 1000, 2700)], 20);
+        var n2 = a.AddNetwork("B", NetworkType.HeatingSupply); a.AddPipeRun(n2.Id, [new(1100, 1000, 0), new(1100, 1000, 2700)], 20);
+        var before = BuildingJson.Serialize(b); var steps = h.Items.Count;
+        Assert.Equal(2, a.MoveRisers([(n1.Id, 1000, 1000), (n2.Id, 1100, 1000)], 500, -200)); Assert.Equal(steps + 1, h.Items.Count);
+        Assert.All(b.Networks[0].Nodes, n => Assert.Equal((1500, 800), (n.Position.X, n.Position.Y))); Assert.All(b.Networks[1].Nodes, n => Assert.Equal((1600, 800), (n.Position.X, n.Position.Y)));
+        h.Undo(b); Assert.Equal(before, BuildingJson.Serialize(b));
+        b.Networks[1].Locked = true; Assert.Equal(1, a.MoveRisers([(n1.Id, 1000, 1000), (n2.Id, 1100, 1000)], 100, 0)); Assert.Equal(1100, b.Networks[1].Nodes[0].Position.X);
+    }
+
+    [Fact] public void The_split_mode_cuts_only_where_the_drawn_segment_passes()
+    {
+        var b = new Building(); var h = new BuildingHistory(); var a = new BuildingActions(b, h, new BuildingEventsService()); var l = a.AddLevel("RDC", 0);
+        a.ImportWalls(l.Id, [new PointMm[] { new(0, 0), new(3000, 0), new(3000, 3000), new(0, 3000), new(0, 2800), new(2800, 2800), new(2800, 200), new(0, 200) }]);   // a C
+        Assert.Equal(1, a.SplitWalls(l.Id, new(1000, -500), new(1000, 500)));                              // the line x = 1000 would also cross the top arm, the segment does not
+        Assert.Equal(2, b.Levels[0].Walls.Count);
+        h.Undo(b); Assert.Single(b.Levels[0].Walls);
+    }
+
     [Fact] public void The_cut_tool_cuts_floor_markings_with_the_walls_by_a_line_and_by_a_zone()
     {
         var (b, a, h, lv, wall, mark) = WallAndMark(); var before = BuildingJson.Serialize(b);

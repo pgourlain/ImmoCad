@@ -27,11 +27,21 @@ public sealed class WalkOverlay : Grid
     private readonly Border _hover = new() { IsVisible = false, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top, IsHitTestVisible = false };
     private readonly TextBlock _hoverText = new();
     private bool _mapShown = true;
+    public const double SmallW = 220, SmallH = 170;
+    /// <summary>Size of the map while the pointer is on it: most of the view, within reason.</summary>
+    public static (double W, double H) EnlargedSize(double viewW, double viewH) => (Math.Clamp(viewW * 0.62, SmallW, 820), Math.Clamp(viewH * 0.78, SmallH, 640));
 
     public WalkOverlay(MainViewModel vm, Action moved)
     {
         _vm = vm; _moved = moved; IsVisible = false; ZIndex = 11; Margin = new Thickness(10);
-        _map = new MiniMapView(vm, moved) { Width = 220, Height = 170, HorizontalAlignment = HorizontalAlignment.Right };
+        _map = new MiniMapView(vm, moved) { Width = SmallW, Height = SmallH, HorizontalAlignment = HorizontalAlignment.Right };
+        // the map grows under the pointer (towards the left and the bottom, so it keeps the pointer inside) to click a place with precision, and shrinks back when the pointer leaves
+        // the tip stays in the top right corner, to the left of the map, instead of following the pointer over a map that changes size
+        ToolTip.SetPlacement(_map, PlacementMode.LeftEdgeAlignedTop); ToolTip.SetHorizontalOffset(_map, -8);
+        var grow = new Avalonia.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+        grow.Tick += (_, _) => { grow.Stop(); var (w, h) = EnlargedSize(Bounds.Width, Bounds.Height); _map.Width = w; _map.Height = h; _map.InvalidateVisual(); };
+        _map.PointerEntered += (_, _) => { grow.Stop(); grow.Start(); };
+        _map.PointerExited += (_, _) => { grow.Stop(); _map.Width = SmallW; _map.Height = SmallH; _map.InvalidateVisual(); };
 
         var top = new Border { HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top, Padding = new Thickness(10, 6), CornerRadius = new CornerRadius(8) };
         top.Classes.Add("overlay");

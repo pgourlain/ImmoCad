@@ -108,11 +108,12 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
             l.Walls.Add(w); return w;
         }, w => w.Id);
 
-    public void ImportWalls(Guid levelId, IEnumerable<IEnumerable<PointMm>> footprints) =>
+    /// <param name="heightMm">Height of the new walls; null = the height of the level.</param>
+    public void ImportWalls(Guid levelId, IEnumerable<IEnumerable<PointMm>> footprints, int? heightMm = null) =>
         Edit("Import walls", BuildingEventKind.WallAdded, () =>
         {
             var l = Find(levelId);
-            foreach (var f in footprints) l.Walls.Add(new Wall { Footprint = f.ToList() });
+            foreach (var f in footprints) l.Walls.Add(new Wall { Footprint = f.ToList(), HeightMm = heightMm });
             return levelId;
         }, i => i);
 
@@ -146,8 +147,25 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
             return wallId;
         }, i => i);
 
+    /// <summary>Moves risers (columns) by dx/dy: every node of the network at the riser's X/Y moves, so the pipes that start from it follow (they may stop being axis-aligned). Locked networks stay. One history step; returns how many risers moved.</summary>
+    public int MoveRisers(IEnumerable<(Guid NetworkId, int X, int Y)> risers, int dx, int dy)
+    {
+        if (dx == 0 && dy == 0) return 0;
+        var list = risers.Select(r => (Net: building.Networks.FirstOrDefault(n => n.Id == r.NetworkId), r.X, r.Y)).Where(r => r.Net is { Locked: false } && r.Net.Nodes.Any(n => n.Position.X == r.X && n.Position.Y == r.Y)).ToList();
+        if (list.Count == 0) return 0;
+        Edit("Move risers", BuildingEventKind.NetworkChanged, () => { ShiftRisers(risers, dx, dy); return list[0].Net!.Id; }, i => i);
+        return list.Count;
+    }
+
+    private void ShiftRisers(IEnumerable<(Guid NetworkId, int X, int Y)> risers, int dx, int dy)
+    {
+        var moved = new HashSet<Node>();
+        foreach (var (id, x, y) in risers) if (building.Networks.FirstOrDefault(n => n.Id == id) is { Locked: false } net) foreach (var n in net.Nodes.Where(n => n.Position.X == x && n.Position.Y == y)) moved.Add(n);
+        foreach (var n in moved) n.Position = new PointMm3(n.Position.X + dx, n.Position.Y + dy, n.Position.Z);
+    }
+
     /// <summary>Moves walls (a group) by dx/dy on their level, and optionally to another level. One history step.</summary>
-    public void MoveWalls(Guid levelId, IEnumerable<Guid> wallIds, int dx, int dy, Guid? targetLevelId = null) =>
+    public void MoveWalls(Guid levelId, IEnumerable<Guid> wallIds, int dx, int dy, Guid? targetLevelId = null, IEnumerable<(Guid NetworkId, int X, int Y)>? risers = null) =>
         Edit("Move walls", BuildingEventKind.WallChanged, () =>
         {
             var from = Find(levelId); var to = targetLevelId is { } t ? Find(t) : from; var ids = wallIds.ToHashSet();
@@ -163,6 +181,7 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
                 m.Outline = m.Outline.Select(p => new PointMm(p.X + dx, p.Y + dy)).ToList(); m.Holes = m.Holes.Select(h => h.Select(p => new PointMm(p.X + dx, p.Y + dy)).ToList()).ToList();
                 if (to != from) { from.Markings.Remove(m); to.Markings.Add(m); }
             }
+            if (risers != null) ShiftRisers(risers, dx, dy);                                                  // the columns selected with them move in the same step
             return levelId;
         }, i => i);
 
@@ -293,6 +312,17 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
         var targets = l.Walls.Where(w => w.Footprint.Count >= 3 && (ids?.Contains(w.Id) ?? Geometry.PolygonOps.Crosses(ShapeOf(w), a, b)));
         var marks = l.Markings.Where(m => m.Outline.Count >= 3 && (ids?.Contains(m.Id) ?? Geometry.PolygonOps.Crosses(ShapeOf(m), a, b)));
         return ApplyCuts(l, targets.Select(w => (Wall: w, Parts: Geometry.PolygonOps.KeepSide(ShapeOf(w), a, b, keepLeft))).ToList(), marks.Select(m => (Mark: m, Parts: Geometry.PolygonOps.KeepSide(ShapeOf(m), a, b, keepLeft))).ToList());
+    }
+
+    /// <summary>Cuts along the segment ab and keeps both sides: each wall (or floor marking) the segment ab crosses becomes two or more objects. The first piece keeps the id. Returns how many were split.</summary>
+    public int SplitWalls(Guid levelId, PointMm a, PointMm b, IEnumerable<Guid>? wallIds = null)
+    {
+        var l = Find(levelId); var ids = wallIds?.ToHashSet();
+        var targets = l.Walls.Where(w => w.Footprint.Count >= 3 && (ids?.Contains(w.Id) ?? Geometry.PolygonOps.Crosses(ShapeOf(w), a, b)));
+        var marks = l.Markings.Where(m => m.Outline.Count >= 3 && (ids?.Contains(m.Id) ?? Geometry.PolygonOps.Crosses(ShapeOf(m), a, b)));
+        var strip = Geometry.PolygonOps.Strip(a, b);                                                     // only where the drawn segment passes, not along the whole line
+        List<Geometry.Shape> Both(Geometry.Shape s) => Geometry.PolygonOps.Subtract(s, strip);
+        return ApplyCuts(l, targets.Select(w => (Wall: w, Parts: Both(ShapeOf(w)))).ToList(), marks.Select(m => (Mark: m, Parts: Both(ShapeOf(m)))).ToList());
     }
 
     /// <summary>Removes what lies inside the zone from the given walls (and floor markings) or, without ids, from every wall and marking the zone reaches. Same rules as <see cref="CutWalls"/>; the rest of a wall that runs far beyond the zone is left exactly as it was.</summary>

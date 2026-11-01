@@ -53,7 +53,7 @@ public partial class PlanView : Control
         AddHandler(PointerTouchPadGestureMagnifyEvent, (_, e) => { ZoomAt(e.GetPosition(this), Math.Exp(e.Delta.X)); e.Handled = true; });   // trackpad pinch
         _spaceTimer.Tick += async (_, _) =>
         {
-            _spaceTimer.Stop(); if (Vm is not { IsSpaceTool: true } vm || !_over || vm.SpaceAt(_hover) != null) return;
+            _spaceTimer.Stop(); if (Vm is not { IsSpaceTool: true } vm || !_over || vm.SpaceBlocksHover(_hover)) return;
             var at = _hover; var pr = await vm.ProbeSpaceAsync(at);
             // a probe that found nothing (outside the plan, open room) is dropped, so the next rest probes again; a late one for another place too
             if (pr is { Outline: { } o } && SpaceFinder.Contains(o, _hover)) vm.SpaceHover = pr;
@@ -69,7 +69,8 @@ public partial class PlanView : Control
     public void RefitNextRender() => _fitted = false;
     public void Invalidate()
     {
-        if (Vm is { IsDrawTool: true }) { if (_chainKind != ToolKind.DrawWall) { DrawTool = new DrawChainTool(Vm.CommitWalls); _chainKind = ToolKind.DrawWall; } }
+        if (Vm is not { IsSelectTool: true, SelectPolygon: true }) _selPoly = null;
+        if (Vm is { IsDrawTool: true }) { if (_chainKind != ToolKind.DrawWall) { DrawTool = new DrawChainTool(pts => Vm.CommitWalls(pts, DrawTool!.SegmentTags)) { Tag = (int)Vm.WallAlign }; _chainKind = ToolKind.DrawWall; } }
         else if (Vm is { IsPipeTool: true }) { if (_chainKind != ToolKind.DrawPipe || _chainSide != Vm.IsSidePlane) { DrawTool = new DrawChainTool(Vm.IsSidePlane ? Vm.CommitPipeSide : Vm.CommitPipe); _chainKind = ToolKind.DrawPipe; _chainSide = Vm.IsSidePlane; } }
         else { DrawTool = null; _chainKind = null; }
         InvalidateVisual();
@@ -279,7 +280,7 @@ public partial class PlanView : Control
         {
             Invalidate(); _chainTyped = ""; _chainAngle = ""; _chainField = 0;
             if (e.ClickCount >= 2 && DrawTool!.Points.Count >= 2) { DrawTool.DoubleClick(); InvalidateVisual(); return; }      // double-click finishes
-            DrawTool!.Down(TP(e)); e.Pointer.Capture(this); InvalidateVisual(); return;
+            SyncWallSide(); DrawTool!.Down(TP(e)); e.Pointer.Capture(this); InvalidateVisual(); return;
         }
         if (vm.IsStretchTool)
         {
@@ -303,6 +304,12 @@ public partial class PlanView : Control
         if (vm.IsMeasureTool) { vm.MeasureClick(Snapper.Snap(ToMm(p), Polys()).Point); InvalidateVisual(); return; }
         if (vm.IsRiserTool) { vm.PlaceRiser(MarkerSnap(ToMm(p)).Point); return; }
         if (vm.IsPlaceTool) { vm.PlaceFromPalette(ToMm(p)); return; }
+        if (_selPoly is { } selPts)
+        {   // polygon selection in progress: every click adds a corner, a double-click or a click on the first corner closes it
+            var mm0 = ToMm(p);
+            if (e.ClickCount >= 2 || selPts.Count >= 3 && Math.Abs(ToScreen(selPts[0]).X - p.X) + Math.Abs(ToScreen(selPts[0]).Y - p.Y) < 10) FinishSelPoly(); else selPts.Add(mm0);
+            e.Pointer.Capture(this); InvalidateVisual(); return;
+        }
         foreach (var (rect, lvl, c) in _arrows)
             if (rect.Contains(p)) { vm.SelectLevelCommand.Execute(lvl); CenterOn(c); return; }
         if (_space) { _pan = p; e.Pointer.Capture(this); return; }                                                                                                // Space+drag: pan
@@ -316,7 +323,12 @@ public partial class PlanView : Control
         // pipe handles and pipe bodies come before walls
         if (_handleTool != null && _handleTool.State == ToolState.Placing) { _handleTool.ForceElbow = e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Alt); _handleTool.Down(HandlePointer(e)); FinishHandle(vm); return; }
         if (HitHandle(p) is { } h) { _handleTool = new PipeHandleTool(vm.Actions, h.Seg.Network.Id, h.Seg.Segment.Id, h.Handle, Snapper.GridMm) { ForceElbow = e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Alt) }; _typed = ""; _handleTool.Down(HandlePointer(e)); e.Pointer.Capture(this); InvalidateVisual(); return; }
-        if (HitRiser(p) is { } riser) { vm.SelectSegment(riser.Network.Id, riser.Segment.Id); InvalidateVisual(); return; }
+        if (HitRiser(p) is { } riser)
+        {   // a column: click selects it (Shift adds), and dragging moves every selected column like walls
+            var shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+            if (!(vm.IsRiserSelected(riser) && !shift)) vm.SelectRisers([riser], shift);
+            _start = _now = p; _startMm = ToMm(p); _delta = (0, 0); _gesture = Gesture.Move; e.Pointer.Capture(this); InvalidateVisual(); return;
+        }
         if (HitPipe(p) is { } pipe)
         {
             vm.SelectSegment(pipe.Network.Id, pipe.Segment.Id);
@@ -329,7 +341,7 @@ public partial class PlanView : Control
         if (hitId is { } hid && vm.SelectedWalls.Contains(hid) && !_addToSelection) _gesture = Gesture.Move;       // drag the group
         else if (hitId is { } hid2) { vm.SelectWalls([hid2], _addToSelection); _gesture = Gesture.Move; }          // select then drag
         else if (!_addToSelection && vm.SpaceAt(_startMm) is { } room) { vm.SelectWalls([], false); vm.ClearOpening(); vm.SelectSpace(room.Id); _gesture = Gesture.Box; }
-        else { if (!_addToSelection) { vm.SelectWalls([], false); vm.ClearOpening(); vm.ClearSpace(); } _gesture = Gesture.Box; }
+        else { if (!_addToSelection) { vm.SelectWalls([], false); vm.ClearOpening(); vm.ClearSpace(); } if (vm.SelectPolygon) _selPoly = [_startMm]; else _gesture = Gesture.Box; }
         e.Pointer.Capture(this); InvalidateVisual();
     }
 
@@ -346,16 +358,16 @@ public partial class PlanView : Control
         }
         if (Vm is not { } vm) { CursorMoved?.Invoke(ToMm(p)); return; }
         CursorMoved?.Invoke(vm.Tool == ToolKind.Select ? ToMm(p) : MarkerSnap(ToMm(p)).Point);   // the readout follows the cross, not the mouse
-        _hover = ToMm(p); _over = true;
+        _hover = ToMm(p); _over = true; if (_selPoly != null) InvalidateVisual();         // the polygon follows the cursor, closed
         if (_sideDrag != null) { SideMoved(p, e.KeyModifiers); return; }
         if (vm.Tool != ToolKind.Select) { if (!_space) Cursor = new Cursor(StandardCursorType.Cross); InvalidateVisual(); } else if (!_space && Cursor != null) Cursor = null;
         if (_handleTool != null) { _handleTool.ForceElbow = e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Alt); _handleTool.Move(HandlePointer(e)); InvalidateVisual(); return; }
         if (IsChain) { DrawTool?.Move(TP(e)); InvalidateVisual(); return; }
         if (vm.IsSpaceTool)
         {   // keep the room shown while the cursor stays in it, otherwise wait for the cursor to rest again (not over an existing room)
-            if (vm.SpaceHover is { Outline: { } ho } && SpaceFinder.Contains(ho, _hover) && vm.SpaceAt(_hover) == null) { InvalidateVisual(); return; }
+            if (vm.SpaceHover is { Outline: { } ho } && SpaceFinder.Contains(ho, _hover) && !vm.SpaceBlocksHover(_hover)) { InvalidateVisual(); return; }
             vm.SpaceHover = null; _spaceTimer.Stop();
-            if (vm.SpaceAt(_hover) == null) _spaceTimer.Start();
+            if (!vm.SpaceBlocksHover(_hover)) _spaceTimer.Start();
             InvalidateVisual(); return;
         }
         if (vm.IsPlaceTool || vm.IsRiserTool || vm.IsDoorTool || vm.IsWindowTool) { InvalidateVisual(); return; }
@@ -390,7 +402,7 @@ public partial class PlanView : Control
         if (_sideDrag != null) { SideReleased(e); return; }
         if (wasView) return;
         if (Vm is not { } vm) return;
-        if (IsChain) { DrawTool?.Up(TP(e)); InvalidateVisual(); return; }
+        if (IsChain) { SyncWallSide(); DrawTool?.Up(TP(e)); InvalidateVisual(); return; }
         if (_handleTool != null) { _handleTool.Up(HandlePointer(e)); if (_handleTool.State == ToolState.Committed) FinishHandle(vm); else if (_handleTool.State == ToolState.Placing && _handleTool.Handle == PipeHandle.Body) { _handleTool.Cancel(); _handleTool = null; vm.AfterEdit(); } /* a plain click on the body only selects */ InvalidateVisual(); return; }
         if (_connect is { } cr) { _connect = null; vm.ConnectPort(cr.EqId, cr.Port, cr.At, ToMm(e.GetPosition(this))); InvalidateVisual(); return; }
         if (_eqDrag is { } er) { _eqDrag = null; var orig = vm.Building.Equipment.First(q => q.Id == er.Id).Position; if (er.To != orig) vm.MoveEquipmentTo(er.Id, er.To); InvalidateVisual(); return; }
@@ -411,6 +423,7 @@ public partial class PlanView : Control
             if (vm.CurrentLevel is { } lv)
                 vm.SelectWalls(vm.WallDisplay == WallDisplay.Hidden ? [] : lv.Walls.Where(w => w.Footprint.Any(q => q.X >= x0 && q.X <= x1 && q.Y >= y0 && q.Y <= y1)).Select(w => w.Id)
                     .Concat(lv.Markings.Where(m => m.Outline.Any(q => q.X >= x0 && q.X <= x1 && q.Y >= y0 && q.Y <= y1)).Select(m => m.Id)), _addToSelection);
+            if (vm.CurrentLevel is { } rl) vm.SelectRisers(NetworkQueries.RisersAt(vm.Building, rl).Where(r => r.Network.Visible && !r.Network.Locked && r.A.X >= x0 && r.A.X <= x1 && r.A.Y >= y0 && r.A.Y <= y1), true);      // the boxed columns join
         }
         _gesture = Gesture.None; _delta = (0, 0); InvalidateVisual();
     }
@@ -455,6 +468,15 @@ public partial class PlanView : Control
     protected override void OnLostFocus(FocusChangedEventArgs e) { _space = false; Cursor = null; base.OnLostFocus(e); }
     protected override void OnKeyUp(KeyEventArgs e) { if (e.Key == Key.Space) { _space = false; Cursor = null; e.Handled = true; } base.OnKeyUp(e); }
 
+    /// <summary>Space pressed while a toolbar control has the focus: the plan handles it as if it had it (turn the riser row, change the wall side).</summary>
+    /// <summary>The wall side in force is stamped on the segments placed from now on, never on those already placed.</summary>
+    private void SyncWallSide() { if (DrawTool != null && Vm is { IsDrawTool: true } vm) DrawTool.Tag = (int)vm.WallAlign; }
+
+    private List<PointMm>? _selPoly;
+    private void FinishSelPoly() { if (_selPoly is { } poly) { _selPoly = null; Vm?.SelectInPolygon(poly, _addToSelection); } InvalidateVisual(); }
+
+    public void ForwardKey(KeyEventArgs e) { Focus(); OnKeyDown(e); }
+
     protected override void OnKeyDown(KeyEventArgs e)
     {
         if (Vm is not { } vm) return;
@@ -463,9 +485,12 @@ public partial class PlanView : Control
         if (vm.IsStraightenTool && e.Key == Key.Enter) { vm.StraightenSelectionCommand.Execute(null); vm.SetToolCommand.Execute("Select"); InvalidateVisual(); e.Handled = true; return; }
         if (vm.IsPaintTool && e.Key == Key.Enter) { vm.PaintApplyCommand.Execute(null); InvalidateVisual(); e.Handled = true; return; }
         if (vm.IsPaintTool && e.Key == Key.Escape && vm.PaintZone != null) { vm.PaintCancelCommand.Execute(null); InvalidateVisual(); e.Handled = true; return; }      // the first Esc forgets the zone, the next leaves the tool
+        if (_selPoly != null && e.Key == Key.Enter) { FinishSelPoly(); e.Handled = true; return; }
+        if (_selPoly != null && e.Key == Key.Escape) { if (_selPoly.Count > 1) _selPoly.RemoveAt(_selPoly.Count - 1); else _selPoly = null; InvalidateVisual(); e.Handled = true; return; }      // the last corner only
         if (vm.IsCutWallTool && e.Key == Key.Enter) { vm.CutWallFinish(); InvalidateVisual(); e.Handled = true; return; }
         if (vm.IsMeasureTool && !vm.IsSidePlane && e.Key == Key.Enter && vm.MeasurePoints.Count == 2) { vm.MeasureScaleCommand.Execute(null); e.Handled = true; return; }
         if (vm.IsNumberTool && e.Key == Key.Enter) { vm.NumberCommit(); InvalidateVisual(); e.Handled = true; return; }
+        if (e.Key == Key.Escape && vm.IsCutWallTool && vm.CutWallBack()) { InvalidateVisual(); e.Handled = true; return; }      // the last point only; with none left, Esc leaves the tool
         if (e.Key == Key.Escape && (vm.IsDoorTool || vm.IsWindowTool || vm.IsSpaceTool || vm.IsMeasureTool || vm.IsCutWallTool || vm.IsMergeRegionTool || vm.IsPaintTool || vm.IsNumberTool || vm.IsPlaceTool || vm.IsRiserTool || vm.IsStraightenTool)) { vm.SetToolCommand.Execute("Select"); e.Handled = true; return; }
         if (vm.IsAlignTool)
         {
@@ -474,7 +499,7 @@ public partial class PlanView : Control
         }
         if (DrawTool != null && IsChain)
         {
-            if (e.Key == Key.Space && vm.IsDrawTool) { vm.CycleWallAlign(); InvalidateVisual(); e.Handled = true; return; }
+            if (e.Key == Key.Space && vm.IsDrawTool) { vm.CycleWallAlign(); SyncWallSide(); InvalidateVisual(); e.Handled = true; return; }
             var ch = e.Key >= Key.D0 && e.Key <= Key.D9 ? (char)('0' + (e.Key - Key.D0)) : e.Key >= Key.NumPad0 && e.Key <= Key.NumPad9 ? (char)('0' + (e.Key - Key.NumPad0)) : e.Key is Key.OemPeriod or Key.OemComma or Key.Decimal ? '.' : e.Key == Key.OemMinus ? '-' : '\0';
             if (ch != '\0' && DrawTool.Points.Count > 0) { if (_chainField == 0) _chainTyped += ch; else _chainAngle += ch; InvalidateVisual(); e.Handled = true; return; }
             if (e.Key == Key.Tab && DrawTool.Points.Count > 0 && _chainTyped.Length > 0) { _chainField = 1 - _chainField; InvalidateVisual(); e.Handled = true; return; }
@@ -483,7 +508,7 @@ public partial class PlanView : Control
                 if (_chainTyped.Length > 0 && DrawChainTool.TryParseLength(_chainTyped, out var mm))
                 {
                     double? angle = double.TryParse(_chainAngle.Replace(',', '.'), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var a) ? a : null;
-                    DrawTool.ApplyLength(mm, angle); _chainTyped = ""; _chainAngle = ""; _chainField = 0;
+                    SyncWallSide(); DrawTool.ApplyLength(mm, angle); _chainTyped = ""; _chainAngle = ""; _chainField = 0;
                 }
                 else DrawTool.Finish();
             }
@@ -659,13 +684,13 @@ public partial class PlanView : Control
     private void DrawWallPreview(DrawingContext ctx, DrawChainTool t)
     {
         var vm = Vm!; var fill = new SolidColorBrush(Color.FromArgb(40, 255, 120, 0)); var dash = new Pen(Brushes.OrangeRed, 1.3, DashStyle.Dash);
-        void One(PointMm a, PointMm b)
+        void One(PointMm a, PointMm b, ImmoCad.Core.Geometry.WallAlign side)
         {
-            var r = ImmoCad.Core.Geometry.WallGeometry.Rectangle(a, b, vm.WallThicknessMm, vm.WallAlign).Select(ToScreen).ToList(); if (r.Count < 4) return;
+            var r = vm.WallShape(a, b, side).Select(ToScreen).ToList(); if (r.Count < 4) return;
             ctx.DrawGeometry(fill, dash, Poly(r.ToArray()));
         }
-        for (var i = 1; i < t.Points.Count; i++) One(t.Points[i - 1], t.Points[i]);
-        if (t.Preview is { } pv && t.Points.Count > 0) One(t.Points[^1], pv);
+        for (var i = 1; i < t.Points.Count; i++) One(t.Points[i - 1], t.Points[i], i - 1 < t.SegmentTags.Count ? (ImmoCad.Core.Geometry.WallAlign)t.SegmentTags[i - 1] : vm.WallAlign);
+        if (t.Preview is { } pv && t.Points.Count > 0) One(t.Points[^1], pv, vm.WallAlign);
         var label = Txt(T("align." + vm.WallAlign.ToString().ToLowerInvariant()) + "  ·  " + T("align.hint"), 12, Brushes.OrangeRed);
         ctx.DrawText(label, new Point(12, Bounds.Height - 44));
     }
@@ -801,7 +826,7 @@ public partial class PlanView : Control
         foreach (var r in NetworkQueries.RisersAt(b, l).Where(x => x.Network.Visible))
         {
             var c = NetworkQueries.ColorOf(r.Network.Type); var p = ToScreen(new PointMm(r.A.X, r.A.Y)); var rad = RiserRadiusPx(r.Segment.DiameterMm);
-            if (Vm.SelectedSegment?.SegmentId == r.Segment.Id) ctx.DrawEllipse(null, new Pen(Brushes.OrangeRed, 2.5), p, rad + 3, rad + 3);
+            if (Vm.IsRiserSelected(r) || Vm.SelectedSegment?.SegmentId == r.Segment.Id) ctx.DrawEllipse(null, new Pen(Brushes.OrangeRed, 2.5), p, rad + 3, rad + 3);
             foreach (var dir in new[] { +1, -1 })
                 if (NetworkQueries.NextLevelReached(b, r, l, dir) is { } next)
                 {
@@ -908,11 +933,10 @@ public partial class PlanView : Control
             }
         }
         var below = Vm.Building.Levels.LastOrDefault(x => x.AltitudeMm < l.AltitudeMm);
-        if (below?.ImageTransform is { Length: 6 } bt && below.BackgroundVisible && Background(below) is { } bbg && (Vm.BgDifference || Vm.IsAlignTool || Vm.IsStretchTool))
-        {   // the level below's picture in a contrasting colour (blue tint), or as a difference blend, to see how well the two plans overlap
+        if (below?.ImageTransform is { Length: 6 } bt && below.BackgroundVisible && Background(below) is { } bbg && (Vm.IsAlignTool || Vm.IsStretchTool))
+        {   // the level below's picture, faded, to see how well the two plans overlap
             var bm = new Matrix(bt[0] * Scale, -bt[3] * Scale, bt[1] * Scale, -bt[4] * Scale, Offset.X + bt[2] * Scale, Bounds.Height - Offset.Y - bt[5] * Scale);
-            using (ctx.PushTransform(bm * RotationMatrix())) using (ctx.PushOpacity(Vm.BgDifference ? 1.0 : 0.35))
-            using (ctx.PushRenderOptions(new RenderOptions { BitmapBlendingMode = Vm.BgDifference ? BitmapBlendingMode.Difference : BitmapBlendingMode.SourceOver }))
+            using (ctx.PushTransform(bm * RotationMatrix())) using (ctx.PushOpacity(0.35))
                 ctx.DrawImage(bbg, new Rect(bbg.PixelSize.ToSize(1)));
         }
         var ghostBlue = Tokens.Get(this, "GhostBelow", Color.FromRgb(60, 140, 255));
@@ -940,8 +964,17 @@ public partial class PlanView : Control
             ctx.DrawGeometry(new SolidColorBrush(Color.FromArgb(40, 0, 120, 255)), new Pen(Brushes.DodgerBlue, 1.5, DashStyle.Dash), g);
         }
         DrawMeasure(ctx); DrawCutLine(ctx); DrawStraightenPreview(ctx); DrawPaintPreview(ctx);
+        if (_gesture == Gesture.Move && (_delta.X != 0 || _delta.Y != 0))
+            foreach (var (_, rx, ry) in Vm.SelectedRisers) ctx.DrawEllipse(new SolidColorBrush(Color.FromArgb(90, 255, 140, 0)), new Pen(Brushes.OrangeRed, 1.2, DashStyle.Dash), ToScreen(new PointMm(rx + _delta.X, ry + _delta.Y)), 9, 9);      // ghost of the columns
         if (_gesture == Gesture.Move && (_delta.X != 0 || _delta.Y != 0))   // ghost of the move
             DrawWalls(ctx, l, new SolidColorBrush(Color.FromArgb(110, 255, 140, 0)), new Pen(Brushes.OrangeRed, 1.2, DashStyle.Dash), _delta, Vm.SelectedWalls, null, onlySelected: true);
+        if (_selPoly is { Count: > 0 } selDraw)
+        {
+            var spen = new Pen(Brushes.DodgerBlue, 1.5, DashStyle.Dash); var spts = selDraw.Select(ToScreen).ToList(); if (_over) spts.Add(ToScreen(_hover));
+            for (var i = 1; i < spts.Count; i++) ctx.DrawLine(spen, spts[i - 1], spts[i]);
+            if (spts.Count >= 3) { var g = new StreamGeometry(); using (var cx = g.Open()) { cx.BeginFigure(spts[0], true); foreach (var q in spts.Skip(1)) cx.LineTo(q); cx.EndFigure(true); } ctx.DrawGeometry(new SolidColorBrush(Color.FromArgb(40, 0, 120, 255)), spen, g); }
+            foreach (var q in spts.Take(selDraw.Count)) ctx.DrawEllipse(Brushes.DodgerBlue, null, q, 3.5, 3.5);
+        }
         if (_gesture == Gesture.Box)
             ctx.DrawRectangle(new SolidColorBrush(Color.FromArgb(40, 0, 120, 255)), new Pen(Brushes.DodgerBlue, 1, DashStyle.Dash), new Rect(new Point(Math.Min(_start.X, _now.X), Math.Min(_start.Y, _now.Y)), new Point(Math.Max(_start.X, _now.X), Math.Max(_start.Y, _now.Y))));
         if (DrawTool is { Points.Count: > 0 } t)

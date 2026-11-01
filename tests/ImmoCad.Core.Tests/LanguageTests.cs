@@ -35,7 +35,7 @@ public class LanguageTests
     {
         Assert.Empty(Translations.FrenchKeys.Except(Translations.EnglishKeys)); Assert.Empty(Translations.EnglishKeys.Except(Translations.FrenchKeys));
         Assert.True(Translations.Keys.Count > 400);
-        var allowedSame = new HashSet<string> { "app.name", "view.2d", "view.3d", "btn.ok", "tab.view3d", "fmt.mm", "fmt.angle", "fmt.rotation", "fmt.rotation3", "align.mm", "measure.m", "wiz.cal.ok", "lang.en", "lang.fr", "export.fmt.dxf", "export.fmt.obj", "export.fmt.ifc", "export.fmt.glb", "space.area.fmt", "site.item.area", "enum.NetworkType.Drainage", "enum.SpaceKind.Parking", "enum.SpaceKind.Corridor", "tab.palette", "tab.options", "map.cadastre", "enum.ViewMode.Plan", "tab.site", "level.site", "extent.info", "eq.info", "level.tooltip", "typed.angle", "view.2d", "action.Connect", "export.format", "export.pur.ifc", "export.dialog.purpose.ifc", "map.ortho" };
+        var allowedSame = new HashSet<string> { "app.name", "view.2d", "view.3d", "btn.ok", "tab.view3d", "fmt.mm", "fmt.angle", "fmt.rotation", "align.mm", "measure.m", "wiz.cal.ok", "lang.en", "lang.fr", "export.fmt.dxf", "export.fmt.obj", "export.fmt.ifc", "export.fmt.glb", "space.area.fmt", "site.item.area", "enum.NetworkType.Drainage", "enum.SpaceKind.Parking", "enum.SpaceKind.Corridor", "tab.palette", "tab.options", "map.cadastre", "enum.ViewMode.Plan", "tab.site", "level.site", "extent.info", "eq.info", "level.tooltip", "typed.angle", "view.2d", "action.Connect", "export.format", "export.pur.ifc", "export.dialog.purpose.ifc", "map.ortho" };
         foreach (var k in Translations.Keys)
         {
             var en = Translations.In("en", k); var fr = Translations.In("fr", k);

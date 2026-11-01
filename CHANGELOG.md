@@ -1,5 +1,11 @@
 # Changelog
 ## Unreleased
+- Expert mode hides the step bar and "Next step"; Align and Stretch (calibrating a plan on the level below) are expert tools. The background panel keeps only Show and opacity: the numeric scale/rotation/offset fields and "Difference mode" are removed.
+- Wall tool: Space changes the side (left / centre / right) of the segment being drawn and of the next ones, no longer of the whole chain already placed. The wall display button (solid / marks / wireframe) sits under the view cube and shows in the 2D plan only.
+- Riser tool: Space turns the pipes even when a combo box of the options still has the focus.
+- Select tool: "Polygon selection" option (click the corners, Enter or double-click to close). Cut tool: "Split into pieces" option (a line cuts walls and paint into two or more pieces, nothing is removed).
+- File › Allow AI Agents (MCP) and File › Connect an AI agent…: an MCP server (Streamable HTTP, loopback only, port 39017) edits the building open in the window with the same history; the dialog gives the `claude mcp add` command and the JSON configuration.
+- New line icons for the tool strip and undo / redo (drawn from geometries, they follow the theme).
 - The Elevation button (front view of a selected wall, and the whole-building front/right/back/left views of the elevation control) is removed with its code. The side views of the plan (2D view cube) stay.
 - Walk mode: door frames (jambs, lintel, window sill) in the 3D views and the door numbers or labels floating above the doors; the camera comes down from above when entering the walk; "Show in plan" and "Show in 3D" on the selection (over the walk view, in the plan and in the 3D view). One opening geometry in Core is now shared by the plan, the elevation, the 3D mesh and the walk.
 - macOS package, as for Kubism: the native libraries are thinned to the package's architecture (they were universal, which triggers the "Intel-based app" warning), the app bundle is ad-hoc signed (Apple silicon refuses unsigned code), a complete Info.plist, the architectures and the signature are checked at packaging time and in CI; the disk image has the Applications shortcut and a first-launch readme. Pre-releases (tags with a hyphen) are flagged as such. The Intel macOS package (osx-x64) is no longer built in the releases.

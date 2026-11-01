@@ -1,0 +1,18 @@
+<Window xmlns:vm="using:ImmoCad.Desktop" xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="ImmoCad.Desktop.ConnectAgentDialog" vm:L.Title="agents.title" Width="640" SizeToContent="Height" CanResize="False" WindowStartupLocation="CenterOwner">
+  <StackPanel Margin="20" Spacing="8">
+    <TextBlock vm:L.Text="agents.intro" TextWrapping="Wrap" />
+    <TextBlock x:Name="State" FontWeight="SemiBold" />
+    <TextBlock vm:L.Text="agents.url" Classes="caption" Margin="0,8,0,0" />
+    <Grid ColumnDefinitions="*,Auto"><TextBox x:Name="Url" IsReadOnly="True" /><Button x:Name="CopyUrl" Grid.Column="1" vm:L.Content="agents.copy" Margin="6,0,0,0" /></Grid>
+    <TextBlock vm:L.Text="agents.claude" Classes="caption" Margin="0,8,0,0" />
+    <Grid ColumnDefinitions="*,Auto"><TextBox x:Name="Command" IsReadOnly="True" /><Button x:Name="CopyCommand" Grid.Column="1" vm:L.Content="agents.copy" Margin="6,0,0,0" /></Grid>
+    <TextBlock vm:L.Text="agents.json" Classes="caption" Margin="0,8,0,0" />
+    <Grid ColumnDefinitions="*,Auto"><TextBox x:Name="Json" IsReadOnly="True" AcceptsReturn="True" Height="90" FontFamily="Menlo,Consolas,monospace" /><Button x:Name="CopyJson" Grid.Column="1" vm:L.Content="agents.copy" Margin="6,0,0,0" VerticalAlignment="Top" /></Grid>
+    <TextBlock vm:L.Text="agents.safety" TextWrapping="Wrap" Opacity="0.7" Margin="0,8,0,0" />
+    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,8,0,0">
+      <Button x:Name="Stop" vm:L.Content="agents.stop" />
+      <Button x:Name="Ok" vm:L.Content="btn.ok" IsDefault="True" />
+    </StackPanel>
+  </StackPanel>
+</Window>

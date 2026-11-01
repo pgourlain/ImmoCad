@@ -87,7 +87,7 @@ public sealed class WalkLabels
             {
                 if (string.IsNullOrWhiteSpace(o.Label) || WallGeometry.SpanOf(wall, o, exactThickness: true) is not { } span) continue;
                 var c = span.Center; var d = Math.Sqrt(Math.Pow(c.X - w.X, 2) + Math.Pow(c.Y - w.Y, 2)); if (d > MaxDoorDistanceMm) continue;
-                var z = level.AltitudeMm + Math.Min(span.TopMm + 150, level.HeightMm - 100);
+                var z = level.AltitudeMm + Math.Min(span.TopMm + 150, level.ClearHeightMm - 100);
                 var (nx, ny, depth) = cam.Project(c.X / 1000.0, c.Y / 1000.0, z / 1000.0, aspect);
                 if (depth < 0.3 || double.IsNaN(nx) || Math.Abs(nx) > 1.05 || Math.Abs(ny) > 1.05) continue;
                 if (!w.Ghost && !w.Area.LineOfSight(eye, new WalkPoint(c.X, c.Y), eyeMm)) continue;
@@ -102,10 +102,10 @@ public sealed class WalkLabels
     public List<RoomLabel> Place(WalkState w, WalkCamera cam, double width, double height, int max = 12)
     {
         var res = new List<RoomLabel>(); if (width < 2 || height < 2) return res;
-        var level = w.Level; var anchorZ = level.AltitudeMm + Math.Min(AnchorHeightMm, level.HeightMm - 200); var aspect = width / height; var eye = new WalkPoint(w.X, w.Y); var eyeMm = w.EyeAboveFloor;
+        var level = w.Level; var anchorZ = level.AltitudeMm + Math.Min(AnchorHeightMm, level.ClearHeightMm - 200); var aspect = width / height; var eye = new WalkPoint(w.X, w.Y); var eyeMm = w.EyeAboveFloor;
         foreach (var s in level.Spaces)
         {
-            if (s.Outline.Count < 3 || SpaceFinder.Contains(s.Outline, new PointMm((int)Math.Round(w.X), (int)Math.Round(w.Y)))) continue;               // standing in it: the top line says so
+            if (s.Outline.Count < 3 || s.Kind == SpaceKind.Parking || SpaceFinder.Contains(s.Outline, new PointMm((int)Math.Round(w.X), (int)Math.Round(w.Y)))) continue;               // standing in it: the top line says so
             RoomLabel? best = null;
             foreach (var a in Cached(s))
             {

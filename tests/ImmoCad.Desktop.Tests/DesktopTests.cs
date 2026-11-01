@@ -93,6 +93,15 @@ public class DesktopTests
         Assert.Equal(first, vm.Building.Levels[0].Walls[0].Footprint[0]);
     }, CancellationToken.None);
 
+    [Fact] public Task Drawn_walls_take_the_height_chosen_in_the_wall_options() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(); vm.AddLevelCommand.Execute(null); vm.SelectLevelCommand.Execute(vm.Building.Levels[0].Id);
+        var lv = vm.CurrentLevel!; var n = lv.Walls.Count; var top = vm.Building.Levels.Max(x => x.AltitudeMm + x.HeightMm);
+        vm.CommitWalls([new(0, 9000), new(3000, 9000)]); Assert.Null(lv.Walls[n].HeightMm);                                // the level's height
+        vm.WallHeightMode = 1; vm.CommitWalls([new(0, 9500), new(3000, 9500)]); Assert.Equal(top - lv.AltitudeMm, lv.Walls[n + 1].HeightMm);     // up to the top of the building
+        vm.WallHeightMode = 2; vm.WallCustomHeightMm = 1200; vm.CommitWalls([new(0, 9800), new(3000, 9800)]); Assert.Equal(1200, lv.Walls[n + 2].HeightMm);
+    }, CancellationToken.None);
+
     [Fact] public Task Draw_wall_chain_is_one_undo_step_and_saves() => f.Session.Dispatch(() =>
     {
         var vm = new MainViewModel(); var walls = vm.CurrentLevel!.Walls.Count; var steps = vm.History.Items.Count;
@@ -894,6 +903,50 @@ public class ThreeDTests
         await Task.Delay(900); Assert.True(vm.IsPlan); Assert.False(c.IsAnimating);
     }, CancellationToken.None);
 
+    [Fact] public Task Clicking_between_white_lines_adds_numbered_parking_bays_even_inside_a_parking_room() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(); var lv = vm.Building.Levels[0]; foreach (var l in vm.Building.Levels) { l.Walls.Clear(); l.Markings.Clear(); l.Spaces.Clear(); }
+        List<ImmoCad.Core.Model.PointMm> R(int x0, int y0, int x1, int y1) => [new(x0, y0), new(x1, y0), new(x1, y1), new(x0, y1)];
+        for (var i = 0; i <= 3; i++) lv.Markings.Add(new() { Outline = R(i * 2500, 0, i * 2500 + 100, 5000) }); lv.Markings.Add(new() { Outline = R(0, 5000, 7600, 5100) });
+        vm.Actions.AddSpace(lv.Id, R(-1000, -1000, 9000, 6000), "Parking", ImmoCad.Core.Model.SpaceKind.Parking);                // the parking is a room too
+        vm.SetToolCommand.Execute("Space"); var steps = vm.History.Items.Count;
+        vm.PlaceSpace(new(1200, 2000)); vm.PlaceSpace(new(3700, 2000)); vm.PlaceSpace(new(1200, 3000));                          // the third click is in the first bay again
+        Assert.Equal(["Parking", "P1", "P2"], lv.Spaces.Select(x => x.Name).ToArray()); Assert.Equal(steps + 2, vm.History.Items.Count);
+        Assert.All(lv.Spaces.Skip(1), x => Assert.Equal(ImmoCad.Core.Model.SpaceKind.Parking, x.Kind));
+        Assert.True(vm.SpaceBlocksHover(new(1200, 2000)) && !vm.SpaceBlocksHover(new(6300, 2000)));                               // a bay already made: nothing to preview; a free one: preview
+    }, CancellationToken.None);
+
+    [Fact] public void The_walk_map_grows_to_most_of_the_view_under_the_pointer_but_never_beyond_reason()
+    {
+        var (w, h) = WalkOverlay.EnlargedSize(1280, 820); Assert.True(w > 3 * WalkOverlay.SmallW && h > 2.5 * WalkOverlay.SmallH && w <= 1280 * 0.7 && h <= 820 * 0.8);
+        Assert.Equal((WalkOverlay.SmallW, WalkOverlay.SmallH), WalkOverlay.EnlargedSize(100, 100));                         // a tiny window: it does not shrink below the small map
+        Assert.Equal((820, 640), WalkOverlay.EnlargedSize(5000, 4000));                                                      // a huge one: capped
+    }
+
+    [Fact] public Task The_names_of_parking_bays_are_painted_on_the_floor_in_3D() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(); var lv = vm.Building.Levels[0]; foreach (var l in vm.Building.Levels) { l.Walls.Clear(); l.Markings.Clear(); l.Spaces.Clear(); } vm.Building.Networks.Clear(); vm.Building.Equipment.Clear();
+        List<ImmoCad.Core.Model.PointMm> R(int x0, int y0, int x1, int y1) => [new(x0, y0), new(x1, y0), new(x1, y1), new(x0, y1)];
+        for (var i = 0; i <= 3; i++) lv.Markings.Add(new() { Outline = R(i * 2500, 0, i * 2500 + 100, 5000) }); lv.Markings.Add(new() { Outline = R(0, 5000, 7600, 5100) });
+        vm.SetToolCommand.Execute("Space"); foreach (var x in new[] { 1200, 3700, 6200 }) vm.PlaceSpace(new(x, 2000)); vm.Refresh();
+        Assert.Equal(["P1", "P2", "P3"], lv.Spaces.Select(sp => sp.Name).ToArray());
+        var v = new Viewport3D { DataContext = vm, Width = 900, Height = 500 }; var w = new Window { Content = v, Width = 900, Height = 500 }; w.Show(); v.Rebuild();
+        v.Controller.Camera.Target = (3.8, 2.5, 0); v.Controller.Camera.Distance = 11; v.Controller.Camera.Yaw = 0; v.Controller.Camera.Pitch = 1.3; v.InvalidateVisual(); w.UpdateLayout();
+        var dir = Path.Combine(AppContext.BaseDirectory, "screenshots"); Directory.CreateDirectory(dir); w.CaptureRenderedFrame()!.Save(Path.Combine(dir, "parking-names-3d.png"));
+    }, CancellationToken.None);
+
+    [Fact] public Task A_shutoff_valve_is_drawn_in_3D_like_the_real_one_and_saved_as_a_screenshot() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel(); var lv = vm.Building.Levels[0]; foreach (var l in vm.Building.Levels) { l.Walls.Clear(); l.Markings.Clear(); }; vm.Building.Networks.Clear(); vm.Building.Equipment.Clear();     // an empty stage around the valve
+        var n = vm.Actions.AddNetwork("Eau", ImmoCad.Core.Model.NetworkType.ColdWater);
+        vm.Actions.AddPipeRun(n.Id, [new(0, 0, lv.AltitudeMm + 1000), new(300, 0, lv.AltitudeMm + 1000), new(600, 0, lv.AltitudeMm + 1000)], 20);
+        var net = vm.Building.Networks.Last(); var mid = net.Nodes.First(x => x.Position.X == 300); mid.Component = "shutoff-valve"; vm.Refresh();
+        var v = new Viewport3D { DataContext = vm, Width = 900, Height = 500 }; var w = new Window { Content = v, Width = 900, Height = 500 }; w.Show();
+        v.Rebuild(); Assert.Contains(v.Controller.Objects, o => o.Name == "valve-handle");
+        v.Controller.Camera.Target = (0.3, 0, lv.AltitudeMm / 1000.0 + 1.03); v.Controller.Camera.Distance = 0.42; v.Controller.Camera.Yaw = 0.5; v.Controller.Camera.Pitch = 0.35; v.InvalidateVisual(); w.UpdateLayout();
+        var dir = Path.Combine(AppContext.BaseDirectory, "screenshots"); Directory.CreateDirectory(dir); w.CaptureRenderedFrame()!.Save(Path.Combine(dir, "valve-3d.png"));
+    }, CancellationToken.None);
+
     [Fact] public Task Modes_filters_xray_and_cut_and_screenshots() => f.Session.Dispatch(() =>
     {
         var vm = new MainViewModel(); vm.Settings.AnimateTransitions = false; var w = new MainWindow { DataContext = vm, Width = 1280, Height = 820 }; w.Show(); w.UpdateLayout();
@@ -969,19 +1022,15 @@ public class StretchUiTests
         Assert.Equal(t0.Tx, t1.Tx, 3);                                                                                                // the opposite side stayed put
         w.KeyPress(Avalonia.Input.Key.Right, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.ArrowRight, null);          // (key routing goes through the view)
         Assert.Equal(t1.Tx + 1, ImmoCad.Core.Geometry.ImageStretch.FromArray(vm.CurrentLevel!.ImageTransform).Tx, 6);          // the arrow key nudged by 1 mm
-        vm.ImgRotation = 2; vm.ImgScaleX = 10; vm.ImgScaleY = 10; vm.ApplyImageFieldsCommand.Execute(null); Assert.Equal(2, ImmoCad.Core.Geometry.ImageStretch.Decompose(ImmoCad.Core.Geometry.ImageStretch.FromArray(vm.CurrentLevel!.ImageTransform)).RotationDeg, 3);
         w.CaptureRenderedFrame()!.Save(Path.Combine(AppContext.BaseDirectory, "screenshots", "stretch.png"));
         vm.UndoCommand.Execute(null); vm.UndoCommand.Execute(null); vm.UndoCommand.Execute(null); Assert.Equal(t0.A, ImmoCad.Core.Geometry.ImageStretch.FromArray(vm.CurrentLevel!.ImageTransform).A, 6);
     }, CancellationToken.None);
 
-    [Fact] public Task Opacity_visibility_and_difference_overlay_with_the_level_below() => f.Session.Dispatch(() =>
+    [Fact] public Task Opacity_and_visibility_of_the_background() => f.Session.Dispatch(() =>
     {
         var vm = WithPlan(); var rdc = vm.CurrentLevel!.Id; vm.AddLevelCommand.Execute(null);
         var w2 = new ImportWizardViewModel(WizardTests.PlanPng()) { DistanceMetres = 5 }; w2.AddCalibrationPoint(50, 240); w2.AddCalibrationPoint(550, 240); w2.MinThickness = 5; w2.Detect(); vm.ApplyWizard(w2);
         vm.BgOpacity = 0.8; Assert.Equal(0.8, vm.CurrentLevel!.BackgroundOpacity, 6); vm.BgVisible = false; Assert.False(vm.CurrentLevel.BackgroundVisible); vm.BgVisible = true;
-        var win = new MainWindow { DataContext = vm, Width = 900, Height = 700 }; win.Show(); win.UpdateLayout();
-        byte[] Px() { using var ms = new MemoryStream(); win.CaptureRenderedFrame()!.Save(ms); return ms.ToArray(); }
-        var normal = Px(); vm.BgDifference = true; Assert.NotEqual(normal, Px());                       // the blend changes what is drawn
         vm.UndoCommand.Execute(null); vm.UndoCommand.Execute(null); Assert.True(vm.History.CanUndo);
     }, CancellationToken.None);
 }

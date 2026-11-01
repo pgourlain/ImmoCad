@@ -30,6 +30,9 @@ public sealed class AppSettings
     public bool WalkRoomNames { get; set; } = true;
     /// <summary>Every tool visible whatever the step of the guided path.</summary>
     public bool ExpertMode { get; set; }
+    /// <summary>AI agents may connect to the running app (MCP over HTTP on the loopback interface).</summary>
+    public bool AllowAgents { get; set; }
+    public int McpPort { get; set; } = 39017;
     public List<string> RecentFiles { get; set; } = new();
     public List<RiserTemplate> RiserTemplates { get; set; } = new();
 

@@ -1,3 +1,6 @@
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using System.ComponentModel;
 using ImmoCad.Core;
 using ImmoCad.Core.History;
@@ -9,17 +12,19 @@ using ModelContextProtocol.Server;
 
 namespace ImmoCad.Mcp;
 
-public sealed class McpSession
+/// <summary>The building an agent edits. The stdio server owns one; the desktop app derives a session that follows the building open in its window.</summary>
+public class McpSession
 {
-    public Building Building { get; private set; } = new();
-    public BuildingHistory History { get; private set; } = new();
-    public BuildingActions Actions { get; private set; }
-    public string? Path { get; set; }
+    private Building _building = new(); private BuildingHistory _history = new(); private BuildingActions _actions; private string? _path;
+    public virtual Building Building => _building;
+    public virtual BuildingHistory History => _history;
+    public virtual BuildingActions Actions => _actions;
+    public virtual string? Path { get => _path; set => _path = value; }
     /// <summary>Folders the agent may read/write; empty = the temp folder and the user's home only.</summary>
     public List<string> AllowedFolders { get; } = new() { System.IO.Path.GetTempPath(), Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) };
-    public McpSession() => Actions = new(Building, History, new BuildingEventsService());
+    public McpSession() => _actions = new(_building, _history, new BuildingEventsService());
 
-    public void Replace(Building b) { Building = b; History = new BuildingHistory(); Actions = new(Building, History, new BuildingEventsService()); }
+    public virtual void Replace(Building b) { _building = b; _history = new BuildingHistory(); _actions = new(_building, _history, new BuildingEventsService()); }
 
     public string Check(string path, bool write, bool overwrite = true)
     {
@@ -146,6 +151,44 @@ public sealed class BuildingTools(McpSession s)
 
     [McpServerTool, Description("Bill of materials: pipe length per network and diameter, in metres.")]
     public string[] BillOfMaterials() => Bom.Pipes(s.Building).Select(x => $"{x.Network} {x.DiameterMm}mm {x.LengthM:0.###} m").ToArray();
+}
+
+/// <summary>Runs work on the thread that owns the building (the UI thread in the desktop app).</summary>
+public interface IUiMarshaller { ValueTask<T> Run<T>(Func<ValueTask<T>> work); }
+
+/// <summary>The MCP server inside the running app: Streamable HTTP on the loopback interface only, so the agent works on the building shown in the window.</summary>
+public sealed class LiveMcpServer : IAsyncDisposable
+{
+    public const int DefaultPort = 39017;
+    private Microsoft.AspNetCore.Builder.WebApplication? _app;
+    public int Port { get; }
+    public string Url => $"http://127.0.0.1:{Port}/mcp";
+    public bool Running => _app != null;
+    public LiveMcpServer(int port = DefaultPort) => Port = port;
+
+    /// <param name="session">The building the tools edit.</param>
+    /// <param name="ui">Every tool call and resource read runs through it (the building is not thread safe).</param>
+    public async Task StartAsync(McpSession session, IUiMarshaller ui, ILoggerFactory? logs = null)
+    {
+        if (_app != null) return;
+        var b = Microsoft.AspNetCore.Builder.WebApplication.CreateSlimBuilder();
+        b.WebHost.UseUrls($"http://127.0.0.1:{Port}");
+        b.Logging.ClearProviders(); if (logs != null) b.Services.AddSingleton(logs);
+        b.Services.AddSingleton(session);
+        b.Services.AddMcpServer().WithHttpTransport().WithTools<BuildingTools>().WithResources<BuildingResources>()
+            .WithRequestFilters(f => f.AddCallToolFilter(next => (ctx, ct) => ui.Run(() => next(ctx, ct))).AddReadResourceFilter(next => (ctx, ct) => ui.Run(() => next(ctx, ct))));
+        var app = b.Build();
+        app.Use(async (ctx, next) =>
+        {   // a web page must not be able to drive the building through the browser (DNS rebinding): only a loopback host is served
+            var host = ctx.Request.Host.Host; if (host is not ("127.0.0.1" or "localhost" or "[::1]" or "::1")) { ctx.Response.StatusCode = 403; return; }
+            await next();
+        });
+        app.MapMcp("/mcp");
+        await app.StartAsync(); _app = app;
+    }
+
+    public async Task StopAsync() { if (_app is { } a) { _app = null; await a.StopAsync(); await a.DisposeAsync(); } }
+    public async ValueTask DisposeAsync() => await StopAsync();
 }
 
 public static class McpHost

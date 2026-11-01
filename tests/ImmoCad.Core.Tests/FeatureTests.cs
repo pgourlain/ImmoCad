@@ -989,6 +989,16 @@ public class ChainToolDetailTests
     private static void Click(DrawChainTool t, int x, int y) { t.Down(P(x, y)); t.Up(P(x, y)); }
     private static void Place(DrawChainTool t, int x, int y) { t.Move(P(x, y)); t.Down(P(x, y)); }
 
+    [Fact] public void Tag_is_stamped_per_segment_when_its_end_point_is_placed()
+    {
+        var tags = new List<int>(); DrawChainTool? t = null; t = new DrawChainTool(_ => tags.AddRange(t!.SegmentTags));
+        t.Tag = 0; Click(t, 0, 0); Place(t, 3000, 0);
+        t.Tag = 2; Place(t, 3000, 2000);                                    // changed while the 3rd segment is being drawn: the 1st one keeps its tag
+        t.Tag = 1; Place(t, 0, 2000); Assert.Equal(3, t.SegmentTags.Count);
+        t.Finish();
+        Assert.Equal([0, 2, 1], tags);
+    }
+
     [Fact] public void Clicking_the_first_point_closes_the_outline_in_one_commit()
     {
         var runs = new List<IReadOnlyList<PointMm>>(); var t = new DrawChainTool(runs.Add);

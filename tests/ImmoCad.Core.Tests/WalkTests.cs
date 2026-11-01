@@ -139,9 +139,14 @@ public class WalkTests
 
     [Fact] public void The_eye_moves_between_the_floor_and_the_ceiling_and_home_resets_it()
     {
-        var s = Start(out _, out _); Run(s, 10, new(0, 0, 1, false)); Assert.Equal(2600, s.EyeAboveFloor, 0);
+        var s = Start(out _, out _); Run(s, 10, new(0, 0, 1, false)); Assert.Equal(2400, s.EyeAboveFloor, 0);                 // 100 mm under the ceiling of a 2.50 m room (2.70 m level, 0.20 m slab)
         Run(s, 10, new(0, 0, -1, false)); Assert.Equal(200, s.EyeAboveFloor, 0);
         s.ResetEye(); Assert.Equal(1600, s.EyeAboveFloor);
+    }
+
+    [Fact] public void A_level_has_a_clear_height_under_its_slab()
+    {
+        Assert.Equal(2500, new Level { HeightMm = 2700 }.ClearHeightMm); Assert.Equal(1000, new Level { HeightMm = 900 }.ClearHeightMm);
     }
 
     private static (Building B, Level Lower, Level Upper) TwoLevels()

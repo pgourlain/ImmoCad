@@ -74,6 +74,25 @@ public static class WallGeometry
         return [P(a, o1), P(b, o1), P(b, o2), P(a, o2)];
     }
 
+    /// <summary>
+    /// The same wall with a half-round end at each end (a pillar: a rectangle rounded at both ends). The drawn line a→b is its full length; the ends are half circles of the wall's half thickness
+    /// (flattened to half ellipses when the line is shorter than the thickness, so the pillar never gets longer than what was drawn). Same corner order as <see cref="Rectangle"/>.
+    /// </summary>
+    public static IEnumerable<PointMm> RoundedRectangle(PointMm a, PointMm b, int thicknessMm, WallAlign align, int arcSteps = 8)
+    {
+        double dx = b.X - a.X, dy = b.Y - a.Y; var len = Math.Sqrt(dx * dx + dy * dy);
+        if (len < 1e-9) return [];
+        double ex = dx / len, ey = dy / len, nx = -ey, ny = ex;
+        double o1 = align switch { WallAlign.Center => thicknessMm / 2.0, WallAlign.Left => thicknessMm, _ => 0 };
+        double o2 = align switch { WallAlign.Center => -thicknessMm / 2.0, WallAlign.Left => 0, _ => -thicknessMm };
+        double r = (o1 - o2) / 2, mid = (o1 + o2) / 2, ra = Math.Min(r, len / 2);
+        PointMm P(double s, double w) => new((int)Math.Round(a.X + ex * s + nx * (w + mid)), (int)Math.Round(a.Y + ey * s + ny * (w + mid)));
+        var pts = new List<PointMm> { P(ra, r) };
+        for (var i = 0; i <= arcSteps; i++) { var phi = Math.PI / 2 - Math.PI * i / arcSteps; pts.Add(P(len - ra + ra * Math.Cos(phi), r * Math.Sin(phi))); }        // the far end, left to right
+        for (var i = 0; i <= arcSteps; i++) { var phi = -Math.PI / 2 - Math.PI * i / arcSteps; pts.Add(P(ra + ra * Math.Cos(phi), r * Math.Sin(phi))); }       // the near end, right to left
+        return pts.Where((p, i) => i == 0 || p != pts[i - 1]).ToList();
+    }
+
     public static WallAxis? Axis(Wall w)
     {
         var f = w.Footprint; if (f.Count < 3) return null;

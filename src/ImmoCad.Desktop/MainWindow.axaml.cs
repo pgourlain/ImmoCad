@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Microsoft.Extensions.Logging;
@@ -183,9 +184,16 @@ public partial class MainWindow : Window
             Cube2D.Turned = Plan.TurnQuarter; Cube2D.Spin = () => Vm.ViewPlane == ViewPlane.XY ? Plan.ViewRotationRad : 0; Plan.ViewTurned += Cube2D.InvalidateVisual;
             Vm.PlanZoomRequested += how => Plan.Zoom(how);
             KeyDown += OnWindowKey;
+            AddHandler(KeyDownEvent, (_, ke) =>      // Space belongs to the plan while a riser or a wall is being placed, even if a combo box still has the focus
+            {
+                if (ke.Key != Key.Space || !(Vm.IsRiserTool || Vm.IsDrawTool)) return;
+                if (ke.Source is ComboBox { IsDropDownOpen: false } or ToggleButton or Button or CheckBox) { Plan.ForwardKey(ke); ke.Handled = true; }
+            }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
             Vm.MenuCommands = () => MainViewModel.FromMenus(MenuFactory.Build(Vm, OpenLogFolder, CopySystemInfo, ShowAbout));
             Vm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(MainViewModel.CommandPaletteOpen) && Vm.CommandPaletteOpen) Avalonia.Threading.Dispatcher.UIThread.Post(() => CommandBox.Focus()); };
-            BuildMenus(); Plan.Invalidate();
+            Vm.ConnectAgentRequested += async () => await new ConnectAgentDialog(Vm).ShowDialog(this);
+            Vm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(MainViewModel.AllowAgents)) BuildMenus(); };       // the tick in front of the menu entry
+            BuildMenus(); Plan.Invalidate(); Vm.RestoreAgents();
         };
         AddHandler(DragDrop.DropEvent, OnDrop);
         AddHandler(DragDrop.DragOverEvent, (_, e) => e.DragEffects = e.DataTransfer.TryGetFiles() is { Length: > 0 } ? DragDropEffects.Copy : DragDropEffects.None);

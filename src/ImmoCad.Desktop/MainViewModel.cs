@@ -83,6 +83,26 @@ public partial class MainViewModel : ObservableObject
     public string WallAlignLabel => T("align." + WallAlign.ToString().ToLowerInvariant());
     [RelayCommand] private void CycleWallAlignOption() => CycleWallAlign();
     /// <summary>Side of the drawn line the new wall lies on (Space cycles it while drawing).</summary>
+    /// <summary>Wall option "Rounded ends": each segment is a rectangle with a half-round end at each end, for the pillars of a parking.</summary>
+    [ObservableProperty] private bool _wallRounded;
+    partial void OnWallRoundedChanged(bool value) { Status = T(value ? "wall.rounded.on" : "wall.rounded.off"); Changed?.Invoke(); }
+    /// <summary>The footprint of one drawn segment, with the options in force.</summary>
+    public IEnumerable<PointMm> WallShape(PointMm a, PointMm b, ImmoCad.Core.Geometry.WallAlign side) =>
+        WallRounded ? ImmoCad.Core.Geometry.WallGeometry.RoundedRectangle(a, b, WallThicknessMm, side) : ImmoCad.Core.Geometry.WallGeometry.Rectangle(a, b, WallThicknessMm, side);
+
+    /// <summary>Height of the walls to draw: 0 the level's, 1 up to the top of the building, 2 the value below.</summary>
+    [ObservableProperty] private int _wallHeightMode;
+    [ObservableProperty] private int _wallCustomHeightMm = 2700;
+    public bool WallHeightIsCustom => WallHeightMode == 2;
+    partial void OnWallHeightModeChanged(int value) => OnPropertyChanged(nameof(WallHeightIsCustom));
+    /// <summary>The height given to a wall drawn now on <paramref name="lv"/> (null: it follows the level).</summary>
+    private int? NewWallHeight(Level lv)
+    {
+        if (WallHeightMode == 2) return Math.Max(100, WallCustomHeightMm);
+        if (WallHeightMode != 1 || Building.Levels.Count == 0) return null;
+        var top = Building.Levels.Max(x => x.AltitudeMm + x.HeightMm);
+        return top - lv.AltitudeMm > lv.HeightMm ? top - lv.AltitudeMm : null;
+    }
     public ImmoCad.Core.Geometry.WallAlign WallAlign { get; private set; } = ImmoCad.Core.Geometry.WallAlign.Center;
     public void CycleWallAlign()
     {
@@ -242,7 +262,20 @@ public partial class MainViewModel : ObservableObject
 
     // ---- Pipe selection (handles) ----
     public (Guid NetworkId, Guid SegmentId)? SelectedSegment { get; private set; }
-    public void SelectSegment(Guid networkId, Guid segmentId) { SelectedSpaceId = null; SelectedOpening = null; SelectedWalls.Clear(); SelectedEquipmentId = null; SelectedSegment = (networkId, segmentId); RefreshExtent(); Status = T("pipe.selected.hint"); OnPropertyChanged(nameof(SelectionText)); Changed?.Invoke(); }
+    /// <summary>The columns selected on the current level, each named by its network and its position (mm).</summary>
+    public List<(Guid Net, int X, int Y)> SelectedRisers { get; } = new();
+    public bool IsRiserSelected(SegmentRef r) => SelectedRisers.Contains((r.Network.Id, r.A.X, r.A.Y));
+    /// <summary>Selects columns (clicked or boxed); with <paramref name="add"/> the walls and the other columns stay selected.</summary>
+    public void SelectRisers(IEnumerable<SegmentRef> risers, bool add)
+    {
+        var list = risers.ToList(); if (add && list.Count == 0) return;
+        if (list.Count > 0) { SelectedSegment = null; SelectedEquipmentId = null; SelectedOpening = null; SelectedSpaceId = null; }
+        if (!add) { SelectedRisers.Clear(); SelectedWalls.Clear(); }
+        foreach (var r in list) { var k = (r.Network.Id, r.A.X, r.A.Y); if (!SelectedRisers.Contains(k)) SelectedRisers.Add(k); }
+        if (list.Count > 0 && !add && list.Count == 1) { var one = list[0]; SelectedSegment = (one.Network.Id, one.Segment.Id); RefreshExtent(); }   // a single column keeps its pipe properties
+        Status = T("risers.selected", SelectedRisers.Count); OnPropertyChanged(nameof(HasSelection)); OnPropertyChanged(nameof(SelectionText)); NotifyToolGroups(); Changed?.Invoke();
+    }
+    public void SelectSegment(Guid networkId, Guid segmentId) { SelectedRisers.Clear(); SelectedSpaceId = null; SelectedOpening = null; SelectedWalls.Clear(); SelectedEquipmentId = null; SelectedSegment = (networkId, segmentId); RefreshExtent(); Status = T("pipe.selected.hint"); OnPropertyChanged(nameof(SelectionText)); Changed?.Invoke(); }
     public void ClearSegment() { if (SelectedSegment == null) return; SelectedSegment = null; OnPropertyChanged(nameof(SelectionText)); }
     public int Snapper_GridMm() => 50;
     /// <summary>Snap to the visible grid (View › Snap to grid, F9).</summary>
@@ -458,6 +491,13 @@ public partial class MainViewModel : ObservableObject
     public void PlaceSpace(PointMm click)
     {
         if (CurrentLevel is not { } l) return;
+        if (BayAt(l, click) is { } bay)
+        {   // between white lines: a parking bay, even inside a room that is itself a parking
+            SpaceHover = null;
+            if (ExistingBay(l, bay) is { } have) { SelectSpace(have.Id); Status = T("space.exists"); return; }
+            var name = NextBayName(l); var sp0 = Actions.AddSpace(l.Id, bay, name, SpaceKind.Parking);
+            Refresh(); SelectSpace(sp0.Id); Status = T("bay.added", name, SpaceFinder.AreaMm2(sp0.Outline) / 1e6); return;
+        }
         if (SpaceAt(click) != null) { SpaceHover = null; Status = T("space.exists"); return; }   // one room per place: select it instead
         // the outline shown under the cursor when the click falls in it, else a fresh probe (fast once the walls are rasterised)
         var probe = SpaceHover is { Outline: { } ho } h && SpaceFinder.Contains(ho, click) ? h : ProbeRoom(GridFor(l), click);
@@ -466,6 +506,28 @@ public partial class MainViewModel : ObservableObject
         var n = l.Spaces.Count + 1; var sp = Actions.AddSpace(l.Id, probe.Outline, Token("space.default.name", n), NewSpaceKind);
         Refresh(); SelectSpace(sp.Id);
         Status = probe.Leaks.Count > 0 ? T("space.added.gaps", SpaceFinder.AreaMm2(sp.Outline) / 1e6, probe.Leaks.Count) : T("space.added", SpaceFinder.AreaMm2(sp.Outline) / 1e6);
+    }
+
+    // ---- parking bays: found between the white lines, numbered P1, P2… ----
+    private const long BayMaxAreaMm2 = 25_000_000;
+    private static List<PointMm>? BayAt(Level l, PointMm at) => l.Markings.Count == 0 ? null : new ParkingBays(l).Find(at);
+    /// <summary>The parking space already created for this bay (its middle lies in a small parking space), if any.</summary>
+    private static Space? ExistingBay(Level l, List<PointMm> bay)
+    {
+        var mid = new PointMm((int)bay.Average(p => p.X), (int)bay.Average(p => p.Y));
+        return l.Spaces.LastOrDefault(s => s.Kind == SpaceKind.Parking && SpaceFinder.AreaMm2(s.Outline) <= BayMaxAreaMm2 && SpaceFinder.Contains(s.Outline, mid));
+    }
+    /// <summary>P1, P2… : one more than the highest number already used on the level.</summary>
+    private static string NextBayName(Level l)
+    {
+        var max = 0; foreach (var s in l.Spaces) if (s.Name.Length > 1 && s.Name[0] == 'P' && int.TryParse(s.Name.AsSpan(1), out var n)) max = Math.Max(max, n);
+        return "P" + (max + 1);
+    }
+    /// <summary>True when the room tool has nothing to preview at this point: it is on a space already (a bay or a room), unless it is a big room with painted lines in it where a bay may be found.</summary>
+    public bool SpaceBlocksHover(PointMm p)
+    {
+        var sp = SpaceAt(p); if (sp == null) return false;
+        return !(CurrentLevel is { Markings.Count: > 0 } && SpaceFinder.AreaMm2(sp.Outline) > BayMaxAreaMm2);
     }
 
     // ---- room tool: the walls are rasterised once per wall set, probes under the cursor run off the UI thread ----
@@ -500,6 +562,12 @@ public partial class MainViewModel : ObservableObject
     public async Task<SpaceProbe?> ProbeSpaceAsync(PointMm at)
     {
         if (CurrentLevel is not { } l) return null;
+        if (l.Markings.Count > 0)
+        {   // painted lines first: a bay preview (the lines are copied here, the search runs off the UI thread)
+            var bays = new ParkingBays(l); var bay = await Task.Run(() => bays.Find(at));
+            if (bay != null) return ExistingBay(l, bay) != null ? null : new SpaceProbe(bay, [], 0);
+            if (SpaceAt(at) != null) return null;                                                   // inside a room already created, and not in a bay
+        }
         _probeCts?.Cancel(); var cts = _probeCts = new CancellationTokenSource();
         var key = (l.Id, WallsKey(l)); var grid = _spaceGrid != null && _spaceGridFor == key ? _spaceGrid : null;
         var walls = grid == null ? l.Walls.Select(w => new Wall { Footprint = w.Footprint.ToList(), Holes = w.Holes.Select(r => r.ToList()).ToList() }).ToList() : null;
@@ -794,7 +862,7 @@ public partial class MainViewModel : ObservableObject
     public bool IsNumberTool => Tool == ToolKind.NumberCellars;
     public bool IsStraightenTool => Tool == ToolKind.Straighten;
     /// <summary>The Options tab only shows what the active tool has; a tool without options says so.</summary>
-    public bool HasToolOptions => Tool is ToolKind.DrawWall or ToolKind.Riser or ToolKind.DrawPipe or ToolKind.Align or ToolKind.Straighten or ToolKind.Space or ToolKind.PaintZone;
+    public bool HasToolOptions => Tool is ToolKind.DrawWall or ToolKind.Riser or ToolKind.DrawPipe or ToolKind.Align or ToolKind.Straighten or ToolKind.Space or ToolKind.PaintZone or ToolKind.Select or ToolKind.CutWall;
     public bool HasNoToolOptions => !HasToolOptions;
     public bool IsStretchTool => Tool == ToolKind.Stretch;
     public string SelectionText => SelectedEquipment is { } se ? T("eq.selected", EquipmentCatalog.Find(se.CatalogId)?.Name ?? se.CatalogId) : SelectedSpaceId != null ? T("space.selected") : SelectedOpening != null ? T("opening.selected") : SelectedSegment != null ? T("pipe.selected") : SelectedWalls.Count == 0 ? T("no.selection") : WallsAndMarkingsText();
@@ -830,7 +898,7 @@ public partial class MainViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(IsSelectTool)); OnPropertyChanged(nameof(IsDrawTool)); OnPropertyChanged(nameof(IsAlignTool)); OnPropertyChanged(nameof(IsRiserTool)); OnPropertyChanged(nameof(IsPipeTool)); OnPropertyChanged(nameof(IsPlaceTool)); OnPropertyChanged(nameof(IsDoorTool)); OnPropertyChanged(nameof(IsWindowTool)); OnPropertyChanged(nameof(IsSpaceTool)); OnPropertyChanged(nameof(IsMeasureTool)); OnPropertyChanged(nameof(IsNumberTool)); OnPropertyChanged(nameof(IsStraightenTool)); OnPropertyChanged(nameof(IsStretchTool)); OnPropertyChanged(nameof(IsCutWallTool)); OnPropertyChanged(nameof(IsMergeRegionTool)); OnPropertyChanged(nameof(IsPaintTool)); PaintClear(); CutPoints.Clear(); CutAwaitSide = false; MeasurePoints.Clear(); NumberPending.Clear(); SpaceHover = null;
         Hint = value switch { ToolKind.DrawWall => T("hint.draw.wall"), ToolKind.Riser => T("hint.riser"), ToolKind.DrawPipe => T("hint.draw.pipe"), ToolKind.Place => T("hint.place"), ToolKind.Align => T("hint.align"), ToolKind.Door => T("hint.door"), ToolKind.Window => T("hint.window"), ToolKind.Space => T("hint.space"), ToolKind.Measure => T("hint.measure"), ToolKind.NumberCellars => T("hint.number"), ToolKind.Straighten => T("hint.straighten"), ToolKind.Stretch => T("hint.stretch"), ToolKind.CutWall => T("hint.cutwall"), ToolKind.MergeRegion => T("hint.mergeregion"), ToolKind.PaintZone => T("hint.paint"), _ => T("hint.select") }; if (value != ToolKind.Align) AlignCancel();
-        OnPropertyChanged(nameof(HasToolOptions)); OnPropertyChanged(nameof(HasNoToolOptions)); if (HasToolOptions) PanelTab = 1;       // choosing a tool shows its options
+        OnPropertyChanged(nameof(HasToolOptions)); OnPropertyChanged(nameof(HasNoToolOptions)); if (HasToolOptions && value != ToolKind.Select) PanelTab = 1;       // choosing a tool shows its options
         Changed?.Invoke();
     }
 
@@ -859,7 +927,6 @@ public partial class MainViewModel : ObservableObject
         if (CurrentLevel is { } cl)
         {
             _bgOpacity = cl.BackgroundOpacity; _bgVisible = cl.BackgroundVisible; OnPropertyChanged(nameof(BgOpacity)); OnPropertyChanged(nameof(BgVisible));
-            if (cl.ImageTransform is { Length: 6 } m) { var d = ImageStretch.Decompose(ImageStretch.FromArray(m)); ImgScaleX = Math.Round(d.ScaleX, 4); ImgScaleY = Math.Round(d.ScaleY, 4); ImgRotation = Math.Round(d.RotationDeg, 3); ImgOffsetX = Math.Round(d.OffsetX, 1); ImgOffsetY = Math.Round(d.OffsetY, 1); }
         }
         var sel = CurrentLevel?.Walls.FirstOrDefault(w => SelectedWalls.Contains(w.Id));
         if (sel != null) { PropLabel = sel.Label ?? ""; PropHeight = sel.HeightMm ?? 0; PropThickness = WallGeometry.Axis(sel)?.ThicknessMm ?? 0; }
@@ -871,7 +938,7 @@ public partial class MainViewModel : ObservableObject
     public void SelectWalls(IEnumerable<Guid> ids, bool add)
     {
         if (ids.Any()) { SelectedSegment = null; SelectedEquipmentId = null; SelectedOpening = null; SelectedSpaceId = null; }
-        if (!add) SelectedWalls.Clear();
+        if (!add) { SelectedWalls.Clear(); SelectedRisers.Clear(); }
         foreach (var id in ids) SelectedWalls.Add(id);
         Status = SelectionText; OnPropertyChanged(nameof(SelectionText)); Changed?.Invoke();
     }
@@ -879,8 +946,18 @@ public partial class MainViewModel : ObservableObject
     /// <summary>Whole drag = one history step.</summary>
     public void MoveSelection(int dx, int dy)
     {
-        if (CurrentLevel is not { } l || SelectedWalls.Count == 0 || (dx == 0 && dy == 0)) return;
-        Actions.MoveWalls(l.Id, SelectedWalls.ToList(), dx, dy); Status = T("walls.moved.by", (dx / 1000.0).ToString("0.00"), (dy / 1000.0).ToString("0.00")); Refresh();
+        if (dx == 0 && dy == 0) return;
+        var risers = SelectedRisers.ToList();
+        if (SelectedRisers.Count > 0)
+            for (var i = 0; i < SelectedRisers.Count; i++) SelectedRisers[i] = (SelectedRisers[i].Net, SelectedRisers[i].X + dx, SelectedRisers[i].Y + dy);
+        if (SelectedWalls.Count == 0)
+        {
+            var n = risers.Count > 0 ? Actions.MoveRisers(risers, dx, dy) : 0;
+            if (risers.Count > 0) { Status = n > 0 ? T("risers.moved", n) : T("risers.locked"); Refresh(); }
+            return;
+        }
+        if (CurrentLevel is not { } l) return;
+        Actions.MoveWalls(l.Id, SelectedWalls.ToList(), dx, dy, null, risers.Count > 0 ? risers : null); Status = T("walls.moved.by", (dx / 1000.0).ToString("0.00"), (dy / 1000.0).ToString("0.00")); Refresh();
     }
 
     [RelayCommand] private void SelectLevel(Guid id)
@@ -921,7 +998,7 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand] private void DeleteSelection()
     {
         if (SelectedOpening is { } so && CurrentLevel is { } ol) { Actions.DeleteOpening(ol.Id, so.WallId, so.OpeningId); SelectedOpening = null; Status = T("deleted"); Refresh(); return; }
-        if (SelectedSegment is { } sg) { Actions.DeleteSegment(sg.NetworkId, sg.SegmentId); SelectedSegment = null; Status = T("deleted"); Refresh(); OnPropertyChanged(nameof(SelectionText)); return; }
+        if (SelectedSegment is { } sg && SelectedRisers.Count <= 1) { Actions.DeleteSegment(sg.NetworkId, sg.SegmentId); SelectedSegment = null; Status = T("deleted"); Refresh(); OnPropertyChanged(nameof(SelectionText)); return; }
         if (SelectedEquipmentId is { } eq) { Actions.DeleteEquipment(eq); SelectEquipment(null); Status = T("deleted"); Refresh(); return; }
         if (SelectedSpaceId is { } sp && CurrentLevel is { } sl) { Actions.DeleteSpace(sl.Id, sp); SelectedSpaceId = null; Status = T("deleted"); Refresh(); return; }
         if (CurrentLevel is not { } l || SelectedWalls.Count == 0) return;
@@ -978,17 +1055,13 @@ public partial class MainViewModel : ObservableObject
         return sz;
     }
     [ObservableProperty] private double _bgOpacity = 0.5;
-    [ObservableProperty] private bool _bgDifference;
     [ObservableProperty] private bool _bgVisible = true;
     partial void OnBgOpacityChanged(double value) { if (CurrentLevel is { } l && Math.Abs(l.BackgroundOpacity - value) > 1e-6) { Actions.SetBackgroundDisplay(l.Id, value, BgVisible); Refresh(); } }
-    partial void OnBgDifferenceChanged(bool value) => Changed?.Invoke();
     partial void OnBgVisibleChanged(bool value) { if (CurrentLevel is { } l && l.BackgroundVisible != value) { Actions.SetBackgroundDisplay(l.Id, BgOpacity, value); Refresh(); } }
-    [ObservableProperty] private double _imgScaleX; [ObservableProperty] private double _imgScaleY; [ObservableProperty] private double _imgRotation; [ObservableProperty] private double _imgOffsetX; [ObservableProperty] private double _imgOffsetY;
 
     /// <summary>Commits a stretch gesture or nudge (one history step).</summary>
     public void SetImageTransform(Affine t) { if (CurrentLevel is { } l) { Actions.SetImageTransform(l.Id, t.ToArray(), AlignMoveWalls); Refresh(); } }
     public void NudgeImage(int dx, int dy) { if (CurrentLevel?.ImageTransform is { } m) SetImageTransform(ImageStretch.Nudge(ImageStretch.FromArray(m), dx, dy)); }
-    [RelayCommand] private void ApplyImageFields() { if (CurrentLevel?.ImageTransform != null) SetImageTransform(ImageStretch.Compose(ImgScaleX, ImgScaleY, ImgRotation, ImgOffsetX, ImgOffsetY)); }
 
     // ---- Theme and guided tour ----
     public void ApplyTheme(string theme)
@@ -1211,7 +1284,10 @@ public partial class MainViewModel : ObservableObject
     }
 
     /// <summary>Chain of centre points → one rectangle per segment, committed as one history step.</summary>
-    public void CommitWalls(IReadOnlyList<PointMm> pts)
+    public void CommitWalls(IReadOnlyList<PointMm> pts) => CommitWalls(pts, null);
+
+    /// <summary>The same, each segment on the side chosen when it was placed (<paramref name="aligns"/>: one <see cref="ImmoCad.Core.Geometry.WallAlign"/> per segment, the current side when null).</summary>
+    public void CommitWalls(IReadOnlyList<PointMm> pts, IReadOnlyList<int>? aligns)
     {
         if (CurrentLevel is not { } lv) return;
         var rects = new List<IEnumerable<PointMm>>();
@@ -1219,10 +1295,11 @@ public partial class MainViewModel : ObservableObject
         {
             double dx = pts[i].X - pts[i - 1].X, dy = pts[i].Y - pts[i - 1].Y; var len = Math.Sqrt(dx * dx + dy * dy);
             if (len < 1) continue;
-            rects.Add(ImmoCad.Core.Geometry.WallGeometry.Rectangle(pts[i - 1], pts[i], WallThicknessMm, WallAlign));
+            var side = aligns is { } a && i - 1 < a.Count ? (ImmoCad.Core.Geometry.WallAlign)a[i - 1] : WallAlign;
+            rects.Add(WallShape(pts[i - 1], pts[i], side));
         }
         if (rects.Count == 0) return;
-        Actions.ImportWalls(lv.Id, rects); Status = T("walls.added", rects.Count); Refresh();
+        Actions.ImportWalls(lv.Id, rects, NewWallHeight(lv)); Status = T("walls.added", rects.Count); Refresh();
     }
 
     public void SaveTo(string path)

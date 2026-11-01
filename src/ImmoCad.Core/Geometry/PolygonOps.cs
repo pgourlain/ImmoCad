@@ -46,6 +46,15 @@ public static class PolygonOps
         return Rasterized(shape, D);
     }
 
+    /// <summary>A hair-thin rectangle (2 mm) along the segment ab, reaching 10 mm beyond both ends: subtracted from a shape it splits it where the segment passes.</summary>
+    public static List<PointMm> Strip(PointMm a, PointMm b)
+    {
+        double dx = b.X - a.X, dy = b.Y - a.Y, len = Math.Sqrt(dx * dx + dy * dy); if (len < 1e-9) return [];
+        double ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
+        PointMm P(double along, double side) => new((int)Math.Round(a.X + ux * along + nx * side), (int)Math.Round(a.Y + uy * along + ny * side));
+        return [P(-10, -1), P(len + 10, -1), P(len + 10, 1), P(-10, 1)];
+    }
+
     /// <summary>True when the segment ab touches the shape's outline or lies inside it.</summary>
     public static bool Crosses(Shape s, PointMm a, PointMm b)
     {

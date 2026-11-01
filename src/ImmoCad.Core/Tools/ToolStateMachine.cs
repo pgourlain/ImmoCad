@@ -55,27 +55,35 @@ public sealed class DrawChainTool(Action<IReadOnlyList<PointMm>> commit) : ToolS
     public int CloseRadiusMm { get; set; } = 150;
     public bool WasClosed { get; private set; }
 
-    protected override void OnStart(ToolPointer p) { if (_pts.Count == 0) _pts.Add(p.Mm); }
+    /// <summary>A caller-defined value stamped on each segment when its end point is placed (the wall side, for instance): changing it only affects the segments placed afterwards.</summary>
+    public int Tag { get; set; }
+    private readonly List<int> _tags = new();
+    /// <summary>The tag of every segment placed so far (one per segment); still readable from the commit callback.</summary>
+    public IReadOnlyList<int> SegmentTags => _tags;
+    private void AddPoint(PointMm p) { _pts.Add(p); if (_pts.Count > 1) _tags.Add(Tag); }
+    private void RemoveLastPoint() { _pts.RemoveAt(_pts.Count - 1); if (_tags.Count > _pts.Count - 1 && _tags.Count > 0) _tags.RemoveAt(_tags.Count - 1); }
+
+    protected override void OnStart(ToolPointer p) { if (_pts.Count == 0) AddPoint(p.Mm); }
     protected override void OnPlace(ToolPointer p)
     {
         if (_pts.Count >= 3 && Near(p.Mm, _pts[0])) { Close(); return; }          // clicking the first point closes the outline
-        _pts.Add(p.Mm);
+        AddPoint(p.Mm);
     }
     protected override void OnPreview(ToolPointer p) => Preview = p.Mm;
     protected override void OnCommit(ToolPointer p)
     {
-        if (State == ToolState.Dragging) _pts.Add(p.Mm);
+        if (State == ToolState.Dragging) AddPoint(p.Mm);
         if (_pts.Count >= 2) commit(_pts.ToList());
-        _pts.Clear(); Preview = null;
+        _pts.Clear(); _tags.Clear(); Preview = null;
     }
-    protected override void OnCancel() { _pts.Clear(); Preview = null; }
+    protected override void OnCancel() { _pts.Clear(); _tags.Clear(); Preview = null; }
 
-    public void Backspace() { if (_pts.Count > 1) _pts.RemoveAt(_pts.Count - 1); }
+    public void Backspace() { if (_pts.Count > 1) RemoveLastPoint(); }
 
     /// <summary>Double-click: the second click of the pair already added a duplicate point, drop it, then finish.</summary>
     public void DoubleClick()
     {
-        if (_pts.Count >= 2 && _pts[^1] == _pts[^2]) _pts.RemoveAt(_pts.Count - 1);
+        if (_pts.Count >= 2 && _pts[^1] == _pts[^2]) RemoveLastPoint();
         Finish();
     }
 
@@ -83,13 +91,13 @@ public sealed class DrawChainTool(Action<IReadOnlyList<PointMm>> commit) : ToolS
     public void Close()
     {
         if (_pts.Count < 3) return;
-        _pts.Add(_pts[0]); WasClosed = true; Finish();
+        AddPoint(_pts[0]); WasClosed = true; Finish();
     }
 
     /// <summary>First Escape cancels the segment being drawn, a second one the whole run.</summary>
     public bool EscapeStep()
     {
-        if (_pts.Count > 1) { _pts.RemoveAt(_pts.Count - 1); Preview = null; return true; }    // segment in progress dropped, run kept
+        if (_pts.Count > 1) { RemoveLastPoint(); Preview = null; return true; }    // segment in progress dropped, run kept
         Cancel(); return false;
     }
 
@@ -101,7 +109,7 @@ public sealed class DrawChainTool(Action<IReadOnlyList<PointMm>> commit) : ToolS
         if (angleDeg is { } a) { var r = a * Math.PI / 180; dx = Math.Cos(r); dy = Math.Sin(r); l = 1; }
         else if (l < 1) return null;
         var np = new PointMm(o.X + (int)Math.Round(dx / l * lengthMm), o.Y + (int)Math.Round(dy / l * lengthMm));
-        _pts.Add(np); return np;
+        AddPoint(np); return np;
     }
 
     /// <summary>Length and angle of the segment being drawn, for the rubber band label.</summary>

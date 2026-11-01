@@ -46,6 +46,7 @@ public partial class MainViewModel
 
     partial void OnExpertModeChanged(bool value)
     {
+        OnPropertyChanged(nameof(IsGuided)); OnPropertyChanged(nameof(ShowNextStep));
         Settings.ExpertMode = value; if (SettingsPath != null) try { SettingsStore.Save(Settings, SettingsPath); } catch (IOException) { }
         NotifyToolGroups();
     }
@@ -55,9 +56,12 @@ public partial class MainViewModel
         Steps.Clear();
         foreach (var s in Enum.GetValues<WorkStep>())
             Steps.Add(new StepItem(s, (int)s + 1, T("step." + s.ToString().ToLowerInvariant()), s == Step, s < Step));
-        OnPropertyChanged(nameof(NextStepLabel)); OnPropertyChanged(nameof(HasNextStep));
+        OnPropertyChanged(nameof(NextStepLabel)); OnPropertyChanged(nameof(HasNextStep)); OnPropertyChanged(nameof(ShowNextStep));
     }
 
+    /// <summary>The step bar and "next step" belong to the guided mode; expert mode shows every tool at once.</summary>
+    public bool IsGuided => !ExpertMode;
+    public bool ShowNextStep => IsGuided && HasNextStep;
     public bool HasNextStep => Step < WorkStep.Result;
     public string NextStepLabel => HasNextStep ? T("step.next", T("step." + (Step + 1).ToString().ToLowerInvariant())) : "";
 
@@ -82,7 +86,7 @@ public partial class MainViewModel
     // ---- Action bar on the selection ----
     /// <summary>The actions on the selection edit the building: not offered while walking, which is read-only.</summary>
     public bool ShowSelectionActions => HasSelection && NotWalk;
-    public bool HasSelection => SelectedWalls.Count > 0 || SelectedSegment != null || SelectedEquipmentId != null || SelectedSpaceId != null || SelectedOpening != null;
+    public bool HasSelection => SelectedWalls.Count > 0 || SelectedRisers.Count > 0 || SelectedSegment != null || SelectedEquipmentId != null || SelectedSpaceId != null || SelectedOpening != null;
     /// <summary>Walls are selected (the selection set holds walls and floor markings together: same click, same box, same Delete).</summary>
     public bool WallsSelected => SelectedWalls.Count > 0 && SelectedOpening == null && CurrentLevel is { } wl && wl.Walls.Any(w => SelectedWalls.Contains(w.Id));
     public bool MarkingsSelected => SelectedWalls.Count > 0 && SelectedOpening == null && CurrentLevel is { } ml && ml.Markings.Any(m => SelectedWalls.Contains(m.Id));

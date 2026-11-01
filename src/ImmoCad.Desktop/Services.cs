@@ -52,13 +52,26 @@ public sealed class AvaloniaDialogService(Window owner) : IDialogService
     public async Task<SaveChoice> ConfirmSaveAsync(string documentName)
     {
         var result = SaveChoice.Cancel;
-        var w = new Window { Title = "ImmoCad", Width = 420, Height = 160, WindowStartupLocation = WindowStartupLocation.CenterOwner, CanResize = false };
-        var panel = new StackPanel { Margin = new(20), Spacing = 16 };
-        panel.Children.Add(new TextBlock { Text = ImmoCad.Core.Translations.T("dialog.save.changes", documentName), TextWrapping = Avalonia.Media.TextWrapping.Wrap });
-        var buttons = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right };
-        foreach (var (label, choice) in new[] { (ImmoCad.Core.Translations.T("dialog.save"), SaveChoice.Save), (ImmoCad.Core.Translations.T("dialog.discard"), SaveChoice.Discard), (ImmoCad.Core.Translations.T("dialog.cancel"), SaveChoice.Cancel) })
-        { var b = new Button { Content = label }; b.Click += (_, _) => { result = choice; w.Close(); }; buttons.Children.Add(b); }
-        panel.Children.Add(buttons); w.Content = panel; await w.ShowDialog(owner); return result;
+        var w = new Window { Title = "ImmoCad", Width = 460, SizeToContent = SizeToContent.Height, WindowStartupLocation = WindowStartupLocation.CenterOwner, CanResize = false };
+        Button Make(string key, SaveChoice choice, bool primary = false, bool cancel = false)
+        {
+            var b = new Button { Content = ImmoCad.Core.Translations.T(key), MinWidth = 96, HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center, IsDefault = primary, IsCancel = cancel };
+            if (primary) b.Classes.Add("accent");
+            b.Click += (_, _) => { result = choice; w.Close(); }; return b;
+        }
+        var text = new StackPanel { Spacing = 6, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, Children =
+        {
+            new TextBlock { Text = ImmoCad.Core.Translations.T("dialog.save.changes", documentName), FontWeight = Avalonia.Media.FontWeight.SemiBold, FontSize = 15, TextWrapping = Avalonia.Media.TextWrapping.Wrap },
+            new TextBlock { Text = ImmoCad.Core.Translations.T("dialog.save.lost"), Opacity = 0.7, TextWrapping = Avalonia.Media.TextWrapping.Wrap },
+        } };
+        var head = new Grid { ColumnDefinitions = new("Auto,*"), ColumnSpacing = 16 };
+        head.Children.Add(new Image { Source = new Avalonia.Media.Imaging.Bitmap(Avalonia.Platform.AssetLoader.Open(new Uri("avares://ImmoCad/Assets/icon.png"))), Width = 48, Height = 48, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top });
+        Grid.SetColumn(text, 1); head.Children.Add(text);
+        var buttons = new Grid { ColumnDefinitions = new("Auto,*,Auto,Auto"), ColumnSpacing = 8 };
+        var discard = Make("dialog.discard", SaveChoice.Discard); var cancel = Make("dialog.cancel", SaveChoice.Cancel, cancel: true); var save = Make("dialog.save", SaveChoice.Save, primary: true);
+        Grid.SetColumn(cancel, 2); Grid.SetColumn(save, 3); buttons.Children.Add(discard); buttons.Children.Add(cancel); buttons.Children.Add(save);
+        w.Content = new StackPanel { Margin = new(24, 22, 24, 20), Spacing = 22, Children = { head, buttons } };
+        await w.ShowDialog(owner); return result;
     }
 
     public async Task ShowErrorAsync(string title, string message)

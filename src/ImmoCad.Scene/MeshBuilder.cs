@@ -126,6 +126,46 @@ public static class MeshBuilder
         return Box(x0, y0, z0, x1, y1, z1, into);
     }
 
+    /// <summary>A box turned about its centre: <paramref name="u"/>, <paramref name="v"/>, <paramref name="w"/> are its unit axes (right-handed: u × v = w), the half sizes are along them (mm).</summary>
+    public static Mesh OrientedBox((double X, double Y, double Z) c, (double X, double Y, double Z) u, (double X, double Y, double Z) v, (double X, double Y, double Z) w, double hu, double hv, double hw, Mesh? into = null)
+    {
+        var m = into ?? new Mesh(); const float k = 0.001f; var i0 = new int[8];
+        for (var i = 0; i < 8; i++)
+        {
+            double su = (i & 1) == 0 ? -hu : hu, sv = (i & 2) == 0 ? -hv : hv, sw = (i & 4) == 0 ? -hw : hw;
+            i0[i] = m.Add((float)((c.X + u.X * su + v.X * sv + w.X * sw) * k), (float)((c.Y + u.Y * su + v.Y * sv + w.Y * sw) * k), (float)((c.Z + u.Z * su + v.Z * sv + w.Z * sw) * k));
+        }
+        m.Quad(i0[0], i0[1], i0[3], i0[2]); m.Quad(i0[4], i0[6], i0[7], i0[5]);
+        m.Quad(i0[0], i0[4], i0[5], i0[1]); m.Quad(i0[2], i0[3], i0[7], i0[6]);
+        m.Quad(i0[0], i0[2], i0[6], i0[4]); m.Quad(i0[1], i0[5], i0[7], i0[3]);
+        return m;
+    }
+
+    /// <summary>
+    /// A brass ball valve on a pipe, with its red lever (a shut-off valve): two hexagonal nuts and a round body along the pipe, a stem and a lever lying along the pipe (open position).
+    /// The stem points up, or sideways on a vertical pipe. Everything scales with the pipe diameter <paramref name="d"/> (mm). Returns the brass parts and the red parts as two meshes.
+    /// </summary>
+    public static (Mesh Brass, Mesh Handle) BallValve((int X, int Y, int Z) at, (double X, double Y, double Z) axis, int d)
+    {
+        var brass = new Mesh(); var red = new Mesh();
+        var al = Math.Sqrt(axis.X * axis.X + axis.Y * axis.Y + axis.Z * axis.Z); if (al < 1e-9) return (brass, red);
+        var a = (X: axis.X / al, Y: axis.Y / al, Z: axis.Z / al);
+        var s = Math.Abs(a.Z) < 0.9 ? (X: 0.0, Y: 0.0, Z: 1.0) : (X: 1.0, Y: 0.0, Z: 0.0);                                  // the stem: up, or sideways on a riser
+        var dot = a.X * s.X + a.Y * s.Y + a.Z * s.Z; var l = (X: a.X - s.X * dot, Y: a.Y - s.Y * dot, Z: a.Z - s.Z * dot);
+        var ll = Math.Sqrt(l.X * l.X + l.Y * l.Y + l.Z * l.Z); l = (l.X / ll, l.Y / ll, l.Z / ll);                          // the lever lies along the pipe
+        var t = (X: s.Y * l.Z - s.Z * l.Y, Y: s.Z * l.X - s.X * l.Z, Z: s.X * l.Y - s.Y * l.X);                              // l × t = s
+        (int X, int Y, int Z) P(double along, double up) => ((int)Math.Round(at.X + a.X * along + s.X * up), (int)Math.Round(at.Y + a.Y * along + s.Y * up), (int)Math.Round(at.Z + a.Z * along + s.Z * up));
+        Cylinder(P(-1.7 * d, 0), P(-0.9 * d, 0), (int)(1.7 * d), 6, brass);                                                   // nut
+        Cylinder(P(-0.9 * d, 0), P(0.9 * d, 0), (int)(1.5 * d), 14, brass);                                                   // body
+        Cylinder(P(0.9 * d, 0), P(1.7 * d, 0), (int)(1.7 * d), 6, brass);                                                     // nut
+        Cylinder(P(0, 0), P(0, 1.1 * d), Math.Max(2, (int)(0.5 * d)), 8, brass);                                              // stem
+        Cylinder(P(0, 1.0 * d), P(0, 1.45 * d), (int)(1.15 * d), 12, red);                                                    // the cap of the lever
+        (double X, double Y, double Z) C(double along, double up) => (at.X + l.X * along + s.X * up, at.Y + l.Y * along + s.Y * up, at.Z + l.Z * along + s.Z * up);
+        OrientedBox(C(1.35 * d, 1.55 * d), l, t, s, 1.9 * d, 0.3 * d, 0.1 * d, red);                                         // the lever
+        OrientedBox(C(3.0 * d, 1.55 * d), l, t, s, 0.5 * d, 0.45 * d, 0.2 * d, red);                                          // its grip
+        return (brass, red);
+    }
+
     public static Mesh Box(int x0, int y0, int z0, int x1, int y1, int z1, Mesh? into = null)
     {
         var m = into ?? new Mesh(); const float k = 0.001f;

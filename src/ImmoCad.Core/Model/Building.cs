@@ -59,7 +59,12 @@ public sealed class Level
     /// <summary>The name in the current language when it is a generated one ("@level.n:2").</summary>
     [System.Text.Json.Serialization.JsonIgnore] public string DisplayName => Translations.Display(Name);
     public int AltitudeMm { get; set; }
+    /// <summary>From the finished floor to the next one, slab included.</summary>
     public int HeightMm { get; set; } = 2700;
+    /// <summary>Thickness of the floor slab, fixed for now.</summary>
+    public const int SlabThicknessMm = ImmoCad.Scene.SceneBuilder.SlabMm;
+    /// <summary>What a person standing in the rooms sees: floor to the underside of the slab above (2.50 m for a 2.70 m level).</summary>
+    [System.Text.Json.Serialization.JsonIgnore] public int ClearHeightMm => Math.Max(1000, HeightMm - SlabThicknessMm);
     public LevelKind Kind { get; set; } = LevelKind.Standard;
     public string? BackgroundImage { get; set; }
     public double[]? ImageTransform { get; set; } // 2x3 affine, pixels -> mm

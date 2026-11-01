@@ -63,7 +63,7 @@ public sealed class WalkState
         return true;
     }
 
-    private static double ClampAbove(double mm, Level l) => Math.Clamp(mm, MinAboveFloorMm, Math.Max(MinAboveFloorMm, l.HeightMm - BelowCeilingMm));
+    private static double ClampAbove(double mm, Level l) => Math.Clamp(mm, MinAboveFloorMm, Math.Max(MinAboveFloorMm, l.ClearHeightMm - BelowCeilingMm));
 
     /// <summary>The middle of the level's walls (a point that is free is found from there).</summary>
     private WalkPoint DefaultStart()
@@ -120,7 +120,7 @@ public sealed class WalkState
     {
         if (!Ghost)
         {
-            EyeZ = Level.AltitudeMm + Math.Clamp(EyeAboveFloor + dz, MinAboveFloorMm, Math.Max(MinAboveFloorMm, Level.HeightMm - BelowCeilingMm)); return;
+            EyeZ = Level.AltitudeMm + Math.Clamp(EyeAboveFloor + dz, MinAboveFloorMm, Math.Max(MinAboveFloorMm, Level.ClearHeightMm - BelowCeilingMm)); return;
         }
         // ghost: the eye crosses slabs, the current level follows its altitude
         var b = Area.Bounds; EyeZ = Math.Clamp(EyeZ + dz, b.MinZ + 100, b.MaxZ - 100);
@@ -144,7 +144,7 @@ public sealed class WalkState
         if (target == Level) return true;
         if (target.Walls.Count == 0) { Notice?.Invoke(new(WalkNoticeKind.LevelHasNoWalls)); return false; }
         _want ??= Position; var wasInside = Area.WallBox() is { } ob && X >= ob.X0 && X <= ob.X1 && Y >= ob.Y0 && Y <= ob.Y1;       // in the building on the level being left
-        var above = Math.Clamp(EyeAboveFloor, MinAboveFloorMm, Math.Max(MinAboveFloorMm, target.HeightMm - BelowCeilingMm));
+        var above = Math.Clamp(EyeAboveFloor, MinAboveFloorMm, Math.Max(MinAboveFloorMm, target.ClearHeightMm - BelowCeilingMm));
         var before = Position; Level = target; Area = new WalkArea(Building, target); EyeZ = target.AltitudeMm + above; Goal = null; _vx = _vy = 0; _ghostReturn = null;
         var want = _want.Value;
         if (Ghost) { X = want.X; Y = want.Y; return true; }

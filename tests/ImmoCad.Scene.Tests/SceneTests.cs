@@ -256,6 +256,22 @@ public class TriangulatorTests
         }
     }
 
+    [Fact] public void A_shutoff_valve_is_a_brass_body_with_a_red_lever_that_sticks_up_and_stays_on_the_pipe()
+    {
+        var node = Guid.NewGuid(); var d = 20;
+        var input = new SceneInput([new(Guid.NewGuid(), 0, 0, 2700)], [], [], [new SceneFitting(Guid.NewGuid(), node, "Component", (3000, 0, 1000), (2000, 0, 1000), (4000, 0, 1000), d, (0, 0, 1), true, "shutoff-valve")], []);
+        var objs = SceneBuilder.Build(input, new SceneOptions(null));
+        var brass = objs.Single(o => o.Name == "valve"); var handle = objs.Single(o => o.Name == "valve-handle");
+        Assert.Equal(SceneBuilder.BrassColor, brass.Color); Assert.Equal(SceneBuilder.ValveHandleColor, handle.Color); Assert.All(objs, o => Assert.Equal(node, o.Id));
+        var (bmin, bmax) = (brass.Mesh.Min(), brass.Mesh.Max()); var hmin = handle.Mesh.Min(); var hmax = handle.Mesh.Max();
+        Assert.InRange(bmax.X - bmin.X, 3.0 * d / 1000, 3.6 * d / 1000);                    // along the pipe: the nuts and the body, about 3.4 pipe diameters
+        Assert.True(hmax.Z > bmax.Z - 0.2 * d / 1000 && hmin.Z > 1.0 + d / 1000.0);           // the lever sits above the pipe, over the stem
+        Assert.True(hmax.X > 3.0 + 2.5 * d / 1000.0 || hmin.X < 3.0 - 2.5 * d / 1000.0);      // and lies along it
+        Assert.Equal(1, objs.Count(o => o.Name == "valve") );
+        var plain = SceneBuilder.Build(new SceneInput(input.Levels, [], [], [input.Fittings[0] with { Part = "check-valve" }], []), new SceneOptions(null));
+        Assert.Single(plain);                                                              // the other parts keep their plain box
+    }
+
     private static SceneInput TwoLevels(out Guid l0, out Guid l1)
     {
         l0 = Guid.NewGuid(); l1 = Guid.NewGuid();
@@ -285,7 +301,7 @@ public class TriangulatorTests
         var input = TwoLevels(out _, out var l1);
         var objs = SceneBuilder.Build(input, new SceneOptions(l1, Walk: true));
         var floor = objs.Single(o => o.Kind == SceneKind.Floor).Mesh; var ceiling = objs.Single(o => o.Kind == SceneKind.Ceiling).Mesh;
-        Assert.Equal(3.0, floor.Max().Z, 6); Assert.Equal(5.7, ceiling.Min().Z, 6);
+        Assert.Equal(3.0, floor.Max().Z, 6); Assert.Equal(5.5, ceiling.Min().Z, 6);        // 2.70 m between floors, less the 0.20 m slab: 2.50 m of clear height
         Assert.Null(SceneBuilder.Pick(objs.Where(o => o.Kind is SceneKind.Floor or SceneKind.Ceiling), (3, 0.1f, 10), (0, 0, -1)));
     }
 
@@ -312,7 +328,7 @@ public class TriangulatorTests
         Assert.DoesNotContain(SceneBuilder.Build(input, new SceneOptions(l0, Walk: true)), o => o.Kind == SceneKind.Grid);                  // no grid unless the world is given
         var objs = SceneBuilder.Build(input, new SceneOptions(l0, Walk: true, WalkGrid: (-5000, -5000, 15000, 8000)));
         var g = objs.Single(o => o.Kind == SceneKind.Grid).Mesh; Assert.True(g.Indices.Count >= 40 && g.Indices.Count % 2 == 0);
-        Assert.All(Enumerable.Range(0, g.VertexCount), i => Assert.True(Math.Abs(g.Positions[i * 3 + 2] + 0.005) < 1e-4 || Math.Abs(g.Positions[i * 3 + 2] - 2.705) < 1e-4));
+        Assert.All(Enumerable.Range(0, g.VertexCount), i => Assert.True(Math.Abs(g.Positions[i * 3 + 2] + 0.005) < 1e-4 || Math.Abs(g.Positions[i * 3 + 2] - 2.505) < 1e-4));
         Assert.Null(SceneBuilder.Pick(objs.Where(o => o.Kind == SceneKind.Grid), (3, 0.1f, 10), (0, 0, -1)));
         var huge = SceneBuilder.Build(input, new SceneOptions(l0, Walk: true, WalkGrid: (0, 0, 5_000_000, 5_000_000))).Single(o => o.Kind == SceneKind.Grid).Mesh;
         Assert.True(huge.Indices.Count < 2000);                                                                                              // the spacing grows with the world: never thousands of lines

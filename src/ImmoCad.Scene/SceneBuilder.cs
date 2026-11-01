@@ -10,7 +10,7 @@ public sealed record SceneObject(Guid Id, SceneKind Kind, string Name, Mesh Mesh
 public sealed record SceneWall(Guid Id, int LevelIndex, IReadOnlyList<(int X, int Y)> Footprint, IReadOnlyList<IReadOnlyList<(int X, int Y)>> Holes, int BaseZ, int Height);
 public sealed record SceneLevel(Guid Id, int Index, int AltitudeMm, int HeightMm);
 public sealed record ScenePipe(Guid NetworkId, Guid SegmentId, (int X, int Y, int Z) A, (int X, int Y, int Z) B, int DiameterMm, (float R, float G, float B) Color, bool Visible);
-public sealed record SceneFitting(Guid NetworkId, Guid NodeId, string Kind, (int X, int Y, int Z) At, (int X, int Y, int Z)? ArmA, (int X, int Y, int Z)? ArmB, int DiameterMm, (float R, float G, float B) Color, bool Visible);
+public sealed record SceneFitting(Guid NetworkId, Guid NodeId, string Kind, (int X, int Y, int Z) At, (int X, int Y, int Z)? ArmA, (int X, int Y, int Z)? ArmB, int DiameterMm, (float R, float G, float B) Color, bool Visible, string? Part = null);
 public sealed record SceneBox(Guid Id, Guid LevelId, string Name, int X, int Y, int Z, int W, int D, int H, (float R, float G, float B) Color, int Radius = 0);
 /// <summary>Paint on the floor of a level (parking bay lines): flat, a few millimetres thick, white.</summary>
 public sealed record SceneMarking(Guid Id, int LevelIndex, IReadOnlyList<(int X, int Y)> Outline, IReadOnlyList<IReadOnlyList<(int X, int Y)>> Holes, int BaseZ);
@@ -32,6 +32,9 @@ public static class SceneBuilder
     public static readonly (float, float, float) WalkWallColor = (0.86f, 0.83f, 0.78f), FloorColor = (0.46f, 0.42f, 0.38f), CeilingColor = (0.95f, 0.95f, 0.93f);
     /// <summary>Walk mode shows what crosses the current level's height band, with this margin for the slabs.</summary>
     public const int WalkBandMarginMm = 300;
+    public static readonly (float, float, float) BrassColor = (0.74f, 0.62f, 0.36f), ValveHandleColor = (0.80f, 0.07f, 0.07f);
+    /// <summary>Thickness of a floor slab (mm): the level height runs from one finished floor to the next, so the room's clear height is the level height minus this.</summary>
+    public const int SlabMm = 200;
 
     public static List<SceneObject> Build(SceneInput input, SceneOptions o)
     {
@@ -57,7 +60,7 @@ public static class SceneBuilder
             foreach (var l in input.Levels.Where(l => LevelVisible(l.Index)))
             {
                 var walls = input.Walls.Where(w => w.LevelIndex == l.Index && w.Footprint.Count >= 3).ToList(); if (walls.Count == 0) continue;
-                var m = new Mesh(); foreach (var w in walls) MeshBuilder.ExtrudeWall(w.Footprint, l.AltitudeMm - 200, 200, m);   // under what the walls enclose (rooms included), not the bounding box of the level
+                var m = new Mesh(); foreach (var w in walls) MeshBuilder.ExtrudeWall(w.Footprint, l.AltitudeMm - SlabMm, SlabMm, m);   // under what the walls enclose (rooms included), not the bounding box of the level
                 m.ComputeNormals(); res.Add(new SceneObject(l.Id, SceneKind.Slab, "slab", m, SlabColor, o.XRay ? 0.15f : 1f));
             }
         if (input.Markings is { Count: > 0 })
@@ -88,6 +91,15 @@ public static class SceneBuilder
             Mesh? m = null;
             if (f.Kind == "Elbow90" && f.ArmA is { } a && f.ArmB is { } b) m = MeshBuilder.Elbow(f.At, a, b, f.DiameterMm);
             else if (f.Kind is "Tee" or "Cross" or "Reducer" or "SlabCrossing") m = MeshBuilder.Box(f.At.X - f.DiameterMm, f.At.Y - f.DiameterMm, f.At.Z - f.DiameterMm, f.At.X + f.DiameterMm, f.At.Y + f.DiameterMm, f.At.Z + f.DiameterMm);
+            else if (f.Kind == "Component" && f.Part == "shutoff-valve" && (f.ArmA ?? f.ArmB) is { } arm1)
+            {   // the stop valve looks like the real one: brass body and nuts, red lever
+                var arm2 = f.ArmA != null ? f.ArmB : null;
+                var axis = arm2 is { } z2 ? (X: (double)z2.X - arm1.X, Y: (double)z2.Y - arm1.Y, Z: (double)z2.Z - arm1.Z) : (X: (double)arm1.X - f.At.X, Y: (double)arm1.Y - f.At.Y, Z: (double)arm1.Z - f.At.Z);
+                var (brass, handle) = MeshBuilder.BallValve(f.At, axis, Math.Max(8, f.DiameterMm));
+                brass.ComputeNormals(); handle.ComputeNormals();
+                res.Add(new SceneObject(f.NodeId, SceneKind.Component, "valve", brass, BrassColor, 1f)); res.Add(new SceneObject(f.NodeId, SceneKind.Component, "valve-handle", handle, ValveHandleColor, 1f));
+                continue;
+            }
             else if (f.Kind == "Component") m = MeshBuilder.Box(f.At.X - f.DiameterMm, f.At.Y - f.DiameterMm, f.At.Z - f.DiameterMm / 2, f.At.X + f.DiameterMm, f.At.Y + f.DiameterMm, f.At.Z + f.DiameterMm / 2);
             if (m == null) continue; m.ComputeNormals(); res.Add(new SceneObject(f.NodeId, f.Kind == "Component" ? SceneKind.Component : SceneKind.Fitting, f.Kind, m, f.Kind == "Component" ? (0.15f, 0.15f, 0.15f) : f.Color, 1f));
         }
@@ -115,7 +127,7 @@ public static class SceneBuilder
     {
         var step = Math.Max(1000, (int)Math.Ceiling(Math.Max(g.X1 - g.X0, g.Y1 - g.Y0) / 120.0 / 1000.0) * 1000);                // at most about 120 lines per direction
         var m = new Mesh(); const float k = 0.001f;
-        foreach (var z in new[] { cur.AltitudeMm - 5, cur.AltitudeMm + cur.HeightMm + 5 })
+        foreach (var z in new[] { cur.AltitudeMm - 5, cur.AltitudeMm + cur.HeightMm - SlabMm + 5 })
         {
             for (var x = (int)Math.Ceiling(g.X0 / (double)step) * step; x <= g.X1; x += step) { var a = m.Add(x * k, g.Y0 * k, z * k); var b = m.Add(x * k, g.Y1 * k, z * k); m.Indices.Add(a); m.Indices.Add(b); }
             for (var y = (int)Math.Ceiling(g.Y0 / (double)step) * step; y <= g.Y1; y += step) { var a = m.Add(g.X0 * k, y * k, z * k); var b = m.Add(g.X1 * k, y * k, z * k); m.Indices.Add(a); m.Indices.Add(b); }
@@ -128,8 +140,8 @@ public static class SceneBuilder
     {
         var pts = input.Walls.Where(w => w.LevelIndex == cur.Index).SelectMany(w => w.Footprint).ToList(); if (pts.Count == 0) return;
         int x0 = pts.Min(p => p.X), y0 = pts.Min(p => p.Y), x1 = pts.Max(p => p.X), y1 = pts.Max(p => p.Y);
-        var floor = MeshBuilder.Box(x0, y0, cur.AltitudeMm - 100, x1, y1, cur.AltitudeMm); floor.ComputeNormals();
-        var ceiling = MeshBuilder.Box(x0, y0, cur.AltitudeMm + cur.HeightMm, x1, y1, cur.AltitudeMm + cur.HeightMm + 100); ceiling.ComputeNormals();
+        var floor = MeshBuilder.Box(x0, y0, cur.AltitudeMm - SlabMm, x1, y1, cur.AltitudeMm); floor.ComputeNormals();
+        var ceiling = MeshBuilder.Box(x0, y0, cur.AltitudeMm + cur.HeightMm - SlabMm, x1, y1, cur.AltitudeMm + cur.HeightMm); ceiling.ComputeNormals();      // the underside of the slab above: 2.50 m over a 2.70 m level
         res.Add(new SceneObject(cur.Id, SceneKind.Floor, "floor", floor, FloorColor, 1f));
         res.Add(new SceneObject(cur.Id, SceneKind.Ceiling, "ceiling", ceiling, CeilingColor, 1f));
     }

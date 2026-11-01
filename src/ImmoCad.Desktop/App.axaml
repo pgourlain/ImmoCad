@@ -2,6 +2,13 @@
              x:Class="ImmoCad.Desktop.App" Name="ImmoCad" RequestedThemeVariant="Default">
   <!-- macOS application menu: the app name above replaces "Avalonia Application", this About replaces "About Avalonia" (header set in code, translated). -->
   <NativeMenu.Menu><NativeMenu><NativeMenuItem Click="OnAbout" /></NativeMenu></NativeMenu.Menu>
-  <Application.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries><ResourceInclude Source="avares://ImmoCad/Themes/Tokens.axaml" /></ResourceDictionary.MergedDictionaries></ResourceDictionary></Application.Resources>
-  <Application.Styles><FluentTheme /></Application.Styles>
+  <Application.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries><ResourceInclude Source="avares://ImmoCad/Themes/Tokens.axaml" /><ResourceInclude Source="avares://ImmoCad/Themes/Icons.axaml" /></ResourceDictionary.MergedDictionaries></ResourceDictionary></Application.Resources>
+  <Application.Styles>
+    <FluentTheme />
+    <Style Selector="Path.ico" x:CompileBindings="False">
+      <Setter Property="Width" Value="22" /><Setter Property="Height" Value="22" /><Setter Property="Stretch" Value="Uniform" />
+      <Setter Property="StrokeThickness" Value="1.6" /><Setter Property="StrokeLineCap" Value="Round" /><Setter Property="StrokeJoin" Value="Round" />
+      <Setter Property="Stroke" Value="{Binding $parent[Button].Foreground}" />
+    </Style>
+  </Application.Styles>
 </Application>
