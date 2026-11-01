@@ -103,10 +103,10 @@ public partial class PlanView
                 if (vm.CommonOnly && w.Stability == Stability.Private || w.Footprint.Count < 2 || vm.WallDisplay == WallDisplay.Hidden) continue;
                 var sel = vm.SelectedWalls.Contains(w.Id); var r = Norm(WallRect(plane, l, w));
                 ctx.DrawRectangle(vm.WallDisplay == WallDisplay.Wireframe ? Brushes.Transparent : new SolidColorBrush(sel ? Color.FromArgb(120, 255, 140, 0) : Color.FromArgb(70, 120, 120, 135)), new Pen(sel ? Brushes.OrangeRed : Brushes.Gray, sel ? 2 : 1), r);
-                if (WallGeometry.Axis(w) is not { } ax) continue;
                 foreach (var o in w.Openings)
                 {
-                    var u0 = plane.ProjectU(ax.PointAt(o.PositionMm - o.WidthMm / 2.0)); var u1 = plane.ProjectU(ax.PointAt(o.PositionMm + o.WidthMm / 2.0));
+                    if (WallGeometry.SpanOf(w, o, exactThickness: true) is not { } span) continue;
+                    var u0 = plane.ProjectU(span.A); var u1 = plane.ProjectU(span.B);
                     var or = Norm(new Rect(ToScreen(UV(Math.Min(u0, u1), l.AltitudeMm + o.SillMm + o.HeightMm)), ToScreen(UV(Math.Max(u0, u1), l.AltitudeMm + o.SillMm))));
                     var picked = vm.SelectedOpening?.OpeningId == o.Id;
                     ctx.DrawRectangle(new SolidColorBrush(dark ? Color.FromRgb(30, 32, 36) : Color.FromRgb(250, 250, 248)), new Pen(picked ? Brushes.OrangeRed : Brushes.SteelBlue, picked ? 2 : 1.2), or);

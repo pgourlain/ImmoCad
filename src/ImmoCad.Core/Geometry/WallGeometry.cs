@@ -37,17 +37,29 @@ public readonly record struct OpeningSpan(PointMm A, PointMm B, int HalfThicknes
         return t >= 0 && t <= 1 && off <= HalfThicknessMm;
     }
     public bool OpenAt(double heightAboveFloorMm) => heightAboveFloorMm >= SillMm && heightAboveFloorMm <= TopMm;
+    /// <summary>The middle of the opening on the wall's centre line.</summary>
+    public PointMm Center => new((A.X + B.X) / 2, (A.Y + B.Y) / 2);
+    public double WidthMm => Math.Sqrt(Math.Pow(B.X - A.X, 2) + Math.Pow(B.Y - A.Y, 2));
+    /// <summary>The unit vector across the wall (left of A→B): the side of the wall a door swings to, a face of the wall at ± the half thickness.</summary>
+    public (double X, double Y) Normal { get { var l = WidthMm; return l < 1e-9 ? (0, 0) : (-(B.Y - A.Y) / l, (B.X - A.X) / l); } }
 }
 
 public static class WallGeometry
 {
-    /// <summary>The opening's strip, or null when the wall has no usable centre line (the plan does not draw such an opening either). The strip is capped at 400 mm each side of the centre line, so an odd merged outline does not lose a large part of itself.</summary>
-    public static OpeningSpan? SpanOf(Wall w, Opening o)
+    /// <summary>
+    /// The opening's strip, or null when the wall has no usable centre line (the plan does not draw such an opening either). For cutting the wall (3D mesh) and for the walk's passage the
+    /// strip is capped at 400 mm each side of the centre line and a little wider than the wall, so a cut goes all the way through; <paramref name="exactThickness"/> gives the wall's
+    /// real half thickness instead, which is what the plan and the elevation draw.
+    /// </summary>
+    public static OpeningSpan? SpanOf(Wall w, Opening o, bool exactThickness = false) => SpanAt(w, o.PositionMm, o.WidthMm, o.SillMm, o.HeightMm, exactThickness);
+
+    /// <summary>The same for an opening that does not exist yet (the preview under the cursor).</summary>
+    public static OpeningSpan? SpanAt(Wall w, int positionMm, int widthMm, int sillMm = 0, int heightMm = 2100, bool exactThickness = false)
     {
-        if (Axis(w) is not { } ax || o.WidthMm < 1) return null;
-        var a = ax.PointAt(o.PositionMm - o.WidthMm / 2.0); var b = ax.PointAt(o.PositionMm + o.WidthMm / 2.0); if (a == b) return null;
-        var sill = Math.Max(0, o.SillMm);
-        return new OpeningSpan(a, b, Math.Min(ax.ThicknessMm / 2, 400) + 20, sill, sill + o.HeightMm);
+        if (Axis(w) is not { } ax || widthMm < 1) return null;
+        var a = ax.PointAt(positionMm - widthMm / 2.0); var b = ax.PointAt(positionMm + widthMm / 2.0); if (a == b) return null;
+        var sill = Math.Max(0, sillMm);
+        return new OpeningSpan(a, b, exactThickness ? (int)Math.Round(ax.ThicknessMm / 2.0) : Math.Min(ax.ThicknessMm / 2, 400) + 20, sill, sill + heightMm);
     }
 
     /// <summary>Wall rectangle along the drawn line a→b with the given alignment (corners: a+side1, b+side1, b+side2, a+side2).</summary>

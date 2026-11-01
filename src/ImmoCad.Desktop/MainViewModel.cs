@@ -422,11 +422,11 @@ public partial class MainViewModel : ObservableObject
         if (CurrentLevel is not { } l) return null;
         foreach (var w in l.Walls)
         {
-            if (Geometry_Axis(w) is not { } ax) continue;
             foreach (var o in w.Openings)
             {
-                var c = ax.PointAt(o.PositionMm); var half = Math.Max(o.WidthMm / 2, 150);
-                if (Math.Abs(p.X - c.X) <= (Math.Abs(ax.B.X - ax.A.X) > Math.Abs(ax.B.Y - ax.A.Y) ? half : ax.ThicknessMm) && Math.Abs(p.Y - c.Y) <= (Math.Abs(ax.B.X - ax.A.X) > Math.Abs(ax.B.Y - ax.A.Y) ? ax.ThicknessMm : half)) return (w, o);
+                if (WallGeometry.SpanOf(w, o, exactThickness: true) is not { } span) continue;
+                var c = span.Center; var half = Math.Max(o.WidthMm / 2, 150); var thick = 2 * span.HalfThicknessMm; var alongX = Math.Abs(span.B.X - span.A.X) > Math.Abs(span.B.Y - span.A.Y);
+                if (Math.Abs(p.X - c.X) <= (alongX ? half : thick) && Math.Abs(p.Y - c.Y) <= (alongX ? thick : half)) return (w, o);
             }
         }
         return null;

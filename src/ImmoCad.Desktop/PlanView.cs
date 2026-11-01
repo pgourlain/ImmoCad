@@ -549,9 +549,8 @@ public partial class PlanView : Control
     /// <summary>Dashed ghost of the door/window that a click would place (cut, leaf and swing arc for a door).</summary>
     private void DrawOpeningPreview(DrawingContext ctx, OpeningKind kind)
     {
-        if (Vm!.OpeningPreview(_hover, kind) is not { } pv || WallGeometry.Axis(pv.Wall) is not { } ax) return;
-        double dx = ax.B.X - ax.A.X, dy = ax.B.Y - ax.A.Y; var len = Math.Sqrt(dx * dx + dy * dy); double nx = -dy / len, ny = dx / len;
-        var c0 = ax.PointAt(pv.Pos - pv.Width / 2.0); var c1 = ax.PointAt(pv.Pos + pv.Width / 2.0); var h = ax.ThicknessMm / 2.0;
+        if (Vm!.OpeningPreview(_hover, kind) is not { } pv || WallGeometry.SpanAt(pv.Wall, pv.Pos, pv.Width, exactThickness: true) is not { } span) return;
+        var (nx, ny) = span.Normal; var c0 = span.A; var c1 = span.B; double h = span.HalfThicknessMm;
         PointMm Q(PointMm c, double side) => new((int)(c.X + nx * h * side), (int)(c.Y + ny * h * side));
         var dash = new Pen(Brushes.OrangeRed, 1.6, DashStyle.Dash); var fill = new SolidColorBrush(Color.FromArgb(50, 255, 120, 0));
         var cut = new StreamGeometry(); using (var cx = cut.Open()) { cx.BeginFigure(ToScreen(Q(c0, 1)), true); cx.LineTo(ToScreen(Q(c1, 1))); cx.LineTo(ToScreen(Q(c1, -1))); cx.LineTo(ToScreen(Q(c0, -1))); cx.EndFigure(true); }
@@ -624,11 +623,10 @@ public partial class PlanView : Control
         foreach (var w in l.Walls)
         {
             if (Vm!.CommonOnly && w.Stability == Stability.Private) continue;
-            if (WallGeometry.Axis(w) is not { } ax) continue;
-            double dx = ax.B.X - ax.A.X, dy = ax.B.Y - ax.A.Y; var len = Math.Sqrt(dx * dx + dy * dy); double ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
             foreach (var o in w.Openings)
-            {
-                var c0 = ax.PointAt(o.PositionMm - o.WidthMm / 2.0); var c1 = ax.PointAt(o.PositionMm + o.WidthMm / 2.0); var h = ax.ThicknessMm / 2.0;
+            {   // the geometry of an opening is computed once, in Core, for the plan, the elevation, the 3D mesh and the walk
+                if (WallGeometry.SpanOf(w, o, exactThickness: true) is not { } span) continue;
+                var (nx, ny) = span.Normal; var c0 = span.A; var c1 = span.B; double h = span.HalfThicknessMm;
                 PointMm Q(PointMm c, double side) => new((int)(c.X + nx * h * side), (int)(c.Y + ny * h * side));
                 var cut = new StreamGeometry(); using (var cx = cut.Open()) { cx.BeginFigure(ToScreen(Q(c0, 1)), true); cx.LineTo(ToScreen(Q(c1, 1))); cx.LineTo(ToScreen(Q(c1, -1))); cx.LineTo(ToScreen(Q(c0, -1))); cx.EndFigure(true); }
                 ctx.DrawGeometry(bg, null, cut);                                                                                       // hole in the wall
@@ -652,7 +650,7 @@ public partial class PlanView : Control
                     }
                     ctx.DrawGeometry(null, new Pen(dark ? Brushes.Gainsboro : Brushes.Black, 0.8, DashStyle.Dash), arc);
                 }
-                if (!string.IsNullOrEmpty(o.Label)) { var cm = ax.PointAt(o.PositionMm); var ft = Txt(o.Label, 10, Brushes.SteelBlue); var sp = ToScreen(cm); ctx.DrawText(ft, new Point(sp.X - ft.Width / 2, sp.Y - 18)); }
+                if (!string.IsNullOrEmpty(o.Label)) { var cm = span.Center; var ft = Txt(o.Label, 10, Brushes.SteelBlue); var sp = ToScreen(cm); ctx.DrawText(ft, new Point(sp.X - ft.Width / 2, sp.Y - 18)); }
             }
         }
     }
