@@ -62,7 +62,7 @@ public sealed class WalkDriver
     private void Tick()
     {
         var now = Stopwatch.GetTimestamp(); var dt = Math.Clamp((now - _last) / (double)Stopwatch.Frequency, 0, 0.1); _last = now;
-        if (_vm.Walk is not { } w) return;
+        if (_vm.Walk is not { } w || _controller().WalkIntroActive) return;                        // the camera is coming down: the keys wait for it
         // a key pressed and released between two frames still counts for this frame
         bool L(PhysicalKey k) => _letters.Contains(k) || _tappedLetters.Contains(k); bool A(Key k) => _arrows.Contains(k) || _tappedArrows.Contains(k);
         double fwd = (L(PhysicalKey.W) ? 1 : 0) - (L(PhysicalKey.S) ? 1 : 0) + (A(Key.Up) ? 1 : 0) - (A(Key.Down) ? 1 : 0);

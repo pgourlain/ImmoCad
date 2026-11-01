@@ -101,6 +101,7 @@ public sealed class GlViewport3D : OpenGlControlBase, IViewport3D, Avalonia.Rend
                 foreach (var o in Controller.Objects.Where(o => (o.Alpha < 0.999f) == pass))
                 {
                     if (!_buffers.TryGetValue(o, out var b)) continue;
+                    if (walk && Controller.WalkIntroActive && o.Kind is SceneKind.Ceiling or SceneKind.Grid) continue;                   // coming down from above: the ceiling is left out
                     var col = o.Highlight ? (1f, 0.55f, 0f) : walk && o.Id == Controller.HoverId ? (1f, 0.75f, 0.3f) : o.Color;
                     gl.Uniform4(_uColor, col.Item1, col.Item2, col.Item3, o.Alpha); gl.Uniform1(_uSelected, Controller.Wireframe || o.Kind == SceneKind.Grid ? 0f : 1f);          // flat colour for wire
                     gl.Uniform1(_uDissolve, ghost && o.Kind is SceneKind.Wall or SceneKind.Floor or SceneKind.Ceiling ? 1f : 0f);          // walls fade around the eye in ghost mode

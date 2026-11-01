@@ -100,4 +100,42 @@ public partial class MainViewModel
         var ids = l.Markings.Where(m => SelectedWalls.Contains(m.Id)).Select(m => m.Id).ToList(); if (ids.Count == 0) return;
         var n = Actions.MarkingsToWalls(l.Id, ids); SelectedWalls.Clear(); Status = T("paint.done.towall", n); Refresh();
     }
+
+    // ---- Show in plan / Show in 3D: frame what is selected in the other view ----
+
+    /// <summary>The middle of the selection on the plan (mm) and the level it is on: a wall or a painted line, a pipe, an equipment, a room, an opening.</summary>
+    public (PointMm At, Level Level)? SelectionCenter()
+    {
+        if (CurrentLevel is not { } cur) return null;
+        if (SelectedEquipment is { } eq) return (eq.Position, Building.Levels.FirstOrDefault(l => l.Id == eq.LevelId) ?? cur);
+        if (SelectedSegment is { } sg && Building.Networks.FirstOrDefault(n => n.Id == sg.NetworkId) is { } net && net.Segments.FirstOrDefault(s => s.Id == sg.SegmentId) is { } seg
+            && net.Nodes.FirstOrDefault(n => n.Id == seg.A) is { } a && net.Nodes.FirstOrDefault(n => n.Id == seg.B) is { } b)
+        {
+            var z = (a.Position.Z + b.Position.Z) / 2; var lvl = Building.Levels.FirstOrDefault(l => z >= l.AltitudeMm && z < l.AltitudeMm + l.HeightMm) ?? cur;
+            return (new PointMm((a.Position.X + b.Position.X) / 2, (a.Position.Y + b.Position.Y) / 2), lvl);
+        }
+        if (SelectedSpaceModel is { } sp && sp.Outline.Count > 0) return (new PointMm((sp.Outline.Min(p => p.X) + sp.Outline.Max(p => p.X)) / 2, (sp.Outline.Min(p => p.Y) + sp.Outline.Max(p => p.Y)) / 2), cur);
+        if (SelectedOpening is { } so && cur.Walls.FirstOrDefault(w => w.Id == so.WallId) is { } sw && sw.Openings.FirstOrDefault(o => o.Id == so.OpeningId) is { } op && WallGeometry.SpanOf(sw, op, exactThickness: true) is { } span) return (span.Center, cur);
+        var pts = cur.Walls.Where(w => SelectedWalls.Contains(w.Id)).SelectMany(w => w.Footprint).Concat(cur.Markings.Where(m => SelectedWalls.Contains(m.Id)).SelectMany(m => m.Outline)).ToList();
+        return pts.Count == 0 ? null : (new PointMm((pts.Min(p => p.X) + pts.Max(p => p.X)) / 2, (pts.Min(p => p.Y) + pts.Max(p => p.Y)) / 2), cur);
+    }
+
+    /// <summary>Leaves the walk (when walking) and makes the plan show the selection, on its level.</summary>
+    [RelayCommand]
+    private void ShowSelectionInPlan()
+    {
+        if (SelectionCenter() is not { } c) return;
+        if (IsWalk) EndWalkRequest(null); if (c.Level.Id != CurrentLevelId) { CurrentLevelId = c.Level.Id; Refresh(); }       // the level changes, the selection stays
+        Mode = ViewMode.Plan; FocusRequested?.Invoke(c.At);
+    }
+
+    /// <summary>The same for the 3D view: the plan is centred on the selection first, so the animated transition to 3D lands on it.</summary>
+    [RelayCommand]
+    private void ShowSelectionIn3D()
+    {
+        if (SelectionCenter() is not { } c) return;
+        if (IsWalk) EndWalkRequest(null); if (c.Level.Id != CurrentLevelId) { CurrentLevelId = c.Level.Id; Refresh(); }       // the level changes, the selection stays
+        if (Mode != ViewMode.Plan && !Is3D) Mode = ViewMode.Plan;
+        FocusRequested?.Invoke(c.At); if (Mode == ViewMode.Plan) RequestMode(ViewMode.Solid);
+    }
 }

@@ -38,7 +38,36 @@ public sealed class ViewportController
     private double _aspect = 1;
 
     /// <summary>Puts the camera where the walk state is.</summary>
-    public void ApplyWalk(WalkState w) { WalkCam.Eye = (w.X / 1000, w.Y / 1000, w.EyeZ / 1000); WalkCam.Yaw = w.Yaw; WalkCam.SetPitch(w.Pitch); }
+    /// <summary>True while the camera comes down from above to the eyes (the entry animation): the walk state does not drive the camera meanwhile, and the ceiling is left out.</summary>
+    public bool WalkIntroActive { get; private set; }
+    private DispatcherTimer? _introTimer;
+    public const double WalkIntroSeconds = 0.7, WalkIntroHeightM = 9;
+
+    /// <summary>
+    /// Entering the walk from the plan: the camera starts high above the walker looking straight down (as the plan shows the level) and eases down to the eyes while it tilts forward.
+    /// Without <paramref name="animate"/> the camera is simply put at the eyes.
+    /// </summary>
+    public void StartWalkIntro(WalkState w, bool animate)
+    {
+        _introTimer?.Stop(); _introTimer = null; WalkIntroActive = false;
+        if (!animate) { ApplyWalk(w); Invalidate?.Invoke(); return; }
+        WalkIntroActive = true; var t0 = DateTime.UtcNow; Pose(w, 0); Invalidate?.Invoke();
+        _introTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
+        _introTimer.Tick += (_, _) =>
+        {
+            var e = (DateTime.UtcNow - t0).TotalSeconds / WalkIntroSeconds;
+            if (e >= 1) { _introTimer!.Stop(); _introTimer = null; WalkIntroActive = false; ApplyWalk(w); }
+            else Pose(w, CameraTransition.EaseInOut(e));
+            Invalidate?.Invoke();
+        };
+        _introTimer.Start();
+    }
+    private void Pose(WalkState w, double k)
+    {
+        WalkCam.Eye = (w.X / 1000, w.Y / 1000, w.EyeZ / 1000 + (1 - k) * WalkIntroHeightM); WalkCam.Yaw = w.Yaw; WalkCam.SetPitch(-WalkCamera.MaxPitch + (w.Pitch + WalkCamera.MaxPitch) * k);
+    }
+
+    public void ApplyWalk(WalkState w) { if (WalkIntroActive) return; WalkCam.Eye = (w.X / 1000, w.Y / 1000, w.EyeZ / 1000); WalkCam.Yaw = w.Yaw; WalkCam.SetPitch(w.Pitch); }
     public Action<Guid, SceneKind>? Picked { get; set; }
     /// <summary>When the active tool works on the plan (riser, palette object, door…), a click is converted to millimetres on the current level's plane and given to the same view-model methods the plan uses.</summary>
     public Func<bool>? PlaneToolActive { get; set; }

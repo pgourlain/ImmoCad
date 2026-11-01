@@ -1,5 +1,6 @@
 # Changelog
 ## Unreleased
+- Walk mode: door frames (jambs, lintel, window sill) in the 3D views and the door numbers or labels floating above the doors; the camera comes down from above when entering the walk; "Show in plan" and "Show in 3D" on the selection (over the walk view, in the plan and in the 3D view). One opening geometry in Core is now shared by the plan, the elevation, the 3D mesh and the walk.
 - macOS package, as for Kubism: the native libraries are thinned to the package's architecture (they were universal, which triggers the "Intel-based app" warning), the app bundle is ad-hoc signed (Apple silicon refuses unsigned code), a complete Info.plist, the architectures and the signature are checked at packaging time and in CI; the disk image has the Applications shortcut and a first-launch readme. Pre-releases (tags with a hyphen) are flagged as such. The Intel macOS package (osx-x64) is no longer built in the releases.
 
 ## v0.1.0-rc11 (2026-10-31)

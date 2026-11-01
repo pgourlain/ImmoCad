@@ -1877,6 +1877,61 @@ public class WalkUiTests
     private readonly HeadlessFixture f = new();
     private static string Shots() { var d = Path.Combine(AppContext.BaseDirectory, "screenshots"); Directory.CreateDirectory(d); return d; }
 
+    [Fact] public Task Show_in_plan_and_show_in_3D_frame_the_selection_on_its_level_from_the_walk_and_from_the_other_views() => f.Session.Dispatch(() =>
+    {
+        var vm = new MainViewModel { Settings = new() }; vm.WalkAvailable = true; PointMm? focused = null; vm.FocusRequested += p => focused = p;
+        var net = vm.Building.Networks[0]; var seg = net.Segments[0]; var a = net.Nodes.First(n => n.Id == seg.A).Position; var b = net.Nodes.First(n => n.Id == seg.B).Position;
+        vm.BeginWalk(new PointMm(4000, 3000)); vm.SelectSegment(net.Id, seg.Id);
+        vm.ShowSelectionInPlanCommand.Execute(null);
+        Assert.Equal(ViewMode.Plan, vm.Mode); Assert.Null(vm.Walk); Assert.Equal(new PointMm((a.X + b.X) / 2, (a.Y + b.Y) / 2), focused);                          // the middle of the pipe, after the walk's own pin
+        vm.BeginWalk(new PointMm(4000, 3000)); vm.ShowSelectionIn3DCommand.Execute(null); Assert.Equal(ViewMode.Solid, vm.Mode); Assert.Null(vm.Walk);
+        focused = null; vm.ShowSelectionInPlanCommand.Execute(null); Assert.Equal(ViewMode.Plan, vm.Mode); Assert.NotNull(focused);                                  // back from 3D
+        vm.SelectEquipment(vm.Building.Equipment[0].Id); focused = null; vm.ShowSelectionIn3DCommand.Execute(null); Assert.Equal(vm.Building.Equipment[0].Position, focused); Assert.Equal(ViewMode.Solid, vm.Mode);
+        vm.SetModeCommand.Execute("Plan"); vm.SelectedWalls.Clear(); vm.ClearSegment(); vm.SelectEquipment(null); focused = null; vm.ShowSelectionInPlanCommand.Execute(null); Assert.Null(focused);       // nothing selected: nothing happens
+        var upper = vm.Building.Levels[1]; vm.SelectLevelCommand.Execute(upper.Id); vm.SelectedWalls.Add(upper.Walls[0].Id); vm.SelectLevelCommand.Execute(vm.Building.Levels[0].Id);
+    }, CancellationToken.None);
+
+    [Fact] public Task The_walk_overlay_shows_what_is_selected_with_the_two_show_buttons_and_the_selection_bar_offers_them_in_plan_and_3D() => f.Session.Dispatch(() =>
+    {
+        ImmoCad.Core.Translations.Language = "en";
+        try
+        {
+            var vm = new MainViewModel { Settings = new() { AnimateTransitions = false } }; var w = new MainWindow { DataContext = vm, Width = 1280, Height = 860 }; w.Show(); vm.WalkAvailable = true; vm.BeginWalk(new PointMm(4000, 3000));      // no animated transition: the mode changes at once
+            bool Has(string t) => Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(w).OfType<Button>().Any(b => b.IsEffectivelyVisible && b.Content as string == t);
+            Assert.False(Has(ImmoCad.Core.Translations.T("bar.showplan")));                                                                                      // nothing selected: no bar
+            vm.SelectEquipment(vm.Building.Equipment[0].Id); Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+            Assert.True(Has(ImmoCad.Core.Translations.T("bar.showplan"))); Assert.True(Has(ImmoCad.Core.Translations.T("bar.show3d"))); Assert.False(vm.ShowSelectionActions);                    // read-only: no editing actions
+            vm.LeaveWalkCommand.Execute(null); Avalonia.Threading.Dispatcher.UIThread.RunJobs(); vm.SetModeCommand.Execute("Solid"); Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+            Assert.True(Has(ImmoCad.Core.Translations.T("bar.showplan"))); Assert.False(Has(ImmoCad.Core.Translations.T("bar.show3d")));                                                  // in 3D: show in plan
+            vm.SetModeCommand.Execute("Plan"); Avalonia.Threading.Dispatcher.UIThread.RunJobs(); Assert.True(Has(ImmoCad.Core.Translations.T("bar.show3d"))); w.Close();
+        }
+        finally { ImmoCad.Core.Translations.Language = "fr"; }
+    }, CancellationToken.None);
+
+    [Fact] public Task Entering_the_walk_brings_the_camera_down_from_above_and_without_animation_it_is_at_the_eyes_at_once() => f.Session.RunAsync(async () =>
+    {
+        var vm = new MainViewModel { Settings = new() }; vm.WalkAvailable = true; vm.BeginWalk(new PointMm(4000, 3000)); var st = vm.Walk!; var c = new ViewportController();
+        c.StartWalkIntro(st, animate: false); Assert.False(c.WalkIntroActive); Assert.Equal(st.EyeZ / 1000, c.WalkCam.Eye.Z, 6);
+        c.StartWalkIntro(st, animate: true); Assert.True(c.WalkIntroActive); Assert.True(c.WalkCam.Eye.Z > st.EyeZ / 1000 + 8.9); Assert.True(c.WalkCam.Pitch < -1.4);       // high above, looking down
+        c.ApplyWalk(st); Assert.True(c.WalkCam.Eye.Z > st.EyeZ / 1000 + 8.9);                                                                                              // the walk state does not drive the camera meanwhile
+        var mid = false; for (var i = 0; i < 60 && c.WalkIntroActive; i++) { await Task.Delay(30); Avalonia.Threading.Dispatcher.UIThread.RunJobs(); if (c.WalkIntroActive && c.WalkCam.Eye.Z < st.EyeZ / 1000 + 8 && c.WalkCam.Eye.Z > st.EyeZ / 1000 + 0.2) mid = true; }
+        Assert.False(c.WalkIntroActive); Assert.Equal(st.EyeZ / 1000, c.WalkCam.Eye.Z, 6); Assert.Equal(st.Pitch, c.WalkCam.Pitch, 6); Assert.True(mid);                       // it went down smoothly and ended at the eyes
+    }, CancellationToken.None);
+
+    [Fact] public Task A_door_number_floats_over_the_door_in_front_in_both_languages() => f.Session.Dispatch(() =>
+    {
+        foreach (var lang in new[] { "en", "fr" })
+        {
+            ImmoCad.Core.Translations.Language = lang;
+            var vm = new MainViewModel { Settings = new() }; var l = vm.Building.Levels[0]; var south = l.Walls[0]; vm.Actions.AddOpening(l.Id, south.Id, OpeningKind.Door, 4000, 900, "12"); vm.Refresh();
+            var w = new MainWindow { DataContext = vm, Width = 1280, Height = 860 }; w.Show(); vm.WalkAvailable = true; vm.BeginWalk(new PointMm(5000, 3000)); var walk = vm.Walk!;
+            walk.Yaw = Math.PI; w.View3D.Controller.ApplyWalk(walk); w.Overlay!.Frame(); Avalonia.Threading.Dispatcher.UIThread.RunJobs();                                    // facing south, at the wall with the door
+            var doors = vm.WalkLabelCache.PlaceDoors(walk, w.View3D.Controller.WalkCam, w.Labels!.Bounds.Width, w.Labels.Bounds.Height); Assert.Equal("12", Assert.Single(doors).Text);
+            w.CaptureRenderedFrame()!.Save(Path.Combine(Shots(), $"walk-door-label-{lang}.png")); w.Close();
+        }
+        ImmoCad.Core.Translations.Language = "fr";
+    }, CancellationToken.None);
+
     [Fact] public Task Without_OpenGL_the_Walk_entries_are_disabled_with_the_reason_and_the_G_key_does_nothing() => f.Session.Dispatch(() =>
     {
         try

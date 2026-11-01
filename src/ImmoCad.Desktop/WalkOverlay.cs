@@ -21,6 +21,7 @@ public sealed class WalkOverlay : Grid
     public Control? Labels { get; set; }
     private readonly MiniMapView _map; private readonly Button _mapToggle = new() { HorizontalAlignment = HorizontalAlignment.Right };
     private readonly StackPanel _legend = new() { Spacing = 3 }; private readonly Border _legendBox = new();
+    private readonly Border _selection = new(); private readonly TextBlock _selectionText = new() { VerticalAlignment = VerticalAlignment.Center }; private readonly Button _toPlan = new(), _to3D = new();
     private readonly Border _hint = new(); private readonly TextBlock _hintText = new() { TextWrapping = TextWrapping.Wrap }; private readonly TextBlock _hintKeys = new() { TextWrapping = TextWrapping.Wrap, Opacity = 0.75, FontSize = 12 };
     private readonly Button _hintOk = new() { HorizontalAlignment = HorizontalAlignment.Right };
     private readonly Border _hover = new() { IsVisible = false, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top, IsHitTestVisible = false };
@@ -45,7 +46,11 @@ public sealed class WalkOverlay : Grid
         _legendBox.Classes.Add("overlay"); _legendBox.Padding = new Thickness(10, 6); _legendBox.CornerRadius = new CornerRadius(8); _legendBox.HorizontalAlignment = HorizontalAlignment.Left; _legendBox.VerticalAlignment = VerticalAlignment.Bottom; _legendBox.Child = _legend;
         Children.Add(_legendBox);
 
-        _hint.Classes.Add("overlay"); _hint.Padding = new Thickness(14, 10); _hint.CornerRadius = new CornerRadius(8); _hint.HorizontalAlignment = HorizontalAlignment.Center; _hint.VerticalAlignment = VerticalAlignment.Bottom; _hint.MaxWidth = 520; _hint.Margin = new Thickness(0, 0, 0, 24);
+        _selection.Classes.Add("overlay"); _selection.Padding = new Thickness(12, 6); _selection.CornerRadius = new CornerRadius(8); _selection.HorizontalAlignment = HorizontalAlignment.Center; _selection.VerticalAlignment = VerticalAlignment.Bottom; _selection.Margin = new Thickness(0, 0, 0, 24);
+        _toPlan.Click += (_, _) => _vm.ShowSelectionInPlanCommand.Execute(null); _to3D.Click += (_, _) => _vm.ShowSelectionIn3DCommand.Execute(null);
+        _selection.Child = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Children = { _selectionText, _toPlan, _to3D } };      // read-only: what is selected and where to see it, no editing actions
+        Children.Add(_selection);
+        _hint.Classes.Add("overlay"); _hint.Padding = new Thickness(14, 10); _hint.CornerRadius = new CornerRadius(8); _hint.HorizontalAlignment = HorizontalAlignment.Center; _hint.VerticalAlignment = VerticalAlignment.Bottom; _hint.MaxWidth = 520; _hint.Margin = new Thickness(0, 0, 0, 78);
         _hintOk.Click += (_, _) => { _vm.Settings.WalkHintShown = true; Refresh(); };
         _hint.Child = new StackPanel { Spacing = 6, Children = { _hintText, _hintKeys, _hintOk } };
         Children.Add(_hint);
@@ -75,6 +80,7 @@ public sealed class WalkOverlay : Grid
         _where.Text = _vm.WalkHud();
         _mapToggle.Content = T(_mapShown ? "walk.minimap.hide" : "walk.minimap.show"); _map.IsVisible = _mapShown; _map.InvalidateVisual();
         ToolTip.SetTip(_map, T("walk.minimap.tip"));
+        var has = _vm.HasSelection; _selection.IsVisible = has; _selectionText.Text = _vm.SelectionText; _toPlan.Content = T("bar.showplan"); _to3D.Content = T("bar.show3d");
         var first = !_vm.Settings.WalkHintShown; _hint.IsVisible = first; _hintText.Text = T("walk.hint"); _hintKeys.Text = T("walk.hint.keys"); _hintOk.Content = T("walk.dismiss");
         _legend.Children.Clear();
         foreach (var type in _vm.Building.Networks.Where(n => n.Visible).Select(n => n.Type).Distinct())          // one line per kind of network, not per riser

@@ -129,7 +129,11 @@ public partial class MainWindow : Window
     {
         var c = View3D.Controller; c.WalkMode = Vm.IsWalk && View3D is GlViewport3D; Cube.IsVisible = !Vm.IsWalk;
         if (Overlay != null) Overlay.IsVisible = Vm.IsWalk; if (Labels != null) Labels.IsVisible = Vm.IsWalk;
-        if (Vm.IsWalk && View3D is GlViewport3D) { if (Walker is { Running: false }) View3D.Control.Focus(); Walker?.Start(); } else Walker?.Stop();
+        if (Vm.IsWalk && View3D is GlViewport3D)
+        {
+            if (Walker is { Running: false }) { View3D.Control.Focus(); if (Vm.Walk is { } entering) c.StartWalkIntro(entering, Vm.Settings.AnimateTransitions); }       // entering: the camera comes down from above
+            Walker?.Start();
+        } else Walker?.Stop();
         c.Wireframe = Vm.Mode == ViewMode.Wireframe; c.XRay = Vm.XRay; c.CutAboveCurrent = Vm.CutAbove; c.Filter = Vm.LevelFilter switch { 0 => ImmoCad.Scene.LevelFilter.WholeBuilding, 1 => ImmoCad.Scene.LevelFilter.CurrentAndBelow, _ => ImmoCad.Scene.LevelFilter.CurrentOnly };
         if (Vm.Show3D) { View3D.Rebuild(); WatchGl(); }
     }

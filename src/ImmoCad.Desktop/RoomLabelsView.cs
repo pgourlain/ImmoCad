@@ -40,5 +40,14 @@ public sealed class RoomLabelsView : Control
             var c = KindColor(l.Kind); ctx.DrawEllipse(new SolidColorBrush(Color.FromArgb(a, c.R, c.G, c.B)), null, new Point(plate.X + 13, plate.Center.Y), 4.5, 4.5);
             ctx.DrawText(text, new Point(plate.X + 24, plate.Y + 5));
         }
+        foreach (var d in _vm.WalkLabelCache.PlaceDoors(w, _camera(), Bounds.Width, Bounds.Height))
+        {   // the number of a door: a small light plate just above the opening, under the room names
+            var a = (byte)(255 * d.Alpha); var size = Math.Clamp(13 - d.Distance / 1000.0 * 0.2, 10, 13);
+            var text = new FormattedText(d.Text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, new Typeface(Typeface.Default.FontFamily, FontStyle.Normal, FontWeight.Bold), size, new SolidColorBrush(Color.FromArgb(a, 30, 34, 44)));
+            var plate = new Rect(d.X - text.Width / 2 - 7, d.Y - text.Height / 2 - 3, text.Width + 14, text.Height + 6);
+            if (taken.Any(r => r.Intersects(plate))) continue; taken.Add(plate);
+            ctx.DrawRectangle(new SolidColorBrush(Color.FromArgb((byte)(235 * d.Alpha), 250, 250, 245)), new Pen(new SolidColorBrush(Color.FromArgb(a, 90, 96, 110)), 1), plate, 5, 5);
+            ctx.DrawText(text, new Point(plate.X + 7, plate.Y + 3));
+        }
     }
 }
