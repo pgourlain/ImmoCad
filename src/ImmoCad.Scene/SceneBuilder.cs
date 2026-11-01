@@ -1,6 +1,6 @@
 namespace ImmoCad.Scene;
 
-public enum SceneKind { Wall, Slab, Pipe, Fitting, Component, Equipment, Floor, Ceiling, Grid, Marking }
+public enum SceneKind { Wall, Slab, Pipe, Fitting, Component, Equipment, Floor, Ceiling, Grid, Marking, Frame }
 public enum LevelFilter { CurrentOnly, CurrentAndBelow, WholeBuilding }
 
 /// <summary>One drawable thing with the id of the model object it came from (for picking and shared selection).</summary>
@@ -14,7 +14,9 @@ public sealed record SceneFitting(Guid NetworkId, Guid NodeId, string Kind, (int
 public sealed record SceneBox(Guid Id, Guid LevelId, string Name, int X, int Y, int Z, int W, int D, int H, (float R, float G, float B) Color, int Radius = 0);
 /// <summary>Paint on the floor of a level (parking bay lines): flat, a few millimetres thick, white.</summary>
 public sealed record SceneMarking(Guid Id, int LevelIndex, IReadOnlyList<(int X, int Y)> Outline, IReadOnlyList<IReadOnlyList<(int X, int Y)>> Holes, int BaseZ);
-public sealed record SceneInput(IReadOnlyList<SceneLevel> Levels, IReadOnlyList<SceneWall> Walls, IReadOnlyList<ScenePipe> Pipes, IReadOnlyList<SceneFitting> Fittings, IReadOnlyList<SceneBox> Boxes, IReadOnlyList<SceneMarking>? Markings = null);
+/// <summary>One piece of the frame of an opening (a jamb, the lintel, the sill): a rectangle extruded between two heights.</summary>
+public sealed record SceneFrame(Guid Id, int LevelIndex, IReadOnlyList<(int X, int Y)> Outline, int BaseZ, int Height);
+public sealed record SceneInput(IReadOnlyList<SceneLevel> Levels, IReadOnlyList<SceneWall> Walls, IReadOnlyList<ScenePipe> Pipes, IReadOnlyList<SceneFitting> Fittings, IReadOnlyList<SceneBox> Boxes, IReadOnlyList<SceneMarking>? Markings = null, IReadOnlyList<SceneFrame>? Frames = null);
 
 public sealed record SceneOptions(Guid? CurrentLevel, LevelFilter Filter = LevelFilter.WholeBuilding, bool CutAboveCurrent = true, bool XRay = false, bool Slabs = true, ISet<Guid>? Selection = null, ISet<Guid>? HiddenLevels = null, bool Walk = false, (int X0, int Y0, int X1, int Y1)? WalkGrid = null);
 
@@ -22,6 +24,7 @@ public static class SceneBuilder
 {
     public static readonly (float, float, float) WallColor = (0.78f, 0.78f, 0.75f), SlabColor = (0.62f, 0.62f, 0.6f);
     /// <summary>Walk mode: floor, walls and ceiling get clearly different tones, otherwise a corridor reads as one flat grey.</summary>
+    public static readonly (float, float, float) FrameColor = (0.42f, 0.34f, 0.27f);
     public static readonly (float, float, float) MarkingColor = (0.97f, 0.97f, 0.95f);
     /// <summary>Thickness of the paint, millimetres: enough to be above the floor, nothing to walk into.</summary>
     public const int MarkingThicknessMm = 3;
@@ -64,6 +67,13 @@ public static class SceneBuilder
                 foreach (var mk in grp) { MeshBuilder.ExtrudeWall(mk.Outline, mk.BaseZ, MarkingThicknessMm, m, mk.Holes); foreach (var h in mk.Holes) MeshBuilder.ExtrudeSides(h, mk.BaseZ, MarkingThicknessMm, m); }
                 if (m.VertexCount == 0) continue; m.ComputeNormals();
                 res.Add(new SceneObject(input.Levels.First(l => l.Index == grp.Key).Id, SceneKind.Marking, "marking", m, MarkingColor, 1f));
+            }
+        if (input.Frames is { Count: > 0 })
+            foreach (var grp in input.Frames.Where(f => LevelVisible(f.LevelIndex)).GroupBy(f => f.LevelIndex))
+            {   // the frames of a level in one object: they only give the openings an edge
+                var m = new Mesh(); foreach (var fr in grp) MeshBuilder.ExtrudeWall(fr.Outline, fr.BaseZ, fr.Height, m);
+                if (m.VertexCount == 0) continue; m.ComputeNormals();
+                res.Add(new SceneObject(input.Levels.First(l => l.Index == grp.Key).Id, SceneKind.Frame, "frame", m, FrameColor, o.XRay && !o.Walk ? 0.4f : 1f));
             }
         bool ZVisible(int z) => cur == null || !o.CutAboveCurrent || z <= cur.AltitudeMm + cur.HeightMm;
         bool InBand(int lo, int hi) => lo <= cur!.AltitudeMm + cur.HeightMm + WalkBandMarginMm && hi >= cur.AltitudeMm - WalkBandMarginMm;
@@ -128,7 +138,7 @@ public static class SceneBuilder
     public static (Guid Id, SceneKind Kind, float Distance)? Pick(IEnumerable<SceneObject> objects, (float X, float Y, float Z) origin, (float X, float Y, float Z) dir)
     {
         (Guid, SceneKind, float)? best = null;
-        foreach (var o in objects.Where(o => o.Kind is not (SceneKind.Slab or SceneKind.Floor or SceneKind.Ceiling or SceneKind.Grid or SceneKind.Marking)))
+        foreach (var o in objects.Where(o => o.Kind is not (SceneKind.Slab or SceneKind.Floor or SceneKind.Ceiling or SceneKind.Grid or SceneKind.Marking or SceneKind.Frame)))
             if (MeshBuilder.Pick(o.Mesh, origin, dir) is { } d && (best == null || d < best.Value.Item3)) best = (o.Id, o.Kind, d);
         return best;
     }

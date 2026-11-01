@@ -431,7 +431,6 @@ public partial class MainViewModel : ObservableObject
         }
         return null;
     }
-    private static WallAxis? Geometry_Axis(Wall w) => WallGeometry.Axis(w);
 
     /// <summary>What a click at this point would do with the door/window tool: the wall, position and width of the new opening, or null on a flip / when no wall is under the cursor.</summary>
     public (Wall Wall, int Pos, int Width)? OpeningPreview(PointMm at, OpeningKind kind)

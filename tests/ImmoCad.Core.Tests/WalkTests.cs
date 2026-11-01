@@ -352,4 +352,39 @@ public class WalkTests
         for (var i = 0; i < 12; i++) l.Spaces.Add(Room($"R{i}", SpaceKind.Room, null, Box(2000 + i * 300, 100 + i * 20, 2200 + i * 300, 300 + i * 20)));
         Assert.True(labels.Place(s, cam, 1200, 800, max: 5).Count <= 5);
     }
+
+    // ---- door frames and door labels ----
+    [Fact] public void A_door_has_two_jambs_and_a_lintel_a_window_adds_a_sill_and_the_frame_stays_inside_the_hole()
+    {
+        var (b, l, cross) = Corridor(); var input = SceneMapper.Map(b);
+        var door = input.Frames!.Where(f => f.Id == cross.Openings[0].Id).ToList(); Assert.Equal(3, door.Count);
+        Assert.Equal(2, door.Count(f => f.BaseZ == 0 && f.Height == 2100)); Assert.Single(door, f => f.BaseZ == 2060 && f.Height == 40);                       // jambs from the floor to the top, lintel under it
+        Assert.All(door.SelectMany(f => f.Outline), p => Assert.InRange(p.Y, 640, 1360));                                                                       // door 700 mm wide, centred at y = 1000, frame inside the hole
+        Assert.All(door.SelectMany(f => f.Outline), p => Assert.InRange(p.X, 4990, 5210));                                                                     // 10 mm proud of the 200 mm wall
+        var (b2, _, w2) = Corridor(OpeningKind.Window, sill: 900, openingHeight: 1200); var win = SceneMapper.Map(b2).Frames!.Where(f => f.Id == w2.Openings[0].Id).ToList();
+        Assert.Equal(4, win.Count); Assert.Single(win, f => f.BaseZ == 900 && f.Height == 40);                                                                  // the sill
+        Assert.Equal(0, SceneMapper.Map(Corridor(kind: null).B).Frames!.Count);                                                                                 // no opening, no frame
+    }
+
+    [Fact] public void Frames_are_one_object_per_level_visible_in_the_orbit_and_walk_views_and_never_picked()
+    {
+        var (b, l, _) = Corridor(); var input = SceneMapper.Map(b);
+        var all = ImmoCad.Scene.SceneBuilder.Build(input, new ImmoCad.Scene.SceneOptions(null)); var frame = all.Single(o => o.Kind == ImmoCad.Scene.SceneKind.Frame);
+        Assert.Equal(2.1, frame.Mesh.Max().Z, 3); Assert.Null(ImmoCad.Scene.SceneBuilder.Pick(all.Where(o => o.Kind == ImmoCad.Scene.SceneKind.Frame), (4.5f, 0.67f, 1.0f), (1f, 0f, 0f)));      // a ray along a jamb is not stopped by it
+        Assert.Single(ImmoCad.Scene.SceneBuilder.Build(input, new ImmoCad.Scene.SceneOptions(l.Id, Walk: true)), o => o.Kind == ImmoCad.Scene.SceneKind.Frame);
+    }
+
+    [Fact] public void A_door_label_shows_above_a_door_in_front_seen_through_the_opening_and_not_behind_a_wall_or_without_a_label()
+    {
+        var (b, l, cross) = Corridor(); cross.Openings[0].Label = "12"; var labels = new WalkLabels(); var (s, cam) = Looking(b, l, 1000, 1000, -Math.PI / 2);          // west part, looking east at the door
+        var doors = labels.PlaceDoors(s, cam, 1200, 800); var d = Assert.Single(doors); Assert.Equal("12", d.Text); Assert.Equal(1, d.Alpha); Assert.InRange(d.X, 550, 650); Assert.True(d.Y < 400);
+        var (s2, cam2) = Looking(b, l, 1000, 1000, Math.PI / 2); Assert.Empty(labels.PlaceDoors(s2, cam2, 1200, 800));                                           // looking west: the door is behind
+        cross.Openings[0].Label = null; Assert.Empty(labels.PlaceDoors(s, cam, 1200, 800));                                                                       // no number, no label
+        cross.Openings[0].Label = "12"; var low = new WalkState(b, l, new WalkPoint(1000, 1000), -Math.PI / 2); Run(low, 3, new WalkInput(0, 0, -1, false));        // eye at 200 mm: the door is open there too
+        Assert.Single(labels.PlaceDoors(low, new WalkCamera { Eye = (1, 1, low.EyeZ / 1000), Yaw = low.Yaw }, 1200, 800));
+        var (b2, l2, c2) = Corridor(OpeningKind.Window, sill: 900, openingHeight: 1200); c2.Openings[0].Label = "W1"; var (s3, cam3) = Looking(b2, l2, 1000, 1000, -Math.PI / 2);
+        Assert.Single(labels.PlaceDoors(s3, cam3, 1200, 800)); Run(s3, 3, new WalkInput(0, 0, -1, false)); Assert.Empty(labels.PlaceDoors(s3, new WalkCamera { Eye = (1, 1, s3.EyeZ / 1000), Yaw = s3.Yaw }, 1200, 800));   // eye below the sill: blocked
+        var (b3, l3, c3) = Corridor(kind: null); l3.Walls[4].Openings.Add(new Opening { Label = "X", PositionMm = 800, WidthMm = 700, SillMm = 2300, HeightMm = 300 });       // an opening above the eye line
+        var (s4, cam4) = Looking(b3, l3, 1000, 1000, -Math.PI / 2); Assert.Empty(labels.PlaceDoors(s4, cam4, 1200, 800));
+    }
 }

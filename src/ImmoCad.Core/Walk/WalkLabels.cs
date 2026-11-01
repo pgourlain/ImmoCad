@@ -4,6 +4,9 @@ using ImmoCad.Scene;
 
 namespace ImmoCad.Core.Walk;
 
+/// <summary>A door number or label to draw over the opening it names.</summary>
+public sealed record DoorLabel(Guid OpeningId, string Text, double X, double Y, double Distance, double Alpha);
+
 /// <summary>One room name to draw over the first-person view: where, how strongly, and what it says.</summary>
 public sealed record RoomLabel(Guid SpaceId, string Text, SpaceKind Kind, double X, double Y, double Distance, double Alpha);
 
@@ -68,6 +71,32 @@ public sealed class WalkLabels
 
     /// <summary>The main anchor of a room (the middle, inside it), cached: used by the map.</summary>
     public PointMm AnchorFor(Space s) => Cached(s) is { Count: > 0 } a ? a[0] : default;
+
+    public const double MaxDoorDistanceMm = 10000, FullDoorAlphaMm = 5000;
+
+    /// <summary>
+    /// The numbers and labels of the doors (and other openings) in front of the eyes, near enough, and seen: the label floats just above the opening, and is seen through the opening
+    /// itself (open at the eye height) but not through a wall. Nearest first.
+    /// </summary>
+    public List<DoorLabel> PlaceDoors(WalkState w, WalkCamera cam, double width, double height, int max = 10)
+    {
+        var res = new List<DoorLabel>(); if (width < 2 || height < 2) return res;
+        var level = w.Level; var aspect = width / height; var eye = new WalkPoint(w.X, w.Y); var eyeMm = w.EyeAboveFloor;
+        foreach (var wall in level.Walls)
+            foreach (var o in wall.Openings)
+            {
+                if (string.IsNullOrWhiteSpace(o.Label) || WallGeometry.SpanOf(wall, o, exactThickness: true) is not { } span) continue;
+                var c = span.Center; var d = Math.Sqrt(Math.Pow(c.X - w.X, 2) + Math.Pow(c.Y - w.Y, 2)); if (d > MaxDoorDistanceMm) continue;
+                var z = level.AltitudeMm + Math.Min(span.TopMm + 150, level.HeightMm - 100);
+                var (nx, ny, depth) = cam.Project(c.X / 1000.0, c.Y / 1000.0, z / 1000.0, aspect);
+                if (depth < 0.3 || double.IsNaN(nx) || Math.Abs(nx) > 1.05 || Math.Abs(ny) > 1.05) continue;
+                if (!w.Ghost && !w.Area.LineOfSight(eye, new WalkPoint(c.X, c.Y), eyeMm)) continue;
+                var alpha = d <= FullDoorAlphaMm ? 1 : Math.Clamp(1 - (d - FullDoorAlphaMm) / (MaxDoorDistanceMm - FullDoorAlphaMm) * 0.65, 0.35, 1);
+                res.Add(new DoorLabel(o.Id, o.Label!.Trim(), (nx + 1) / 2 * width, (1 - ny) / 2 * height, d, alpha));
+            }
+        res.Sort((p, q) => p.Distance.CompareTo(q.Distance)); if (res.Count > max) res.RemoveRange(max, res.Count - max);
+        return res;
+    }
 
     /// <summary>The names to draw for the current view, nearest first, at most <paramref name="max"/>. Positions are in pixels of a viewport of the given size.</summary>
     public List<RoomLabel> Place(WalkState w, WalkCamera cam, double width, double height, int max = 12)
