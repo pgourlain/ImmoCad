@@ -1,5 +1,6 @@
 # Changelog
 ## Unreleased
+- Floor markings and walls traced from a plan with many rooms (a parking) are filled in 3D again: the triangulation of a shape with several holes joined the wrong copy of a repeated corner and gave up (only the sides showed). Markings whose outline crosses itself are traced again before they are drawn.
 - Import wizard: straightening a picture is much faster (the file is decoded once, the PNG preview is written with light compression and the gray pixels come from the same pass) and runs in the background with a progress bar; the tests no longer depend on the regional settings of the machine.
 - Expert mode hides the step bar and "Next step"; Align and Stretch (calibrating a plan on the level below) are expert tools. The background panel keeps only Show and opacity: the numeric scale/rotation/offset fields and "Difference mode" are removed.
 - Wall tool: Space changes the side (left / centre / right) of the segment being drawn and of the next ones, no longer of the whole chain already placed. The wall display button (solid / marks / wireframe) sits under the view cube and shows in the 2D plan only.

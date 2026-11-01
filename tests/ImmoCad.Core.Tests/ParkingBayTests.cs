@@ -81,3 +81,16 @@ public class ParkingBayTests
         Assert.Null(new ParkingBays(broken).Find(new(3700, 2000)));
     }
 }
+
+public class RepairedShapeTests
+{
+    [Fact] public void A_bow_tie_is_traced_again_into_simple_pieces_and_a_square_is_left_alone()
+    {
+        var bow = new ImmoCad.Core.Geometry.Shape([new(0, 0), new(2000, 2000), new(2000, 0), new(0, 2000)], []);
+        Assert.True(ImmoCad.Core.Geometry.PolygonOps.SelfCrosses(bow));
+        var pieces = ImmoCad.Core.Geometry.PolygonOps.Repaired(bow);
+        Assert.NotEmpty(pieces); Assert.All(pieces, p => Assert.False(ImmoCad.Core.Geometry.PolygonOps.SelfCrosses(p)));
+        var square = new ImmoCad.Core.Geometry.Shape([new(0, 0), new(2000, 0), new(2000, 2000), new(0, 2000)], []);
+        Assert.Same(square, Assert.Single(ImmoCad.Core.Geometry.PolygonOps.Repaired(square)));
+    }
+}

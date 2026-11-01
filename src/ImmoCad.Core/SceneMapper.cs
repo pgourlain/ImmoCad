@@ -83,7 +83,9 @@ public static class SceneMapper
         // the name of a parking space is painted on its floor, white like the lines (and no longer floats in the walk)
         var painted = b.Levels.SelectMany((l, i) => l.Spaces.Where(s => s.Kind == SpaceKind.Parking && s.Outline.Count >= 3)
             .SelectMany(s => PaintedText.ForSpace(s.Outline, Walk.WalkLabels.RoomText(s)).Select(poly => new SceneMarking(s.Id, i, poly.Select(p => (p.X, p.Y)).ToList(), [], l.AltitudeMm)))).ToList();
-        var markings = b.Levels.SelectMany((l, i) => l.Markings.Where(m => m.Outline.Count >= 3).Select(m => new SceneMarking(m.Id, i, m.Outline.Select(p => (p.X, p.Y)).ToList(), m.Holes.Select(h => (IReadOnlyList<(int X, int Y)>)h.Select(p => (p.X, p.Y)).ToList()).ToList(), l.AltitudeMm))).ToList();
+        // paint is often traced from a scan: crossing outlines would get no cap in 3D (only the sides), so they are traced again
+        var markings = b.Levels.SelectMany((l, i) => l.Markings.Where(m => m.Outline.Count >= 3).SelectMany(m => Geometry.PolygonOps.Repaired(new Geometry.Shape(m.Outline, m.Holes)).Select((sh, k) =>
+            new SceneMarking(k == 0 ? m.Id : Guid.NewGuid(), i, sh.Outline.Select(p => (p.X, p.Y)).ToList(), sh.Holes.Select(h => (IReadOnlyList<(int X, int Y)>)h.Select(p => (p.X, p.Y)).ToList()).ToList(), l.AltitudeMm)))).ToList();
         markings.AddRange(painted);
         var frames = b.Levels.SelectMany((l, i) => l.Walls.SelectMany(w => w.Openings.SelectMany(o => FramePieces(w, o, l, i)))).ToList();
         return new SceneInput(levels, walls, pipes, fittings, boxes, markings, frames);

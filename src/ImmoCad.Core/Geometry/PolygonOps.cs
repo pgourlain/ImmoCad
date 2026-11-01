@@ -218,6 +218,25 @@ public static class PolygonOps
         if (r.Count > 1 && r[0] == r[^1]) r.RemoveAt(r.Count - 1); return r;
     }
 
+    /// <summary>True when two sides of the outline (or of a hole) cross each other; such a ring cannot be filled by a triangulation.</summary>
+    public static bool SelfCrosses(Shape s)
+    {
+        static long Cr(PointMm o, PointMm a, PointMm b) => (long)(a.X - o.X) * (b.Y - o.Y) - (long)(a.Y - o.Y) * (b.X - o.X);
+        foreach (var ring in s.Holes.Prepend(s.Outline))
+            for (var i = 0; i < ring.Count; i++)
+                for (var j = i + 2; j < ring.Count; j++)
+                {
+                    if (i == 0 && j == ring.Count - 1) continue;
+                    PointMm p1 = ring[i], p2 = ring[(i + 1) % ring.Count], p3 = ring[j], p4 = ring[(j + 1) % ring.Count];
+                    long d1 = Cr(p3, p4, p1), d2 = Cr(p3, p4, p2), d3 = Cr(p1, p2, p3), d4 = Cr(p1, p2, p4);
+                    if (d1 * d2 < 0 && d3 * d4 < 0) return true;
+                }
+        return false;
+    }
+
+    /// <summary>The shape as simple pieces: itself when no side crosses another, otherwise its even-odd fill traced again (a detection can leave crossing outlines).</summary>
+    public static List<Shape> Repaired(Shape s) => SelfCrosses(s) ? Merge([s], 0) : [s];
+
     /// <summary>Segments intersect, touching and overlapping included.</summary>
     private static bool SegmentsIntersect(PointMm p1, PointMm p2, PointMm p3, PointMm p4)
     {

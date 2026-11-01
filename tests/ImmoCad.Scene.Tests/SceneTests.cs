@@ -346,3 +346,24 @@ public class TriangulatorTests
         Assert.DoesNotContain(SceneBuilder.Build(TwoLevels(out _, out _), new SceneOptions(null)), o => o.Kind == SceneKind.Marking);
     }
 }
+
+public class TriangulatorHolesTests
+{
+    private static double Area(IReadOnlyList<(int X, int Y)> p) { double s = 0; for (var i = 0; i < p.Count; i++) { var j = (i + 1) % p.Count; s += (double)p[i].X * p[j].Y - (double)p[j].X * p[i].Y; } return Math.Abs(s) / 2; }
+
+    [Fact] public void A_wall_with_many_rooms_next_to_each_other_gets_a_complete_cap()
+    {   // traced from a parking plan: eight bays, several of them bridged to the same corner of the outline
+        (int, int)[] outline = [(71354, 24490), (68620, 24492), (68621, 27075), (68565, 27153), (67571, 27153), (67570, 24504), (65855, 24505), (65860, 34333), (67585, 34332), (67583, 31077), (67736, 31077), (67692, 30893), (66099, 30894), (66098, 29251), (68643, 29249), (68645, 34391), (71359, 34389)];
+        IReadOnlyList<(int X, int Y)>[] holes =
+        [
+            [(68859, 32471), (71212, 32471), (71212, 34272), (68859, 34272)], [(67426, 34193), (66085, 34193), (66085, 31071), (67426, 31071)],
+            [(71194, 30514), (71191, 32332), (68857, 32328), (68861, 30510)], [(68859, 28566), (71212, 28566), (71212, 30354), (68859, 30354)],
+            [(66085, 27278), (68609, 27278), (68609, 29092), (66085, 29092)], [(71199, 28409), (68859, 28409), (68859, 26621), (71199, 26621)],
+            [(66086, 27147), (66085, 24627), (67425, 24626), (67427, 27146)], [(71212, 24649), (71212, 26463), (68846, 26463), (68846, 24649)],
+        ];
+        var (pts, tris) = Triangulator.Triangulate(outline, holes);
+        double got = 0; for (var t = 0; t + 2 < tris.Count; t += 3) got += Area([pts[tris[t]], pts[tris[t + 1]], pts[tris[t + 2]]]);
+        var expected = Area(outline) - holes.Sum(Area);
+        Assert.True(tris.Count > 0 && Math.Abs(got - expected) < expected * 0.01, $"{got} vs {expected}");
+    }
+}

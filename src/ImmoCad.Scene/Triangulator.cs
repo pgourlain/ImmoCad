@@ -26,6 +26,7 @@ public static class Triangulator
             var order = Enumerable.Range(0, poly.Count).OrderBy(i => Dist2(poly[i], m)).ToList(); var bi = -1;
             foreach (var i in order) if (Visible(m, poly[i], poly, pending, hole)) { bi = i; break; }
             if (bi < 0) continue;                                              // cannot bridge: the hole is dropped rather than corrupting the cap
+            bi = SameSpotSeeing(poly, bi, m);                                  // earlier bridges repeat vertices: join the copy whose corner faces the hole
             var merged = new List<(int X, int Y)>(poly.Count + hole.Count + 2);
             for (var i = 0; i <= bi; i++) merged.Add(poly[i]);
             for (var k = 0; k <= hole.Count; k++) merged.Add(hole[(hi + k) % hole.Count]);
@@ -34,13 +35,27 @@ public static class Triangulator
             poly = merged;
         }
         pts.AddRange(poly);
-        var tris = EarClip(pts);
         // sanity check: detected outlines can cross themselves, and ear clipping then spills triangles over the plan.
         // The triangles must add up to outline minus holes, otherwise no cap is drawn (the sides still show the wall).
+        var tris = EarClip(pts);
         double expected = Math.Abs(Area2(outline)) / 2.0 - (holes ?? []).Where(h => h.Count >= 3).Sum(h => Math.Abs(Area2(h)) / 2.0), got = 0;
         for (var i = 0; i + 2 < tris.Count; i += 3) got += Math.Abs(Cross(pts[tris[i]], pts[tris[i + 1]], pts[tris[i + 2]])) / 2.0;
         if (Math.Abs(got - expected) > 0.02 * Math.Abs(expected) + 1000) tris.Clear();
         return (pts, tris);
+    }
+
+    /// <summary>Among the vertices of <paramref name="poly"/> at the same place as <c>poly[bi]</c> (bridges repeat points), the one whose interior angle contains the direction to <paramref name="m"/>.</summary>
+    private static int SameSpotSeeing(List<(int X, int Y)> poly, int bi, (int X, int Y) m)
+    {
+        var v = poly[bi]; var n = poly.Count;
+        for (var i = 0; i < n; i++)
+        {
+            if (poly[i] != v) continue;
+            var a = poly[(i + n - 1) % n]; var c = poly[(i + 1) % n];
+            var inside = Cross(a, v, c) > 0 ? Cross(a, v, m) >= 0 && Cross(v, c, m) >= 0 : Cross(a, v, m) >= 0 || Cross(v, c, m) >= 0;
+            if (inside) return i;
+        }
+        return bi;
     }
 
     private static IEnumerable<(int X, int Y)> Oriented(IReadOnlyList<(int X, int Y)> r, bool ccw) => (Area2(r) >= 0) == ccw ? r : r.Reverse();
