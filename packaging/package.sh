@@ -23,6 +23,20 @@ case "$RID" in
     cp -R "$OUT/publish/." "$APP/Contents/MacOS/"
     sed "s/@VERSION@/$VERSION/g" "$ROOT/packaging/Info.plist" > "$APP/Contents/Info.plist"
     (cd "$OUT" && ditto -c -k --keepParent ImmoCad.app "ImmoCad-$VERSION-$RID-app.zip")
-    hdiutil create -quiet -volname ImmoCad -srcfolder "$APP" -ov -format UDZO "$OUT/ImmoCad-$VERSION-$RID.dmg" ;;
+    # Disk image: the app, a shortcut to Applications (drag and drop install) and the first-launch instructions.
+    # hdiutil is flaky on CI runners ("resource busy"): retry, then ship the zip only.
+    made=0
+    if command -v hdiutil >/dev/null; then
+      DMG="$OUT/dmg-$RID"; rm -rf "$DMG"; mkdir -p "$DMG"
+      ditto "$APP" "$DMG/ImmoCad.app"
+      ln -s /Applications "$DMG/Applications"
+      cp "$ROOT/packaging/macos/ReadMeFirst.txt" "$DMG/Read Me First.txt"
+      for try in 1 2 3; do
+        if hdiutil create -quiet -volname ImmoCad -srcfolder "$DMG" -ov -format UDZO "$OUT/ImmoCad-$VERSION-$RID.dmg"; then made=1; break; fi
+        sleep 5
+      done
+      rm -rf "$DMG"
+    fi
+    [ "$made" = "1" ] || echo "dmg creation failed; the zip is shipped on its own" ;;
 esac
 echo "Packaged $OUT"
