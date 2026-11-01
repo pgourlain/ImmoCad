@@ -39,7 +39,7 @@ The application skeleton, conventions and quality bar follow **CinnabarSharp** (
 | `ImmoCad.Scene` | Pure C# mesh generation: wall extrusion, slabs, pipe cylinders, fittings, equipment boxes; picking (ray/mesh). BCL only. |
 | `ImmoCad.Geo` | Phase 12: geocoding, cadastre and map tiles over HTTP (IGN Géoplateforme), disk cache. No UI. |
 | `ImmoCad.Mcp` | MCP server (official C# SDK `ModelContextProtocol`), Core only. Hosted by the desktop executable with `--mcp`. |
-| `ImmoCad.Desktop` | Avalonia 12 app (MVVM): plan view, elevation view, 3D view, panels. Executable named `ImmoCad`. |
+| `ImmoCad.Desktop` | Avalonia 12 app (MVVM): plan view (with its side views), 3D view, walk view, panels. Executable named `ImmoCad`. |
 | `ImmoCad.Core.Tests` | xunit v3. Model, history, actions, tools, import, exports, `CoreArchitectureTests`. |
 | `ImmoCad.Plan.Tests` | xunit v3. Detection on synthetic plans, pinned checksums. |
 | `ImmoCad.Scene.Tests` | xunit v3. Mesh generation, picking, pinned checksums. |
@@ -284,15 +284,15 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 - [x] Templates: place 2 or 3 risers at once with fixed spacing (e.g. hot + cold water, heating supply + return, or hot + cold + drainage), editable spacing and order. Saved as user templates. *(Core `AddRiserTemplate`; no UI, no saved user templates)* *(spacing editable; saving user templates is not wired to the UI yet)*
 - [x] Riser snaps to wall corners and faces with an offset (default: 50 mm from each face).
 
-**8b — Pipe on a wall corner from the elevation view**
+**8b — Pipe on a wall corner from the elevation view** *(the elevation view, its toolbar button and its code were removed: pipes are laid on the side views of the plan, reached with the 2D view cube)*
 
-- [x] Elevation view: pick a wall (or two walls meeting at a corner) and see it from the front, with level lines and altitudes. *(longest face of the selected wall; no two-wall corner picking)*
-- [x] In the elevation view, click the corner (or a point on the face) → vertical pipe attached to that corner, offset from both faces; drag to set its top and bottom, snapping to level altitudes. *(click = whole building, drag = top/bottom snapped to level lines; offset 50 mm from the face)*
+- [x] ~~Elevation view~~ *(removed)*: pick a wall (or two walls meeting at a corner) and see it from the front, with level lines and altitudes. *(longest face of the selected wall; no two-wall corner picking)*
+- [x] ~~In the elevation view~~ *(removed; the side views of the plan do the same)*, click the corner (or a point on the face) → vertical pipe attached to that corner, offset from both faces; drag to set its top and bottom, snapping to level altitudes. *(click = whole building, drag = top/bottom snapped to level lines; offset 50 mm from the face)*
 - [x] Horizontal pipe along the wall face at a given height above the floor.
 
 **8c — Extent over several levels**
 
-- [x] Every vertical run has an editable extent "from level X to level Y" (Properties panel) and top/bottom handles in elevation and 3D views that snap to level altitudes; slab crossings are added automatically. *(Core `SetRiserExtent`; no Properties/handle UI yet)* *(Properties: from/to level; elevation view: top/bottom handles snap to level lines; no 3D handles)*
+- [x] Every vertical run has an editable extent "from level X to level Y" (Properties panel) and top/bottom handles in the side views and 3D views that snap to level altitudes; slab crossings are added automatically. *(Core `SetRiserExtent`; no Properties/handle UI yet)* *(Properties: from/to level; elevation view: top/bottom handles snap to level lines; no 3D handles)*
 
 **8d — Direct manipulation with handles**
 
@@ -304,7 +304,7 @@ Walls traced from a scan are often slightly crooked or made of many short broken
 - [x] Move a whole run perpendicular to itself (keeps connections by stretching the connected segments).
 - [x] Type a length while dragging (e.g. "1.25" Enter) for precision.
 - [x] Each gesture = one history step. The tool previews by quiet model changes and commits on pointer-up (same pattern as CinnabarSharp's editable tools).
-- [x] The same handles work in the plan, elevation and 3D views (3D: drag constrained to the axis under the mouse, axis gizmo shown). *(plan: all three handles; elevation: top/bottom of vertical pipes; 3D: pipe ends, drag locked to the pipe axis with a dashed gizmo and the live length — drawn by the software viewport, the OpenGL viewport has no overlay yet)*
+- [x] The same handles work in the plan, the side views and 3D views (3D: drag constrained to the axis under the mouse, axis gizmo shown). *(plan: all three handles; elevation: top/bottom of vertical pipes; 3D: pipe ends, drag locked to the pipe axis with a dashed gizmo and the live length — drawn by the software viewport, the OpenGL viewport has no overlay yet)*
 
 **Validation**
 
@@ -418,7 +418,7 @@ Walk through the corridors of each level, at eye height, to see the pipes and ob
 - [x] Floors and ceilings for walking: flat rectangles over the bounding box of the level's walls (with a small margin), at the level's altitude and at altitude + height. `SceneLevel` already has both values. Walls hide the overflow from the inside; it only shows through windows and gaps, which is acceptable. *(flat boxes over the bounding box of the level's walls; picking ignores them)*
 - [x] A gap between walls is already a passage: walking needs no opening data there. Check it on a traced plan (doors are usually gaps) before anything else in this phase. *(checked on the author's plan-126: 0 openings and 0 rooms, yet about 99 % of the free floor of each upper level is connected, and the facade gaps lead outside; the basements' centre fell in a closed 7 m² pocket, so the automatic start now picks the largest free region instead)*
 - [x] Doors and windows placed with the tools: `Wall.Openings` never reach `SceneMapper`, so the wall stays solid at these places (only these places). Cut per height band (below the sill, opening, above the lintel), using `PolygonOps.Subtract` on the footprint for the opening band, so lintels and sills stay. A wall without openings keeps exactly the same mesh (pinned checksums unchanged). *(`SceneMapper` cuts the wall in bands at sills and tops with `PolygonOps.Subtract`; a wall without openings keeps its single extrusion (checksums unchanged); walls whose centre line is undefined are not cut, like in the plan)*
-- [x] Opening geometry in Core, shared by the plan, the elevation, the opening hit test, the 3D mesh, the door frames and the walk collisions (`WallGeometry.SpanOf` / `SpanAt`, exact wall thickness for what is drawn, capped and slightly wider for what is cut). *(an opening is still placed along the axis of its wall, the longest edge of the outline: on a merged wall group that is the group's axis, not the nearest wall section; a per-opening section would have to follow every edit of the wall (move, cut, straighten, image transform), so it is dropped)*
+- [x] Opening geometry in Core, shared by the plan, the side views, the opening hit test, the 3D mesh, the door frames and the walk collisions (`WallGeometry.SpanOf` / `SpanAt`, exact wall thickness for what is drawn, capped and slightly wider for what is cut). *(an opening is still placed along the axis of its wall, the longest edge of the outline: on a merged wall group that is the group's axis, not the nearest wall section; a per-opening section would have to follow every edit of the wall (move, cut, straighten, image transform), so it is dropped)*
 - [x] Door frames: a jamb on each side and a lintel (a sill for a window), 40 mm wide, inside the hole and 10 mm proud of the wall; drawn in the orbit and walk views; the number or label of a door (or window) floats as a small light plate above it in the walk view, seen through the opening, not through a wall, with the room names (key R). No leaf and no glass: the opening stays a hole.
 - [ ] Sample building: add a corridor, rooms, doors and pipes along the corridor, so the mode can be tried immediately and tested. *(not done: the sample is pinned by many tests (bill of materials, IFC counts), so it stays as it is)*
 
@@ -507,7 +507,7 @@ Painted lines on a parking floor are traced as thin walls: they block the walk, 
 
 - [x] Import JPG plans for several levels, calibrate, detect walls, align levels. *(functionally complete, automated; not validated on the 3 OSes)*
 - [x] 3D view of the building with level visibility and X-ray mode. *(functionally complete, automated; GL path unverified)*
-- [x] Radiators from the library, risers from the top view (with templates), pipes on wall corners from the elevation view, level extents, extend/elbow/tee with handles. *(functionally complete, automated)*
+- [x] Radiators from the library, risers from the top view (with templates), pipes on the side views of the plan, level extents, extend/elbow/tee with handles. *(functionally complete, automated)*
 - [x] Object palette with valves dropped onto pipes.
 - [x] Bill of materials export, IFC export and FreeCAD macro export. *(IFC/macro not yet opened in FreeCAD by hand)*
 - [ ] Phases 0 to 9 validated on the 3 OSes (Phase 12 comes after the MVP).

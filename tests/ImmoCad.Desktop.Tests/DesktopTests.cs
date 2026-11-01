@@ -267,29 +267,6 @@ public class NetworkUiTests
     }, CancellationToken.None);
 }
 
-public class ElevationUiTests
-{
-    private readonly HeadlessFixture f = new();
-
-    [Fact] public Task Elevation_of_selected_wall_vertical_horizontal_pipes_and_level_snap() => f.Session.Dispatch(() =>
-    {
-        var vm = new MainViewModel(); var w = new MainWindow { DataContext = vm }; w.Show();
-        vm.ShowElevationCommand.Execute(null); Assert.False(vm.IsElevation); Assert.Contains("Sélectionnez", vm.Status);   // nothing selected
-        vm.SelectWalls([vm.CurrentLevel!.Walls[0].Id], false); vm.ShowElevationCommand.Execute(null);
-        Assert.True(vm.IsElevation); Assert.NotNull(vm.Plane);
-        var nets = vm.Building.Networks.Count; vm.RiserType = ImmoCad.Core.Model.NetworkType.ColdWater;
-        vm.PlaceVerticalPipe(300, null, null);                                   // whole building
-        var n = vm.Building.Networks[^1]; Assert.Equal(nets + 1, vm.Building.Networks.Count);
-        Assert.Equal(0, n.Nodes.Min(x => x.Position.Z)); Assert.Equal(8100, n.Nodes.Max(x => x.Position.Z));
-        vm.PlaceVerticalPipe(1500, 2700, 5400); Assert.Equal(2700, vm.Building.Networks[^1].Nodes.Min(x => x.Position.Z));
-        var segs = vm.Building.Networks.Sum(x => x.Segments.Count); vm.PlaceHorizontalPipe(300, 3000, 2400); Assert.Equal(segs + 1, vm.Building.Networks.Sum(x => x.Segments.Count));
-        vm.PlaceHorizontalPipe(300, 305, 2400); Assert.Equal(segs + 1, vm.Building.Networks.Sum(x => x.Segments.Count));    // too short: ignored
-        var dir = Path.Combine(AppContext.BaseDirectory, "screenshots"); Directory.CreateDirectory(dir);
-        w.CaptureRenderedFrame()!.Save(Path.Combine(dir, "elevation.png"));
-        vm.SetModeCommand.Execute("Plan"); Assert.True(vm.IsPlan); w.Close();
-    }, CancellationToken.None);
-}
-
 public class HandleUiTests
 {
     private readonly HeadlessFixture f = new();
@@ -563,19 +540,6 @@ public class RoomToolsTests
         vm.ApplySpaceCommand.Execute(null); Assert.Equal("Chaufferie", vm.CurrentLevel.Spaces.Single().Name);   // untouched name stays
     }, CancellationToken.None);
 
-    [Fact] public Task Side_views_show_the_whole_building_and_pipes_are_drawn_inside_it() => f.Session.Dispatch(() =>
-    {
-        var vm = Basement(); var pts = vm.Building.Levels.SelectMany(l => l.Walls.SelectMany(w => w.Footprint)).ToList();
-        int x0 = pts.Min(p => p.X), x1 = pts.Max(p => p.X), y0 = pts.Min(p => p.Y), y1 = pts.Max(p => p.Y);
-        vm.ElevationDepth = 700; vm.ShowSideCommand.Execute("South"); Assert.True(vm.IsElevation);
-        var south = vm.Plane!; Assert.Equal(x1 - x0, south.Length, 0); Assert.Equal(y0 + 700, south.ToPlan(0).Y); Assert.Equal(x0, south.ToPlan(0).X);   // inside, left = west
-        vm.RotateViewCommand.Execute(-1); Assert.Equal(ImmoCad.Core.Geometry.ViewSide.West, vm.Side);                                                                         // turns round the building
-        var west = vm.Plane!; Assert.Equal(y1 - y0, west.Length, 0); Assert.Equal(x0 + 700, west.ToPlan(0).X); Assert.Equal(y1, west.ToPlan(0).Y);    // looking east: south on the right
-        vm.RotateViewCommand.Execute(-1); vm.RotateViewCommand.Execute(-1); vm.RotateViewCommand.Execute(-1); Assert.Equal(ImmoCad.Core.Geometry.ViewSide.South, vm.Side);
-        var steps = vm.History.Items.Count; vm.PlaceHorizontalPipe(500, 3000, 1500); Assert.Equal(steps + 1, vm.History.Items.Count);
-        var n = vm.Building.Networks[^1].Nodes; Assert.All(n, q => Assert.Equal(y0 + 700, q.Position.Y));
-    }, CancellationToken.None);
-
     [Fact] public Task Delete_removes_a_selected_pipe_room_or_equipment_in_one_undoable_step() => f.Session.Dispatch(() =>
     {
         var vm = Basement(); var nets = vm.Building.Networks.Count; vm.PlaceRiser(new(1000, 1000));
@@ -613,7 +577,7 @@ public class RoomToolsTests
 
     [Fact] public Task Side_view_can_show_only_the_current_level() => f.Session.Dispatch(() =>
     {
-        var vm = Basement(); var l = vm.CurrentLevel!; vm.ShowSideCommand.Execute("East");
+        var vm = Basement(); var l = vm.CurrentLevel!; vm.ChoosePlane(ViewPlane.YZ, false);
         Assert.True(vm.ElevationLevelOnly); Assert.Equal((l.AltitudeMm, l.AltitudeMm + l.HeightMm), vm.ElevationRange());
         vm.ElevationLevelOnly = false; var all = vm.Building.Levels; Assert.Equal((all.Min(x => x.AltitudeMm), all.Max(x => x.AltitudeMm + x.HeightMm)), vm.ElevationRange());
     }, CancellationToken.None);
@@ -1098,23 +1062,17 @@ public class ExtentUiTests
 {
     private readonly HeadlessFixture f = new();
 
-    [Fact] public Task Select_a_riser_in_elevation_drag_its_top_handle_to_a_level_and_edit_the_extent_in_properties() => f.Session.Dispatch(() =>
+    [Fact] public Task The_extent_of_a_riser_is_edited_from_level_to_level_in_the_properties_in_one_undoable_step() => f.Session.Dispatch(() =>
     {
         var vm = new MainViewModel(); var w = new MainWindow { DataContext = vm, Width = 1280, Height = 820 }; w.Show(); w.UpdateLayout();
-        vm.SelectWalls([vm.CurrentLevel!.Walls[0].Id], false); vm.ShowElevationCommand.Execute(null); w.UpdateLayout(); w.CaptureRenderedFrame();
-        var elev = w.FindControl<ElevationView>("Elev")!; var plane = vm.Plane!;
-        var net = vm.Building.Networks[0]; var seg = net.Segments[0]; var node = net.Nodes.OrderBy(n => n.Position.Z).Last();
+        var net = vm.Building.Networks[0]; var seg = net.Segments[0];
         vm.SelectSegment(net.Id, seg.Id); Assert.Contains("→", vm.ExtentInfo); Assert.Equal(["RDC", "R+1", "R+2"], vm.LevelNames); Assert.Equal(0, vm.ExtentFrom); Assert.Equal(2, vm.ExtentTo);
         // properties: from R+1 to R+2 only
         var steps = vm.History.Items.Count; vm.ExtentFrom = 1; vm.ExtentTo = 2; vm.ApplyExtentCommand.Execute(null);
         Assert.Equal(steps + 1, vm.History.Items.Count); Assert.Equal(2700, vm.Building.Networks[0].Nodes.Min(n => n.Position.Z)); Assert.Equal(8100, vm.Building.Networks[0].Nodes.Max(n => n.Position.Z));
-        // handle drag (through the view's release path): the top end goes to the level line nearest the drop
-        var topNode = vm.Building.Networks[0].Nodes.OrderBy(n => n.Position.Z).Last(); steps = vm.History.Items.Count;
-        Assert.True(vm.DragVerticalEnd(vm.Building.Networks[0].Id, topNode.Id, 5390)); Assert.Equal(5400, vm.Building.Networks[0].Nodes.Max(n => n.Position.Z)); Assert.Equal(steps + 1, vm.History.Items.Count);
-        Assert.False(vm.DragVerticalEnd(vm.Building.Networks[0].Id, topNode.Id, 2700));                       // would collapse the run onto its other end
-        Assert.Equal((1, 1), (vm.ExtentFrom, vm.ExtentTo));                                                     // the panel follows: the run now spans R+1 only
+        Assert.Equal((1, 2), (vm.ExtentFrom, vm.ExtentTo));                                                     // the panel follows
         w.CaptureRenderedFrame()!.Save(Path.Combine(AppContext.BaseDirectory, "screenshots", "extent.png"));
-        vm.UndoCommand.Execute(null); vm.UndoCommand.Execute(null); Assert.Equal(0, vm.Building.Networks[0].Nodes.Min(n => n.Position.Z));
+        vm.UndoCommand.Execute(null); Assert.Equal(0, vm.Building.Networks[0].Nodes.Min(n => n.Position.Z)); w.Close();
     }, CancellationToken.None);
 }
 

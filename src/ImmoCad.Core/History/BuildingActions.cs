@@ -502,18 +502,6 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
             return net;
         }, n => n.Id);
 
-    /// <summary>Horizontal pipe along the wall face at a given altitude, from u0 to u1.</summary>
-    public Network AddHorizontalAlong(Geometry.ElevationPlane plane, double u0, double u1, NetworkType type, int zMm, int diameterMm, Guid? networkId = null) =>
-        Edit("Add horizontal pipe", BuildingEventKind.NetworkChanged, () =>
-        {
-            var net = networkId is { } id ? Net(id) : new Network { Name = type.ToString(), Type = type };
-            if (networkId == null) building.Networks.Add(net);
-            var p0 = plane.ToPlan(u0); var p1 = plane.ToPlan(u1);
-            var a = new Node { Position = new(p0.X, p0.Y, zMm) }; var b2 = new Node { Position = new(p1.X, p1.Y, zMm) };
-            net.Nodes.Add(a); net.Nodes.Add(b2); net.Segments.Add(new Segment { A = a.Id, B = b2.Id, DiameterMm = diameterMm, Material = Networks.NetworkQueries.DefaultMaterial(type) });
-            return net;
-        }, n => n.Id);
-
     // ---- Direct manipulation of pipes (handles). Each is one history step; segments stay axis-aligned. ----
 
     private static bool AxisAligned(PointMm3 a, PointMm3 b) => ((a.X != b.X ? 1 : 0) + (a.Y != b.Y ? 1 : 0) + (a.Z != b.Z ? 1 : 0)) <= 1;

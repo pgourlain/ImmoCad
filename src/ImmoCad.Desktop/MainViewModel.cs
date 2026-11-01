@@ -18,7 +18,7 @@ namespace ImmoCad.Desktop;
 
 public enum ViewPlane { XY, XZ, YZ }
 public enum WallDisplay { Solid, Wireframe, Hidden }
-public enum ViewMode { Plan, Solid, Wireframe, Elevation, Site, Walk }
+public enum ViewMode { Plan, Solid, Wireframe, Site, Walk }
 public enum ToolKind { Select, DrawWall, Align, Riser, DrawPipe, Place, Door, Window, Space, Measure, NumberCellars, Straighten, Stretch, CutWall, MergeRegion, PaintZone }
 
 /// <summary>One button of the level bar.</summary>
@@ -201,13 +201,6 @@ public partial class MainViewModel : ObservableObject
         Actions.SetRiserExtent(sel.NetworkId, Building.Levels[lo].AltitudeMm, Building.Levels[hi].AltitudeMm + Building.Levels[hi].HeightMm); Status = T("extent.changed");
         var keep = sel; Refresh(); SelectSegment(keep.NetworkId, keep.SegmentId);
     }
-    /// <summary>Top/bottom handle of a vertical pipe (elevation view): snaps to the level lines. One history step.</summary>
-    public bool DragVerticalEnd(Guid networkId, Guid nodeId, int zMm)
-    {
-        var ok = Actions.SetNodeAltitude(networkId, nodeId, ElevationPlane.SnapZ(Building, zMm, 150)); if (ok) { var s = SelectedSegment; Refresh(); if (s != null) SelectSegment(s.Value.NetworkId, s.Value.SegmentId); }
-        return ok;
-    }
-
     // ---- Tools in the 3D view: same view-model entry points as the plan ----
     public bool IsPlaneTool => Tool is ToolKind.Riser or ToolKind.Place or ToolKind.Door or ToolKind.Window or ToolKind.Space or ToolKind.Measure or ToolKind.NumberCellars;
     public void Click3D(PointMm at)
@@ -285,26 +278,11 @@ public partial class MainViewModel : ObservableObject
             Palette.Add(new PaletteItem(e.Id, T("cat." + e.Category), e.Name, e.Inline ? "⊗" : e.Category == "Sanitary" ? "◍" : "▤", Has("desc." + e.Id, Language) ? T("desc." + e.Id) : ""));
     }
 
-    // ---- Elevation view ----
-    /// <summary>Shows the front view of the longest face of the selected wall, seen from the side facing the building's centre.</summary>
-    [RelayCommand] private void ShowElevation()
-    {
-        var wall = CurrentLevel?.Walls.FirstOrDefault(w => SelectedWalls.Contains(w.Id));
-        if (wall == null || wall.Footprint.Count < 2) { Status = T("elev.select"); return; }
-        var fp = wall.Footprint; var best = 0; double bestLen = -1;
-        for (var i = 0; i < fp.Count; i++) { var a = fp[i]; var b = fp[(i + 1) % fp.Count]; var len = Math.Sqrt(Math.Pow(a.X - b.X, 2) + Math.Pow(a.Y - b.Y, 2)); if (len > bestLen) { bestLen = len; best = i; } }
-        var pa = fp[best]; var pb = fp[(best + 1) % fp.Count];
-        var all = Building.Levels.SelectMany(l => l.Walls.SelectMany(w => w.Footprint)).ToList();
-        PointMm centre = new((int)all.Average(p => p.X), (int)all.Average(p => p.Y));
-        var side = new ElevationPlane(pa, pb, 50, +1).Distance(centre) >= 0 ? +1 : -1;
-        Side = null; Plane = new ElevationPlane(pa, pb, 50, side); Mode = ViewMode.Elevation; Hint = T("elev.hint");
-    }
-
     // ---- The plan canvas seen on another plane (XY = plan, XZ / YZ = side views, Z always up). Same tools and selection as the plan. ----
     [ObservableProperty] private ViewPlane _viewPlane = ViewPlane.XY;
     [ObservableProperty] private bool _planeFlip;                       // look from the opposite side (XZ: from the north, YZ: from the west)
     public bool IsSidePlane => ViewPlane != ViewPlane.XY;
-    public bool ShowSideControls => IsSidePlane || IsElevation;
+    public bool ShowSideControls => IsSidePlane;
     partial void OnViewPlaneChanged(ViewPlane value) { MeasurePoints.Clear(); OnPropertyChanged(nameof(IsSidePlane)); OnPropertyChanged(nameof(ShowSideControls)); ClearSelectionForPlane(); Changed?.Invoke(); }
     partial void OnPlaneFlipChanged(bool value) { Changed?.Invoke(); }
     public ViewSide PlaneSide => ViewPlane == ViewPlane.XZ ? (PlaneFlip ? ViewSide.North : ViewSide.South) : (PlaneFlip ? ViewSide.West : ViewSide.East);
@@ -366,45 +344,14 @@ public partial class MainViewModel : ObservableObject
         Status = T("elev.vertical"); Refresh();
     }
 
-    // whole-building side views (front / right / back / left), reached from the toolbar; the plan stays the top view
-    public ViewSide? Side { get; private set; }
+    // side views: the plan canvas seen on the XZ / YZ planes (see ViewPlane); how deep inside the outer line the pipes sit
     [ObservableProperty] private int _elevationDepth = 500;
     /// <summary>Side views show only the current level (its floor to its ceiling) when true, the whole building otherwise.</summary>
     [ObservableProperty] private bool _elevationLevelOnly = true;
     partial void OnElevationLevelOnlyChanged(bool value) => Changed?.Invoke();
     public IEnumerable<Level> ElevationLevels() => ElevationLevelOnly && CurrentLevel is { } l ? [l] : Building.Levels;
     public (int Bottom, int Top) ElevationRange() { var ls = ElevationLevels().ToList(); return ls.Count == 0 ? (0, 3000) : (ls.Min(x => x.AltitudeMm), ls.Max(x => x.AltitudeMm + x.HeightMm)); }
-    /// <summary>How far from the viewing plane pipes are still drawn: only the ones on the selected wall face, or every pipe for a side view.</summary>
-    public int ElevationReach => Side != null ? int.MaxValue / 4 : 600;
-    partial void OnElevationDepthChanged(int value) { if (Side is { } s) { Plane = ElevationPlane.ForSide(Building, s, value); Changed?.Invoke(); } }
-
-    [RelayCommand] private void ShowSide(string side)
-    {
-        if (side == "Top") { RequestMode(ViewMode.Plan); return; }
-        if (Building.Levels.Count == 0) return;
-        Side = Enum.Parse<ViewSide>(side); Plane = ElevationPlane.ForSide(Building, Side.Value, ElevationDepth); Mode = ViewMode.Elevation; Hint = T("elev.hint"); Changed?.Invoke();
-    }
-    /// <summary>Walks round the building: +1 = the viewer walks counter-clockwise round the building seen from above (front → right → back → left), -1 = clockwise.</summary>
-    [RelayCommand] private void RotateView(int step)
-    {
-        var cur = Side ?? ViewSide.South; ShowSide(((ViewSide)(((int)cur + step + 4) % 4)).ToString());
-    }
-
-    /// <summary>Vertical pipe on the face; whole building by default, snapped to level lines when dragged.</summary>
-    public void PlaceVerticalPipe(double u, double? zFrom, double? zTo)
-    {
-        if (Plane == null || Building.Levels.Count == 0) return;
-        var lo = (int)(zFrom ?? Building.Levels[0].AltitudeMm); var hi = (int)(zTo ?? Building.Levels[^1].AltitudeMm + Building.Levels[^1].HeightMm);
-        Actions.AddVerticalPipe(Plane, Math.Clamp(u, 0, Plane.Length), RiserType, Math.Min(lo, hi), Math.Max(lo, hi), RiserDiameter);
-        Status = T("elev.vertical"); Refresh();
-    }
-
-    public void PlaceHorizontalPipe(double u0, double u1, double z)
-    {
-        if (Plane == null || Math.Abs(u1 - u0) < 20) return;
-        Actions.AddHorizontalAlong(Plane, Math.Clamp(u0, 0, Plane.Length), Math.Clamp(u1, 0, Plane.Length), PipeType, (int)z, PipeDiameter);
-        Status = T("elev.horizontal"); Refresh();
-    }
+    partial void OnElevationDepthChanged(int value) => Changed?.Invoke();
 
     // ---- Doors, windows, rooms, cellars, measure ----
     [ObservableProperty] private int _openingWidth;                 // 0 = default (800 apartments, 700 cellars, 1200 windows)
@@ -825,7 +772,6 @@ public partial class MainViewModel : ObservableObject
     /// <summary>Always resolved by id: undo/redo rebuilds the whole object graph, so references go stale.</summary>
     public Level? CurrentLevel => Building.Levels.FirstOrDefault(l => l.Id == CurrentLevelId) ?? Building.Levels.FirstOrDefault();
     public bool Is3D => Mode is ViewMode.Solid or ViewMode.Wireframe;
-    public bool IsElevation => Mode == ViewMode.Elevation;
     public bool IsPlan => Mode == ViewMode.Plan;
     /// <summary>Plan on the left, 3D on the right, both driven by the same level and selection.</summary>
     [ObservableProperty] private bool _sideBySide;
@@ -835,7 +781,6 @@ public partial class MainViewModel : ObservableObject
     public bool IsSite => Mode == ViewMode.Site;
     public static readonly Guid SiteLevelId = new("00000000-0000-0000-0000-00000000517e");
     public string Title => ActiveIndex < 0 ? "ImmoCad" : $"{(History.IsDirty ? "• " : "")}{Active.Title} — ImmoCad";
-    public ElevationPlane? Plane { get; private set; }
     public bool IsSelectTool => Tool == ToolKind.Select;
     public bool IsDrawTool => Tool == ToolKind.DrawWall;
     public bool IsAlignTool => Tool == ToolKind.Align;
@@ -880,7 +825,7 @@ public partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(HasDocument)); OnPropertyChanged(nameof(ShowWelcome)); Refresh();
     }
 
-    partial void OnModeChanged(ViewMode value) { if (value != ViewMode.Walk) EndWalk(); else PanelTab = 2; OnPropertyChanged(nameof(IsWalk)); OnPropertyChanged(nameof(NotWalk)); OnPropertyChanged(nameof(ShowSelectionActions)); if (value == ViewMode.Site) { FocusSite(); PanelTab = 4; } OnPropertyChanged(nameof(ShowSideControls)); OnPropertyChanged(nameof(Is3D)); OnPropertyChanged(nameof(ShowPlan)); OnPropertyChanged(nameof(Show3D)); OnPropertyChanged(nameof(IsElevation)); OnPropertyChanged(nameof(IsPlan)); OnPropertyChanged(nameof(IsSite)); Changed?.Invoke(); }
+    partial void OnModeChanged(ViewMode value) { if (value != ViewMode.Walk) EndWalk(); else PanelTab = 2; OnPropertyChanged(nameof(IsWalk)); OnPropertyChanged(nameof(NotWalk)); OnPropertyChanged(nameof(ShowSelectionActions)); if (value == ViewMode.Site) { FocusSite(); PanelTab = 4; } OnPropertyChanged(nameof(ShowSideControls)); OnPropertyChanged(nameof(Is3D)); OnPropertyChanged(nameof(ShowPlan)); OnPropertyChanged(nameof(Show3D)); OnPropertyChanged(nameof(IsPlan)); OnPropertyChanged(nameof(IsSite)); Changed?.Invoke(); }
     partial void OnToolChanged(ToolKind value)
     {
         OnPropertyChanged(nameof(IsSelectTool)); OnPropertyChanged(nameof(IsDrawTool)); OnPropertyChanged(nameof(IsAlignTool)); OnPropertyChanged(nameof(IsRiserTool)); OnPropertyChanged(nameof(IsPipeTool)); OnPropertyChanged(nameof(IsPlaceTool)); OnPropertyChanged(nameof(IsDoorTool)); OnPropertyChanged(nameof(IsWindowTool)); OnPropertyChanged(nameof(IsSpaceTool)); OnPropertyChanged(nameof(IsMeasureTool)); OnPropertyChanged(nameof(IsNumberTool)); OnPropertyChanged(nameof(IsStraightenTool)); OnPropertyChanged(nameof(IsStretchTool)); OnPropertyChanged(nameof(IsCutWallTool)); OnPropertyChanged(nameof(IsMergeRegionTool)); OnPropertyChanged(nameof(IsPaintTool)); PaintClear(); CutPoints.Clear(); CutAwaitSide = false; MeasurePoints.Clear(); NumberPending.Clear(); SpaceHover = null;

@@ -132,7 +132,6 @@
             <Button vm:L.Content="bar.towall" vm:L.Tip="tip.towall" Command="{Binding ConvertSelectionToWallsCommand}" IsVisible="{Binding MarkingsSelected}" />
             <Button vm:L.Content="bar.tomarking" vm:L.Tip="tip.tomarking" Command="{Binding ConvertSelectionToMarkingsCommand}" IsVisible="{Binding WallsSelected}" />
             <Button vm:L.Content="bar.copylevels" Command="{Binding CopySelectionToAllLevelsCommand}" IsVisible="{Binding WallsSelected}" />
-            <Button vm:L.Content="bar.elevation" Command="{Binding ShowElevationCommand}" IsVisible="{Binding WallsSelected}" />
             <Button vm:L.Content="bar.properties" Command="{Binding ShowPropertiesCommand}" />
             <Button vm:L.Content="bar.delete" Command="{Binding DeleteSelectionCommand}" />
           </WrapPanel>
@@ -437,7 +436,6 @@
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
           <Button vm:L.Content="view.2d" Command="{Binding SetViewPlaneCommand}" CommandParameter="XY" vm:L.Tip="tip.side.xy" />
           <ToggleButton Content="⫴" vm:L.Tip="tip.sidebyside" IsChecked="{Binding SideBySide}" />
-          <Button vm:L.Content="view.elevation" Command="{Binding ShowElevationCommand}" vm:L.Tip="tip.elevation" />
           <Button Content="{Binding WallDisplayLabel}" Command="{Binding CycleWallDisplayCommand}" vm:L.Tip="tip.walldisplay" />
           <ToggleButton vm:L.Content="view.levelonly" IsChecked="{Binding ElevationLevelOnly}" IsVisible="{Binding ShowSideControls}" vm:L.Tip="tip.levelonly" />
           <NumericUpDown Value="{Binding ElevationDepth}" Minimum="0" Maximum="50000" Increment="100" Width="200" vm:L.Format="fmt.depth.pipes" IsVisible="{Binding ShowSideControls}" />
@@ -502,7 +500,6 @@
         <Grid x:Name="View3DHost" IsVisible="{Binding Show3D}" />
       </UniformGrid>
       <vm:SiteView x:Name="SiteMap" IsVisible="{Binding IsSite}" />
-      <vm:ElevationView x:Name="Elev" IsVisible="{Binding IsElevation}" Focusable="True" />
     </Grid>
   </DockPanel>
 </Window>

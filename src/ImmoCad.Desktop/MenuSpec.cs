@@ -87,7 +87,6 @@ public static class MenuFactory
                 new(T("menu.zoomin"), vm.ZoomPlanCommand, "in", Key: Key.OemPlus, UseCommandKey: true),
                 new(T("menu.zoomout"), vm.ZoomPlanCommand, "out", Key: Key.OemMinus, UseCommandKey: true),
                 new(T("menu.zoomfit"), vm.ZoomPlanCommand, "fit", Key: Key.D0, UseCommandKey: true),
-                new(T("menu.view.elev"), vm.ShowElevationCommand),
                 new(T("menu.view.solid"), vm.SetModeCommand, "Solid", Key: Key.D3, UseCommandKey: true),
                 new(T("menu.view.wire"), vm.SetModeCommand, "Wireframe"),
                 new(T("menu.view.walk"), vm.WalkCommand),

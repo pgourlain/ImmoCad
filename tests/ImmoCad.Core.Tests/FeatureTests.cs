@@ -668,10 +668,8 @@ public class ElevationTests
         var n = a.AddVerticalPipe(plane, 0, NetworkType.ColdWater, 0, ImmoCad.Core.Geometry.ElevationPlane.SnapZ(b, 8050), 20);
         Assert.Equal(steps + 1, h.Items.Count); Assert.Equal(nets + 1, b.Networks.Count);
         Assert.Equal(new PointMm3(200, 250, 8100), n.Nodes.OrderBy(x => x.Position.Z).Last().Position);
-        a.AddHorizontalAlong(plane, 0, 3000, NetworkType.ColdWater, 2400, 20, n.Id);
-        Assert.Equal(2, n.Segments.Count); Assert.Equal(4, n.Nodes.Count);
         Assert.Contains(plane.Visible(b), v => v.Seg.Network.Id == n.Id);
-        h.Undo(b); h.Undo(b); Assert.Equal(nets, b.Networks.Count);
+        h.Undo(b); Assert.Equal(nets, b.Networks.Count);
     }
 }
 
