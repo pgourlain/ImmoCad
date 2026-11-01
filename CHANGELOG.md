@@ -1,5 +1,6 @@
 # Changelog
 ## Unreleased
+- macOS package, as for Kubism: the native libraries are thinned to the package's architecture (they were universal, which triggers the "Intel-based app" warning), the app bundle is ad-hoc signed (Apple silicon refuses unsigned code), a complete Info.plist, the architectures and the signature are checked at packaging time and in CI; the disk image has the Applications shortcut and a first-launch readme. Pre-releases (tags with a hyphen) are flagged as such.
 
 ## v0.1.0-rc11 (2026-10-31)
 - Walk mode (G, or the Walk button): first-person view at eye height through the corridors of a level, to see the pipes and objects where they are. Drag to look, click the floor to glide there, arrows or Z Q S D (physical keys) to move, E and A for the eye height, Page Up/Down or the level bar to change level. Walls, floors and ceilings are drawn in perspective (OpenGL only); doors and windows cut the 3D walls. Ghost mode (X) lets you cross walls, dissolves the walls around you and shows the pipes inside them dimmed. A map of the level, the room you are in, hover labels and a legend of the networks are drawn over the view. The world limit is automatic, or set from the visible plan (View menu). Read-only: nothing is recorded in the history.

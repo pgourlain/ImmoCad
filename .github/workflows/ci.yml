@@ -12,3 +12,19 @@ jobs:
         with: { dotnet-version: 10.0.x }
       - run: dotnet build ImmoCad.slnx
       - run: dotnet test --solution ImmoCad.slnx
+
+  # The Apple-silicon package must hold arm64-only Mach-O files (macOS shows an "Intel-based app" warning otherwise) and be signed (Apple silicon refuses
+  # unsigned code): package it as the release does and check both.
+  macos-arm64-package:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: 10.0.x }
+      - name: Package osx-arm64
+        run: packaging/package.sh osx-arm64 0.0.0-ci
+      - name: Mach-O architectures
+        run: packaging/check-macho-archs.sh artifacts/osx-arm64/ImmoCad.app arm64
+      - name: Signature
+        run: codesign --verify --deep --strict --verbose=2 artifacts/osx-arm64/ImmoCad.app
+
