@@ -105,6 +105,9 @@ public partial class ImportWizardViewModel : ObservableObject
     private PlanImport.RotationSource? _source;
     private int _rotationVersion;
 
+    /// <summary>Timing line of the last background rotation (for the log).</summary>
+    public string? LastRotation { get; private set; }
+
     /// <summary>True while a rotation computed in the background is not yet shown.</summary>
     [ObservableProperty] private bool _isBusy;
 
@@ -116,7 +119,9 @@ public partial class ImportWizardViewModel : ObservableObject
         IsBusy = true;
         try
         {
+            var wall = System.Diagnostics.Stopwatch.StartNew();
             var (png, gray) = await Task.Run(() => source.Rotate(degrees));
+            LastRotation = $"{degrees:0.0}° in {wall.ElapsedMilliseconds} ms (pool wait included); {source.LastTiming}";
             if (version != _rotationVersion) return;
             Image = png; AppliedAngle = angle; Gray = gray; CalibrationPoints.Clear(); Calibration = null;
         }

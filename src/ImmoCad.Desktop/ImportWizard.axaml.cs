@@ -75,8 +75,11 @@ public partial class ImportWizard : Window
 
     private async Task RotateAsync(bool keepView)
     {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
         await Vm.ApplyRotationAsync();
+        var rotated = sw.ElapsedMilliseconds;
         if (!Vm.IsBusy) Canvas.SetImage(Vm.Image, keepView);
+        Log.LogInformation("Import rotation: {Rotation}; UI total {Total} ms (canvas update {Canvas} ms)", Vm.LastRotation, sw.ElapsedMilliseconds, sw.ElapsedMilliseconds - rotated);
     }
     private void OnAngleChanged(object? s, Avalonia.Input.PointerReleasedEventArgs e) => _ = RotateAsync(true);
     private void NudgeAngle(double delta) { Vm.Angle = Math.Round(Math.Clamp(Vm.Angle + delta, -45, 45), 1); _ = RotateAsync(true); }

@@ -1,6 +1,10 @@
 # Changelog
 ## Unreleased
 
+## v0.1.0-rc13 (2026-11-02)
+- 3D on Windows: the OpenGL viewport works through ANGLE (OpenGL ES 3.0) instead of falling back to the software viewport; the shaders are compiled as GLSL ES 300 there.
+- Import wizard: every rotation logs where the time goes (clone, rotate, PNG, gray pixels, canvas update), to find why straightening is slow on some machines.
+
 ## v0.1.0-rc12 (2026-11-01)
 - Floor markings and walls traced from a plan with many rooms (a parking) are filled in 3D again: the triangulation of a shape with several holes joined the wrong copy of a repeated corner and gave up (only the sides showed). Markings whose outline crosses itself are traced again before they are drawn.
 - Import wizard: straightening a picture is much faster (the file is decoded once, the PNG preview is written with light compression and the gray pixels come from the same pass) and runs in the background with a progress bar; the tests no longer depend on the regional settings of the machine.

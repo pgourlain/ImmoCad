@@ -49,19 +49,35 @@ public static class PlanImport
         /// <summary>PNG bytes (fast compression) and gray pixels of the picture rotated by <paramref name="degrees"/>, in one pass.</summary>
         public (byte[] Png, GrayImage Gray) Rotate(double degrees)
         {
+            var sw = System.Diagnostics.Stopwatch.StartNew(); long t0 = 0, t1 = 0, t2 = 0, t3 = 0;
             MagickImage img; lock (_src) img = (MagickImage)_src.Clone();
             using (img)
             {
+            t0 = sw.ElapsedMilliseconds;
             if (Math.Abs(degrees) > 1e-6) { img.BackgroundColor = MagickColors.White; img.Rotate(degrees); }
+            t1 = sw.ElapsedMilliseconds;
             img.Settings.SetDefine(MagickFormat.Png, "compression-level", "1");
             img.Settings.SetDefine(MagickFormat.Png, "compression-filter", "1");
             var png = img.ToByteArray(MagickFormat.Png);
+            t2 = sw.ElapsedMilliseconds;
             img.ColorSpace = ColorSpace.Gray;
             var w = (int)img.Width; var h = (int)img.Height;
             using var px = img.GetPixels();
-            return (png, new GrayImage(px.ToByteArray("I") ?? throw new InvalidDataException("cannot read pixels"), w, h));
+            var gray = new GrayImage(px.ToByteArray("I") ?? throw new InvalidDataException("cannot read pixels"), w, h);
+            t3 = sw.ElapsedMilliseconds;
+            LastTiming = new RotationTiming(w, h, png.Length, t0, t1 - t0, t2 - t1, t3 - t2, t3);
+            return (png, gray);
             }
         }
+
+        /// <summary>Durations of the last <see cref="Rotate"/> call, to find what is slow on a given machine.</summary>
+        public RotationTiming? LastTiming { get; private set; }
+    }
+
+    /// <summary>Where the time of one rotation went (milliseconds): clone, rotate, PNG encode, gray pixels, total.</summary>
+    public sealed record RotationTiming(int Width, int Height, int PngBytes, long CloneMs, long RotateMs, long PngMs, long GrayMs, long TotalMs)
+    {
+        public override string ToString() => $"{Width}x{Height}px, png {PngBytes / 1024} KiB: clone {CloneMs} ms, rotate {RotateMs} ms, png {PngMs} ms, gray {GrayMs} ms, total {TotalMs} ms";
     }
 
     public static (int Width, int Height) Size(byte[] data) { var i = new MagickImageInfo(data); return ((int)i.Width, (int)i.Height); }

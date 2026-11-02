@@ -26,7 +26,7 @@ public sealed class GlViewport3D : OpenGlControlBase, IViewport3D, Avalonia.Rend
     public event Action<string?, Point>? Hover;
 
     public bool Initialized { get; private set; }
-    private GL? _gl; private uint _program; private bool _core;
+    private GL? _gl; private uint _program; private bool _core, _es3;
     private int _uTarget, _uTrig, _uScale, _uDepth, _uColor, _uSelected, _uWalk, _uF, _uR, _uU, _uP, _uGhost, _uDissolve;
     private sealed record Buffers(uint Vao, uint Vbo, uint Ibo, uint Ebo, int Indices, int WireIndices);
     private readonly Dictionary<SceneObject, Buffers> _buffers = new(ReferenceEqualityComparer.Instance as IEqualityComparer<SceneObject>);
@@ -57,8 +57,9 @@ public sealed class GlViewport3D : OpenGlControlBase, IViewport3D, Avalonia.Rend
             _gl = GL.GetApi(gl.GetProcAddress);
             var version = _gl.GetStringS(StringName.Version) ?? ""; var renderer = _gl.GetStringS(StringName.Renderer) ?? ""; var vendor = _gl.GetStringS(StringName.Vendor) ?? "";
             Log.LogInformation("OpenGL: {Renderer} / {Vendor} / {Version}", renderer, vendor, version);
-            _core = !version.StartsWith("2.") && !version.StartsWith("1.") && !version.Contains("OpenGL ES");
-            _program = Compile(_core); Initialized = true;
+            var es = version.Contains("OpenGL ES"); _es3 = es && !version.Contains("OpenGL ES 2") && !version.Contains("OpenGL ES-CM 1");   // ANGLE on Windows: OpenGL ES 3.0
+            _core = _es3 || !es && !version.StartsWith("2.") && !version.StartsWith("1.");
+            _program = Compile(_core, _es3); Initialized = true;
             _uTarget = _gl.GetUniformLocation(_program, "uTarget"); _uTrig = _gl.GetUniformLocation(_program, "uTrig"); _uScale = _gl.GetUniformLocation(_program, "uScale");
             _uDepth = _gl.GetUniformLocation(_program, "uDepth"); _uColor = _gl.GetUniformLocation(_program, "uColor"); _uSelected = _gl.GetUniformLocation(_program, "uSelected");
             _uWalk = _gl.GetUniformLocation(_program, "uWalk"); _uF = _gl.GetUniformLocation(_program, "uF"); _uR = _gl.GetUniformLocation(_program, "uR"); _uU = _gl.GetUniformLocation(_program, "uU");
@@ -159,11 +160,11 @@ public sealed class GlViewport3D : OpenGlControlBase, IViewport3D, Avalonia.Rend
 
     private void Free(Buffers b) { if (_gl == null) return; _gl.DeleteBuffer(b.Vbo); _gl.DeleteBuffer(b.Ibo); _gl.DeleteBuffer(b.Ebo); _gl.DeleteVertexArray(b.Vao); }
 
-    private uint Compile(bool core)
+    private uint Compile(bool core, bool es3)
     {
         var gl = _gl!;
         // Same projection as ImmoCad.Scene.OrbitCamera.Project, evaluated in the vertex shader; one fixed world-space light.
-        var header = core ? "#version 150\n" : "#version 120\n"; var vin = core ? "in" : "attribute"; var vout = core ? "out" : "varying"; var fin = core ? "in" : "varying";
+        var header = es3 ? "#version 300 es\nprecision highp float;\n" : core ? "#version 150\n" : "#version 120\n"; var vin = core ? "in" : "attribute"; var vout = core ? "out" : "varying"; var fin = core ? "in" : "varying";
         var vs = header + $@"{vin} vec3 aPos; {vin} vec3 aNorm; uniform vec3 uTarget; uniform vec4 uTrig; uniform vec2 uScale; uniform float uDepth; uniform float uWalk; uniform vec3 uF; uniform vec3 uR; uniform vec3 uU; uniform vec4 uP; {vout} vec3 vN; {vout} vec3 vW;
 void main() {{ vec3 d = aPos - uTarget;
   if (uWalk > 0.5) {{ float dep = dot(d, uF); float a = (uP.w + uP.z) / (uP.w - uP.z); float b = -2.0 * uP.w * uP.z / (uP.w - uP.z); gl_Position = vec4(dot(d, uR) * uP.x / uP.y, dot(d, uU) * uP.x, a * dep + b, dep); }}
