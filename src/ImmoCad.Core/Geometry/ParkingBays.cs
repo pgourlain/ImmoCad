@@ -40,8 +40,31 @@ public sealed class ParkingBays
         List<PointMm>? best = null; long bestArea = long.MaxValue;
         foreach (var theta in LineDirections(click))                                                 // the directions of the painted lines near the click
             foreach (var t in new[] { theta, theta + Math.PI / 2 })                                  // the long lines may be the sides of the bays or the line at their back: try both
-                if (Try(click, t) is { } r && SpaceFinder.AreaMm2(r) is var a && a < bestArea) { best = r; bestArea = a; }
+                if ((Try(click, t) ?? Try(click, Refine(click, t))) is { } r && SpaceFinder.AreaMm2(r) is var a && a < bestArea) { best = r; bestArea = a; }
         return best;
+    }
+
+    /// <summary>
+    /// Lines of a plan drawn from a photo are rarely exactly at the voted angle: the strip between the two side lines is measured 1.5 m on each side of the click, and the direction is turned
+    /// by the angle at which the middle of the strip drifts (twice, so that 2-3° of error are absorbed). Unchanged when the strip cannot be measured.
+    /// </summary>
+    private double Refine(PointMm click, double theta)
+    {
+        const double Reach = 1500;
+        for (var pass = 0; pass < 2; pass++)
+        {
+            double ux = Math.Cos(theta), uy = Math.Sin(theta), vx = -uy, vy = ux;
+            double? Mid(double du)
+            {
+                double ox = click.X + ux * du, oy = click.Y + uy * du;
+                double? Face(double sign) { for (double d = StepMm; d <= 4500; d += StepMm) if (Blocked(ox + vx * sign * d, oy + vy * sign * d)) return d; return null; }
+                return Blocked(ox, oy) || Face(-1) is not { } l || Face(1) is not { } r || l + r < MinWidthMm || l + r > MaxWidthMm ? null : (r - l) / 2;
+            }
+            if (Mid(Reach) is not { } a || Mid(-Reach) is not { } b) return theta;
+            var eps = Math.Atan((a - b) / (2 * Reach)); if (Math.Abs(eps) < 0.002 || Math.Abs(eps) > 0.35) return theta;
+            theta += eps;
+        }
+        return theta;
     }
 
     /// <summary>
@@ -114,7 +137,8 @@ public sealed class ParkingBays
             return l != null && r != null ? Math.Min(l.Value, r.Value) : l ?? r;
         }
         double fromU, toU; var backs = new List<double>();                                          // where the line at the back (or the two end lines) must be
-        if (back1 != null && back2 != null && back1.Value + back2.Value <= MaxDepthMm) { fromU = -back2.Value; toU = back1.Value; backs.Add(toU); backs.Add(fromU); }   // closed at both ends
+        var closed = false;
+        if (back1 != null && back2 != null && back1.Value + back2.Value <= MaxDepthMm) { fromU = -back2.Value; toU = back1.Value; backs.Add(toU); backs.Add(fromU); closed = true; }   // closed at both ends
         else
         {
             var useFirst = back1 != null && (back2 == null || back1 <= back2);
@@ -126,11 +150,38 @@ public sealed class ParkingBays
         // the lines must really be there all along the bay: both sides and the back, mostly painted (a room between walls, or scattered scraps of paint, is not a bay)
         int total = 0, solid = 0, paint = 0;
         void Sample((double X, double Y) p) { total++; var h = Hit(p.X, p.Y); if (h != 0) solid++; if (h == 1) paint++; }
-        foreach (var side in new[] { -(width / 2 + Math.Min(tl, 200) / 2), width / 2 + Math.Min(tr, 200) / 2 })
-            for (var d = fromU + 60; d <= toU - 60; d += 50) Sample(At(c, d, side));
-        foreach (var b in backs) for (var d = -width / 2 + 60; d <= width / 2 - 60; d += 50) Sample(At(c, b + (b > 0 ? 30 : -30), d));
+        // an end line need not be square to the sides (a bay drawn as a parallelogram): it is followed from one side to the other, from where each point of the strip first meets it
+        double? EndAt(double v, double sign)
+        {
+            var o = At(c, 0, v); if (Blocked(o.X, o.Y)) return null;
+            for (double d = StepMm; d <= MaxDepthMm; d += StepMm) { var p = At(o, sign * d, 0); if (Blocked(p.X, p.Y)) { double lo = d - StepMm, hi = d; while (hi - lo > 1) { var mid = (lo + hi) / 2; var q = At(o, sign * mid, 0); if (Blocked(q.X, q.Y)) hi = mid; else lo = mid; } return sign * hi; } }
+            return null;
+        }
+        double fromLo = fromU, fromHi = fromU, toLo = toU, toHi = toU;                              // end positions on the -v side and on the +v side
+        void Back(double b)
+        {
+            var sign = b > 0 ? 1.0 : -1.0; double? prev = null, first = null, last = null;
+            for (var d = -width / 2 + 60; d <= width / 2 - 60; d += 50)
+            {
+                var hit = EndAt(d, sign);
+                if (hit == null || prev != null && Math.Abs(hit.Value - prev.Value) > 150) { total++; prev = hit; continue; }             // no line here, or a jump: not a line
+                prev = hit; first ??= hit; last = hit; Sample(At(c, hit.Value + sign * 30, d));
+            }
+            if (first == null || last == null) return;
+            var slope = (last.Value - first.Value) / Math.Max(width - 120, 1);                         // per millimetre across the strip
+            var atLo = first.Value - slope * 60; var atHi = last.Value + slope * 60;
+            if (sign > 0) { toLo = atLo; toHi = atHi; } else { fromLo = atLo; fromHi = atHi; }
+        }
+        if (closed) foreach (var b in backs) Back(b);
+        else foreach (var b in backs) for (var d = -width / 2 + 60; d <= width / 2 - 60; d += 50) Sample(At(c, b + (b > 0 ? 30 : -30), d));
+        for (var k = 0; k < 2; k++)
+        {
+            var side = k == 0 ? -(width / 2 + Math.Min(tl, 200) / 2) : width / 2 + Math.Min(tr, 200) / 2;
+            double f = k == 0 ? fromLo : fromHi, t = k == 0 ? toLo : toHi;
+            for (var d = f + 60; d <= t - 60; d += 50) Sample(At(c, d, side));
+        }
         if (total == 0 || solid < 0.88 * total || paint < 0.6 * total) return null;
         PointMm P((double X, double Y) q) => new((int)Math.Round(q.X), (int)Math.Round(q.Y));
-        return [P(At(c, fromU, -width / 2)), P(At(c, toU, -width / 2)), P(At(c, toU, width / 2)), P(At(c, fromU, width / 2))];
+        return [P(At(c, fromLo, -width / 2)), P(At(c, toLo, -width / 2)), P(At(c, toHi, width / 2)), P(At(c, fromHi, width / 2))];
     }
 }

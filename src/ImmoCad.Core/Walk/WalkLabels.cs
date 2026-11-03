@@ -10,6 +10,9 @@ public sealed record DoorLabel(Guid OpeningId, string Text, double X, double Y, 
 /// <summary>One room name to draw over the first-person view: where, how strongly, and what it says.</summary>
 public sealed record RoomLabel(Guid SpaceId, string Text, SpaceKind Kind, double X, double Y, double Distance, double Alpha);
 
+/// <summary>The name of a network to draw over one of its pipes or risers.</summary>
+public sealed record NetworkLabel(Guid NetworkId, string Text, NetworkType Type, double X, double Y, double Distance, double Alpha);
+
 /// <summary>
 /// Room names for the walk view. A name typed by the user is shown as it is; a generated one ("Room 3") gives way to the kind ("Bike room") when the kind says more.
 /// The name floats under the ceiling at the middle of the room (a few points along a long corridor), only when it is in front of the eyes, near enough, and not behind a wall
@@ -94,6 +97,42 @@ public sealed class WalkLabels
                 var alpha = d <= FullDoorAlphaMm ? 1 : Math.Clamp(1 - (d - FullDoorAlphaMm) / (MaxDoorDistanceMm - FullDoorAlphaMm) * 0.65, 0.35, 1);
                 res.Add(new DoorLabel(o.Id, o.Label!.Trim(), (nx + 1) / 2 * width, (1 - ny) / 2 * height, d, alpha));
             }
+        res.Sort((p, q) => p.Distance.CompareTo(q.Distance)); if (res.Count > max) res.RemoveRange(max, res.Count - max);
+        return res;
+    }
+
+    public const double MaxNetworkDistanceMm = 8000;
+
+    /// <summary>The words for a network: its name, or the code of its type (ECS, EF…) when it has none.</summary>
+    public static string NetworkText(Network n) => Translations.Display(n.Name) is { Length: > 0 } t ? t : Translations.Display(Translations.NetworkCodeToken(n.Type));
+
+    /// <summary>
+    /// The name of the network picked in the Networks tab over each of its pipes and risers close enough, so that its horizontal pipes that belong to no riser stand out. Each segment
+    /// carries the name once, where it is visible and nearest to the middle of the view; nearest first, at most <paramref name="max"/>. Nothing when no network is picked or it is hidden
+    /// (the name of what the mouse is over is the tooltip). Positions are in pixels.
+    /// </summary>
+    public List<NetworkLabel> PlaceNetwork(WalkState w, WalkCamera cam, double width, double height, Guid? selected = null, int max = 8)
+    {
+        var res = new List<NetworkLabel>(); if (width < 2 || height < 2 || selected is not { } id) return res;
+        if (w.Building.Networks.FirstOrDefault(n => n.Id == id && n.Visible) is not { } net) return res;
+        var aspect = width / height; var eye = new WalkPoint(w.X, w.Y); var eyeMm = w.EyeAboveFloor; double cx = width / 2, cy = height / 2;
+        foreach (var sg in net.Segments)
+        {
+            var a = net.Nodes.FirstOrDefault(x => x.Id == sg.A)?.Position; var b = net.Nodes.FirstOrDefault(x => x.Id == sg.B)?.Position; if (a == null || b == null) continue;
+            (double X, double Y, double Distance, double Off)? best = null;
+            for (var i = 0; i <= 10; i++)
+            {
+                var t = i / 10.0; double x = a.Value.X + (b.Value.X - a.Value.X) * t, y = a.Value.Y + (b.Value.Y - a.Value.Y) * t, z = a.Value.Z + (b.Value.Z - a.Value.Z) * t;
+                var d = Math.Sqrt(Math.Pow(x - w.X, 2) + Math.Pow(y - w.Y, 2)); if (d > MaxNetworkDistanceMm) continue;
+                var (nx, ny, depth) = cam.Project(x / 1000.0, y / 1000.0, z / 1000.0, aspect);
+                if (depth < 0.3 || double.IsNaN(nx) || Math.Abs(nx) > 1 || Math.Abs(ny) > 1) continue;
+                double px = (nx + 1) / 2 * width, py = (1 - ny) / 2 * height, off = Math.Sqrt(Math.Pow(px - cx, 2) + Math.Pow(py - cy, 2));
+                if (best is { } bs && off >= bs.Off) continue;
+                if (!w.Ghost && !w.Area.LineOfSight(eye, new WalkPoint(x, y), eyeMm)) continue;
+                best = (px, py, d, off);
+            }
+            if (best is { } p) res.Add(new NetworkLabel(net.Id, NetworkText(net), net.Type, p.X, p.Y, p.Distance, p.Distance <= FullAlphaMm ? 1 : Math.Clamp(1 - (p.Distance - FullAlphaMm) / (MaxNetworkDistanceMm - FullAlphaMm) * 0.65, 0.35, 1)));
+        }
         res.Sort((p, q) => p.Distance.CompareTo(q.Distance)); if (res.Count > max) res.RemoveRange(max, res.Count - max);
         return res;
     }

@@ -1,6 +1,13 @@
 # Changelog
 ## Unreleased
 
+## v0.1.0-rc14 (2026-11-03)
+- Networks (columns) have a name you can find them by. Networks tab: ✎ renames, a click on a line picks the network, a filter box and a sort button (creation, name with R2 before R10, type). Double-click a column in the 2D plan to rename it; the name is also at the top of the Properties of a selected pipe or column. New columns, runs and MCP networks are named by the code of their type, in the language of the UI (EF, ECS, EV, GAZ, BECS, DCH, RCH in French; CW, DHW, DR… in English).
+- Walk mode: the name of a pipe or column is the first thing of its hover tooltip. The network picked in the Networks tab shows its name over each of its pipes and columns within 8 m. A selected column is painted orange in the 3D and walk views, like a selected wall. Esc first lets go of the selection, and leaves the walk only when nothing is selected.
+- Room tool: a parking bay drawn from a photo plan (lines turned by 20° or so, end lines not square to the sides) is found again; it used to fall back to the whole parking room.
+- Wall tool: while drawing, the Up and Down arrows (Shift: ×5) and the Thickness option change the thickness of the section in progress and the next ones; the sections already placed keep theirs.
+- Import wizard: fine rotation is resampled on every core instead of ImageMagick's single-threaded rotation (quarter turns still go through ImageMagick).
+
 ## v0.1.0-rc13 (2026-11-02)
 - 3D on Windows: the OpenGL viewport works through ANGLE (OpenGL ES 3.0) instead of falling back to the software viewport; the shaders are compiled as GLSL ES 300 there.
 - Import wizard: every rotation logs where the time goes (clone, rotate, PNG, gray pixels, canvas update), to find why straightening is slow on some machines.

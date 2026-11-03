@@ -228,14 +228,27 @@
           </StackPanel></ScrollViewer>
         </TabItem>
         <TabItem vm:L.Header="tab.networks">
+          <DockPanel>
+          <StackPanel DockPanel.Dock="Top" Margin="0,6,0,0" Spacing="4">
+            <TextBox vm:L.Watermark="wm.net.filter" Text="{Binding NetworkFilter}" />
+            <Button Content="{Binding NetworkSortLabel}" ContentTemplate="{x:Null}" Padding="6,2" vm:L.Tip="net.sort.tip" Command="{Binding CycleNetworkSortCommand}" />
+            <TextBlock vm:L.Text="net.none" Classes="caption" IsVisible="{Binding NoNetworkShown}" />
+          </StackPanel>
           <ScrollViewer>
             <ItemsControl ItemsSource="{Binding Networks}" Margin="0,6">
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="vm:NetworkItem">
-                  <Grid ColumnDefinitions="Auto,*,Auto,Auto" Margin="0,0,0,4">
-                    <Border Width="12" Height="12" CornerRadius="6" Background="{Binding ColorHex}" Margin="0,0,8,0" VerticalAlignment="Center" />
-                    <StackPanel Grid.Column="1"><TextBlock Text="{Binding Name}" /><TextBlock Text="{Binding Type}" Classes="caption" /><TextBlock Text="{Binding Where}" Classes="caption" TextWrapping="Wrap" /></StackPanel>
-                    <Button Grid.Column="2" Content="{Binding Visible}" ContentTemplate="{x:Null}" Padding="6,2" vm:L.Tip="tip.togglenet"
+                  <Grid ColumnDefinitions="*,Auto,Auto,Auto" Margin="0,0,0,4" Background="{Binding Back}">
+                    <Button Padding="0" Background="Transparent" HorizontalContentAlignment="Left" vm:L.Tip="tip.focus.net"
+                            Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).FocusNetworkCommand}" CommandParameter="{Binding Id}">
+                      <StackPanel Orientation="Horizontal">
+                        <Border Width="12" Height="12" CornerRadius="6" Background="{Binding ColorHex}" Margin="0,0,8,0" VerticalAlignment="Center" />
+                        <StackPanel><TextBlock Text="{Binding Name}" /><TextBlock Text="{Binding Type}" Classes="caption" /><TextBlock Text="{Binding Where}" Classes="caption" TextWrapping="Wrap" /></StackPanel>
+                      </StackPanel>
+                    </Button>
+                    <Button Grid.Column="1" Content="✎" Padding="6,2" Margin="4,0,0,0" vm:L.Tip="tip.rename.net"
+                            Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).RenameNetworkCommand}" CommandParameter="{Binding Id}" />
+                    <Button Grid.Column="2" Content="{Binding Visible}" ContentTemplate="{x:Null}" Padding="6,2" Margin="4,0,0,0" vm:L.Tip="tip.togglenet"
                             Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ToggleNetworkCommand}" CommandParameter="{Binding Id}" />
                     <Button Grid.Column="3" Content="{Binding Locked}" Padding="6,2" Margin="4,0,0,0" vm:L.Tip="tip.lock"
                             Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).LockNetworkCommand}" CommandParameter="{Binding Id}" />
@@ -244,6 +257,7 @@
               </ItemsControl.ItemTemplate>
             </ItemsControl>
           </ScrollViewer>
+          </DockPanel>
         </TabItem>
         <TabItem vm:L.Header="tab.history">
           <ScrollViewer>
@@ -358,6 +372,9 @@
               <Button vm:L.Content="btn.apply" Command="{Binding ApplyOpeningCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
             </StackPanel>
             <StackPanel Spacing="6" IsVisible="{Binding ShowPipeProps}">
+              <TextBlock vm:L.Text="net.name" Classes="caption" />
+              <Grid ColumnDefinitions="*,Auto"><TextBlock Text="{Binding SelectedNetworkName}" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                <Button Grid.Column="1" Content="✎" Padding="6,2" vm:L.Tip="tip.rename.net" Command="{Binding RenameSelectedNetworkCommand}" /></Grid>
               <TextBlock vm:L.Text="ptype.title" Classes="caption" />
               <ComboBox ItemsSource="{Binding NetworkTypes}" SelectedItem="{Binding SegType}" HorizontalAlignment="Stretch"><ComboBox.ItemTemplate><DataTemplate x:DataType="x:Object"><StackPanel Orientation="Horizontal" Spacing="8"><Ellipse Width="14" Height="14" Fill="{Binding, Converter={x:Static vm:Converters.NetworkBrush}}" Stroke="#66000000" StrokeThickness="1" VerticalAlignment="Center" /><TextBlock Text="{Binding, Converter={x:Static vm:Converters.EnumName}}" VerticalAlignment="Center" /></StackPanel></DataTemplate></ComboBox.ItemTemplate></ComboBox>
               <Button vm:L.Content="ptype.apply" Command="{Binding ApplyPipeTypeCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />

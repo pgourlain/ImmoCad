@@ -1375,4 +1375,22 @@ public class MoveRunAnchorTests
         Assert.Contains(n.Nodes, x => x.Position == new PointMm3(-500, 0, 2700)); Assert.Contains(n.Nodes, x => x.Position == new PointMm3(-500, 2000, 2700));
         Assert.All(NetworkQueries.All(b), s => Assert.True(((s.A.X != s.B.X ? 1 : 0) + (s.A.Y != s.B.Y ? 1 : 0) + (s.A.Z != s.B.Z ? 1 : 0)) <= 1));
     }
+
+    [Theory] [InlineData(0.3)] [InlineData(-2.5)] [InlineData(90.4)]
+    public void Fine_rotation_matches_ImageMagick(double degrees)
+    {   // a plan-like picture: white page, a dark frame and a diagonal line
+        const int W = 400, H = 300; var raw = new byte[W * H * 3]; Array.Fill(raw, (byte)255);
+        for (var y = 0; y < H; y++) for (var x = 0; x < W; x++) if (x is >= 40 and < 46 || y is >= 50 and < 56 || Math.Abs(x - y * 4 / 3) < 3) { var o = (y * W + x) * 3; raw[o] = raw[o + 1] = raw[o + 2] = 30; }
+        using var img = new ImageMagick.MagickImage(raw, new ImageMagick.PixelReadSettings(W, H, ImageMagick.StorageType.Char, ImageMagick.PixelMapping.RGB));
+        var source = new ImmoCad.Core.Import.PlanImport.RotationSource(img.ToByteArray(ImageMagick.MagickFormat.Png));
+        var (png, gray) = source.Rotate(degrees);
+        using var reference = new ImageMagick.MagickImage(img); reference.BackgroundColor = ImageMagick.MagickColors.White; reference.Rotate(degrees);
+        Assert.InRange(gray.Width - (int)reference.Width, -2, 2); Assert.InRange(gray.Height - (int)reference.Height, -2, 2);
+        Assert.Equal((gray.Width, gray.Height), ImmoCad.Core.Import.PlanImport.Size(png));
+        reference.ColorSpace = ImageMagick.ColorSpace.Gray; using var px = reference.GetPixels(); var want = px.ToByteArray("I")!;
+        // same picture up to resampling: compare the mean gray level, and the position of the dark pixels
+        var w = Math.Min(gray.Width, (int)reference.Width); var h = Math.Min(gray.Height, (int)reference.Height); double diff = 0;
+        for (var y = 0; y < h; y++) for (var x = 0; x < w; x++) diff += Math.Abs(gray.Pixels[y * gray.Width + x] - want[y * (int)reference.Width + x]);
+        Assert.True(diff / (w * h) < 12, $"mean difference {diff / (w * h):0.0}");
+    }
 }

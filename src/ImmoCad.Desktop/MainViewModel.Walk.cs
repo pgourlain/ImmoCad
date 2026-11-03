@@ -176,7 +176,7 @@ public partial class MainViewModel
             case SceneKind.Pipe:
                 foreach (var n in Building.Networks)
                     if (n.Segments.FirstOrDefault(s => s.Id == id) is { } s)
-                        return T("walk.pipe", string.IsNullOrWhiteSpace(n.Name) ? Enum_(n.Type) : n.Name, s.DiameterMm, s.Material);
+                        return T("walk.pipe", ImmoCad.Core.Walk.WalkLabels.NetworkText(n), s.DiameterMm, s.Material);
                 return "";
             case SceneKind.Equipment:
                 var e = Building.Equipment.FirstOrDefault(x => x.Id == id); if (e == null) return "";

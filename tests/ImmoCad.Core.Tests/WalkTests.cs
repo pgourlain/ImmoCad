@@ -392,4 +392,44 @@ public class WalkTests
         var (b3, l3, c3) = Corridor(kind: null); l3.Walls[4].Openings.Add(new Opening { Label = "X", PositionMm = 800, WidthMm = 700, SillMm = 2300, HeightMm = 300 });       // an opening above the eye line
         var (s4, cam4) = Looking(b3, l3, 1000, 1000, -Math.PI / 2); Assert.Empty(labels.PlaceDoors(s4, cam4, 1200, 800));
     }
+
+    // ---- network names ----
+    private static Network Net(Building b, string name, NetworkType type, params (int X, int Y, int Z)[] pts)
+    {
+        var n = new Network { Name = name, Type = type };
+        foreach (var p in pts) n.Nodes.Add(new Node { Position = new PointMm3(p.X, p.Y, p.Z) });
+        for (var i = 0; i + 1 < n.Nodes.Count; i++) n.Segments.Add(new Segment { A = n.Nodes[i].Id, B = n.Nodes[i + 1].Id });
+        b.Networks.Add(n); return n;
+    }
+
+    [Fact] public void Nothing_is_named_in_the_view_until_a_network_is_picked_in_the_tab()
+    {
+        var (b, l, _) = Corridor(); Net(b, "Colonne A", NetworkType.DomesticHotWater, (3000, 1000, 0), (3000, 1000, 2700));
+        var (s, cam) = Looking(b, l, 1000, 1000, -Math.PI / 2); Assert.Empty(new WalkLabels().PlaceNetwork(s, cam, 1200, 800));          // what the mouse is over has its tooltip instead
+    }
+
+    [Fact] public void A_picked_network_is_named_over_each_of_its_pipes_wherever_the_eyes_point()
+    {
+        var (b, l, _) = Corridor(); var hot = Net(b, "Chauffage", NetworkType.DomesticHotWater, (3000, 1000, 0), (3000, 1000, 2700));
+        var pipe = Net(b, "Départ", NetworkType.ColdWater, (6500, 1000, 2300), (9000, 1000, 2300));
+        var (s, cam) = Looking(b, l, 1000, 1000, -Math.PI / 2); var labels = new WalkLabels();
+        var picked = labels.PlaceNetwork(s, cam, 1200, 800, pipe.Id); Assert.Equal("Départ", Assert.Single(picked).Text);                      // the pipe beyond the door (5.5 m)
+        Assert.Equal("Chauffage", Assert.Single(labels.PlaceNetwork(s, cam, 1200, 800, hot.Id)).Text);
+        var far = Net(b, "Loin", NetworkType.ColdWater, (9500, 1000, 0), (9500, 1000, 2700)); Assert.Empty(labels.PlaceNetwork(s, cam, 1200, 800, far.Id));     // 8.5 m: too far to read
+        hot.Visible = false; pipe.Visible = false; Assert.Empty(labels.PlaceNetwork(s, cam, 1200, 800, pipe.Id));                              // hidden networks are never named
+    }
+
+    [Fact] public void A_network_without_a_name_is_named_by_the_code_of_its_type()
+    {
+        InLanguage("en", () => Assert.Equal("DHW", WalkLabels.NetworkText(new Network { Type = NetworkType.DomesticHotWater })));
+        Assert.Equal("Colonne", WalkLabels.NetworkText(new Network { Name = "Colonne" }));
+    }
+
+    [Fact] public void Renaming_a_network_is_one_history_step_and_can_be_undone()
+    {
+        var b = new Building(); var h = new BuildingHistory(); var a = new BuildingActions(b, h, new BuildingEventsService());
+        var n = a.AddNetwork("Riser Hot", NetworkType.DomesticHotWater); var before = h.Items.Count;
+        a.RenameNetwork(n.Id, "  Colonne cuisine "); Assert.Equal("Colonne cuisine", n.Name); Assert.Equal(before + 1, h.Items.Count);
+        h.Undo(b); Assert.Equal("Riser Hot", b.Networks.Single().Name);
+    }
 }

@@ -34,6 +34,9 @@ public static class Translations
 
     /// <summary>A generated name that follows the language: "@key" or "@key:arg1:arg2". Anything else is a literal the user typed.</summary>
     public static string Token(string key, params object[] args) => args.Length == 0 ? "@" + key : "@" + key + ":" + string.Join(":", args);
+    /// <summary>The name a new network (a riser, a run) gets: the short code of its type (ECS, EF, EV… in French), as a token so that it follows the language.</summary>
+    public static string NetworkCodeToken(Enum type) => Token("net.code." + type);
+
     public static string Display(string? raw)
     {
         if (string.IsNullOrEmpty(raw) || raw[0] != '@') return raw ?? "";

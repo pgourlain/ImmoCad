@@ -36,7 +36,7 @@ public sealed class Doc
 public sealed record TabItem(int Index, string Title, bool IsActive, bool IsDirty);
 public sealed record HistoryRow(int Index, string Name, bool IsCurrent, bool IsFuture);
 public sealed record SpaceItem(Guid LevelId, Guid Id, string Name, string Number, string Kind, string Lot, string Area, bool IsCommon, PointMm Center);
-public sealed record NetworkItem(Guid Id, string Name, string Type, bool Visible, bool Locked, string ColorHex, string Where = "");
+public sealed record NetworkItem(Guid Id, string Name, string Type, bool Visible, bool Locked, string ColorHex, string Where = "", string Back = "Transparent");
 public sealed record PaletteItem(string Id, string Category, string Name, string Glyph, string Description = "");
 public sealed record LevelItem(Guid Id, string Name, string Altitude, bool IsCurrent, int WallCount, string Tooltip = "", bool Hidden = false)
 {
@@ -79,7 +79,15 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private ToolKind _tool = ToolKind.Select;
     [ObservableProperty] private string _status = T("ready");
     [ObservableProperty] private string _hint = T("hint.select");
-    public int WallThicknessMm { get; set; } = 200;
+    private int _wallThicknessMm = 200;
+    /// <summary>Thickness of the walls drawn now (mm). Changed while a chain is being drawn, it applies from the section in progress on; the sections already placed keep theirs.</summary>
+    public int WallThicknessMm
+    {
+        get => _wallThicknessMm;
+        set { value = Math.Clamp(value, 20, 1000); if (value == _wallThicknessMm) return; _wallThicknessMm = value; OnPropertyChanged(); Changed?.Invoke(); }
+    }
+    /// <summary>Up / Down arrows while drawing: thicker / thinner by one step (50 mm with Shift, 10 mm otherwise).</summary>
+    public void NudgeWallThickness(int sign, bool big) { WallThicknessMm += sign * (big ? 50 : 10); Status = T("thickness.set", WallThicknessMm); }
     public string WallAlignLabel => T("align." + WallAlign.ToString().ToLowerInvariant());
     [RelayCommand] private void CycleWallAlignOption() => CycleWallAlign();
     /// <summary>Side of the drawn line the new wall lies on (Space cycles it while drawing).</summary>
@@ -87,8 +95,8 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _wallRounded;
     partial void OnWallRoundedChanged(bool value) { Status = T(value ? "wall.rounded.on" : "wall.rounded.off"); Changed?.Invoke(); }
     /// <summary>The footprint of one drawn segment, with the options in force.</summary>
-    public IEnumerable<PointMm> WallShape(PointMm a, PointMm b, ImmoCad.Core.Geometry.WallAlign side) =>
-        WallRounded ? ImmoCad.Core.Geometry.WallGeometry.RoundedRectangle(a, b, WallThicknessMm, side) : ImmoCad.Core.Geometry.WallGeometry.Rectangle(a, b, WallThicknessMm, side);
+    public IEnumerable<PointMm> WallShape(PointMm a, PointMm b, ImmoCad.Core.Geometry.WallAlign side, int? thicknessMm = null) =>
+        WallRounded ? ImmoCad.Core.Geometry.WallGeometry.RoundedRectangle(a, b, thicknessMm ?? WallThicknessMm, side) : ImmoCad.Core.Geometry.WallGeometry.Rectangle(a, b, thicknessMm ?? WallThicknessMm, side);
 
     /// <summary>Height of the walls to draw: 0 the level's, 1 up to the top of the building, 2 the value below.</summary>
     [ObservableProperty] private int _wallHeightMode;
@@ -264,6 +272,20 @@ public partial class MainViewModel : ObservableObject
     public (Guid NetworkId, Guid SegmentId)? SelectedSegment { get; private set; }
     /// <summary>The columns selected on the current level, each named by its network and its position (mm).</summary>
     public List<(Guid Net, int X, int Y)> SelectedRisers { get; } = new();
+    /// <summary>What the 3D and walk views paint orange: the selected walls, the selected pipe, and every piece of each selected column (a column may be split in several segments).</summary>
+    public ISet<Guid> SceneSelection()
+    {
+        var set = new HashSet<Guid>(SelectedWalls);
+        if (SelectedSegment is { } sg) set.Add(sg.SegmentId);
+        foreach (var (netId, x, y) in SelectedRisers)
+            if (Building.Networks.FirstOrDefault(n => n.Id == netId) is { } net)
+                foreach (var s in net.Segments)
+                {
+                    var a = net.Nodes.FirstOrDefault(n => n.Id == s.A)?.Position; var b = net.Nodes.FirstOrDefault(n => n.Id == s.B)?.Position;
+                    if (a is { } pa && b is { } pb && pa.X == x && pa.Y == y && pb.X == x && pb.Y == y) set.Add(s.Id);
+                }
+        return set;
+    }
     public bool IsRiserSelected(SegmentRef r) => SelectedRisers.Contains((r.Network.Id, r.A.X, r.A.Y));
     /// <summary>Selects columns (clicked or boxed); with <paramref name="add"/> the walls and the other columns stay selected.</summary>
     public void SelectRisers(IEnumerable<SegmentRef> risers, bool add)
@@ -732,7 +754,7 @@ public partial class MainViewModel : ObservableObject
     private void FinishRun(List<PointMm3> pts, Network? onRiser)
     {
         if (pts.Zip(pts.Skip(1)).Any(x => x.First == x.Second)) { Status = T("nochange"); return; }
-        var net = onRiser ?? (Building.Networks.FirstOrDefault(n => n.Type == PipeType && !n.Locked) is { } ex ? ex : Actions.AddNetwork(PipeType.ToString(), PipeType));
+        var net = onRiser ?? (Building.Networks.FirstOrDefault(n => n.Type == PipeType && !n.Locked) is { } ex ? ex : Actions.AddNetwork(Translations.NetworkCodeToken(PipeType), PipeType));
         Actions.AddPipeRun(net.Id, pts, PipeDiameter);
         Status = onRiser != null ? T("pipe.joined") : T("pipe.segments", pts.Count - 1); Refresh();
     }
@@ -798,6 +820,15 @@ public partial class MainViewModel : ObservableObject
     {
         var n = Building.Networks.First(x => x.Id == id); Actions.SetNetworkDisplay(id, !n.Visible, n.Locked); Refresh();
     }
+    [RelayCommand] private async Task RenameNetworkAsync(Guid id)
+    {
+        var n = Building.Networks.First(x => x.Id == id);
+        if (await Dialogs.PromptAsync(T("dlg.rename.net.title"), T("dlg.rename.label"), Translations.Display(n.Name)) is { Length: > 0 } name && name.Trim().Length > 0) { Actions.RenameNetwork(id, name); Refresh(); }
+    }
+    /// <summary>Picks a network in the tab: its name floats over all its pipes in the walk view. Picking it again lets go.</summary>
+    [RelayCommand] private void FocusNetwork(Guid id) { FocusedNetworkId = FocusedNetworkId == id ? null : id; Refresh(); WalkChanged?.Invoke(); }
+    /// <summary>The network picked in the Networks tab, if any (the walk view otherwise names the one the eyes point at).</summary>
+    public Guid? FocusedNetworkId { get; private set; }
     [RelayCommand] private void LockNetwork(Guid id)
     {
         var n = Building.Networks.First(x => x.Id == id); Actions.SetNetworkDisplay(id, n.Visible, !n.Locked); Refresh();
@@ -902,6 +933,38 @@ public partial class MainViewModel : ObservableObject
         Changed?.Invoke();
     }
 
+    /// <summary>Text typed above the list of networks: keeps those whose name, type or rooms contain it.</summary>
+    [ObservableProperty] private string _networkFilter = "";
+    /// <summary>0 = creation order, 1 = by name (R2 before R10), 2 = by type then name.</summary>
+    private int _networkSort;
+    public string NetworkSortLabel => T("net.sort", T("net.sort." + _networkSort));
+    public bool NoNetworkShown => Networks.Count == 0 && Building.Networks.Count > 0;
+    partial void OnNetworkFilterChanged(string value) => RebuildNetworks();
+    [RelayCommand] private void CycleNetworkSort() { _networkSort = (_networkSort + 1) % 3; RebuildNetworks(); }
+
+    /// <summary>The Networks tab: filtered, sorted, the picked one highlighted.</summary>
+    private void RebuildNetworks()
+    {
+        Networks.Clear(); if (ActiveIndex < 0) return;
+        var items = new List<(Network N, NetworkItem Item)>(); var filter = NetworkFilter.Trim();
+        foreach (var n in Building.Networks)
+        {
+            var c = NetworkQueries.ColorOf(n.Type); var name = Translations.Display(n.Name); var type = Enum_(n.Type);
+            var where = string.Join(", ", n.Segments.SelectMany(sg => Spaces.CrossedBy(Building, n, sg)).Select(sp => sp.DisplayName).Distinct());
+            if (filter.Length > 0 && !new[] { name, type, Translations.Display(Translations.NetworkCodeToken(n.Type)), where }.Any(t => t.Contains(filter, StringComparison.CurrentCultureIgnoreCase))) continue;
+            items.Add((n, new NetworkItem(n.Id, name, type, n.Visible, n.Locked, $"#{c.R:X2}{c.G:X2}{c.B:X2}", where.Length > 0 ? T("network.runs", where) : "", n.Id == FocusedNetworkId ? "#403D8BFD" : "Transparent")));
+        }
+        var cmp = StringComparer.Create(System.Globalization.CultureInfo.CurrentCulture, System.Globalization.CompareOptions.IgnoreCase | System.Globalization.CompareOptions.NumericOrdering);
+        IEnumerable<(Network N, NetworkItem Item)> ordered = _networkSort switch
+        {
+            1 => items.OrderBy(x => x.Item.Name, cmp),
+            2 => items.OrderBy(x => x.N.Type).ThenBy(x => x.Item.Name, cmp),
+            _ => items,
+        };
+        foreach (var x in ordered) Networks.Add(x.Item);
+        OnPropertyChanged(nameof(NetworkSortLabel)); OnPropertyChanged(nameof(NoNetworkShown)); OnPropertyChanged(nameof(SelectedNetworkName));
+    }
+
     /// <summary>Rebuild derived state after any model change.</summary>
     public void Refresh()
     {
@@ -914,9 +977,7 @@ public partial class MainViewModel : ObservableObject
         Levels.Clear();
         foreach (var l in Building.Levels.AsEnumerable().Reverse()) // top level first, like an elevator
             Levels.Add(new LevelItem(l.Id, l.DisplayName, $"{l.AltitudeMm / 1000.0:0.0} m", l.Id == CurrentLevel?.Id, l.Walls.Count, T("level.tooltip", l.DisplayName, Enum_(l.Kind), (l.AltitudeMm / 1000.0).ToString("0.00"), (l.HeightMm / 1000.0).ToString("0.00")), HiddenLevels.Contains(l.Id)));
-        Networks.Clear();
-        foreach (var n in Building.Networks)
-        { var c = NetworkQueries.ColorOf(n.Type); var where = string.Join(", ", n.Segments.SelectMany(sg => Spaces.CrossedBy(Building, n, sg)).Select(sp => sp.DisplayName).Distinct()); Networks.Add(new NetworkItem(n.Id, n.Name, Enum_(n.Type), n.Visible, n.Locked, $"#{c.R:X2}{c.G:X2}{c.B:X2}", where.Length > 0 ? T("network.runs", where) : "")); }
+        RebuildNetworks();
         SpaceItems.Clear();
         foreach (var lv in Building.Levels.AsEnumerable().Reverse())
             foreach (var sp in lv.Spaces)
@@ -935,6 +996,12 @@ public partial class MainViewModel : ObservableObject
         Changed?.Invoke();
     }
 
+    /// <summary>Lets go of whatever is selected (walls, columns, pipe, equipment, opening, room). Not a history step.</summary>
+    public void ClearSelection()
+    {
+        SelectedWalls.Clear(); SelectedRisers.Clear(); SelectedSegment = null; SelectedEquipmentId = null; SelectedOpening = null; SelectedSpaceId = null;
+        Status = SelectionText; OnPropertyChanged(nameof(HasSelection)); OnPropertyChanged(nameof(SelectionText)); Changed?.Invoke();
+    }
     public void SelectWalls(IEnumerable<Guid> ids, bool add)
     {
         if (ids.Any()) { SelectedSegment = null; SelectedEquipmentId = null; SelectedOpening = null; SelectedSpaceId = null; }
@@ -1284,10 +1351,10 @@ public partial class MainViewModel : ObservableObject
     }
 
     /// <summary>Chain of centre points → one rectangle per segment, committed as one history step.</summary>
-    public void CommitWalls(IReadOnlyList<PointMm> pts) => CommitWalls(pts, null);
+    public void CommitWalls(IReadOnlyList<PointMm> pts) => CommitWalls(pts, null, null);
 
-    /// <summary>The same, each segment on the side chosen when it was placed (<paramref name="aligns"/>: one <see cref="ImmoCad.Core.Geometry.WallAlign"/> per segment, the current side when null).</summary>
-    public void CommitWalls(IReadOnlyList<PointMm> pts, IReadOnlyList<int>? aligns)
+    /// <summary>The same, each segment on the side and with the thickness chosen when it was placed (<paramref name="aligns"/>: one <see cref="ImmoCad.Core.Geometry.WallAlign"/> per segment, <paramref name="thicknesses"/>: one value in mm; the current ones when null).</summary>
+    public void CommitWalls(IReadOnlyList<PointMm> pts, IReadOnlyList<int>? aligns, IReadOnlyList<int>? thicknesses = null)
     {
         if (CurrentLevel is not { } lv) return;
         var rects = new List<IEnumerable<PointMm>>();
@@ -1296,7 +1363,7 @@ public partial class MainViewModel : ObservableObject
             double dx = pts[i].X - pts[i - 1].X, dy = pts[i].Y - pts[i - 1].Y; var len = Math.Sqrt(dx * dx + dy * dy);
             if (len < 1) continue;
             var side = aligns is { } a && i - 1 < a.Count ? (ImmoCad.Core.Geometry.WallAlign)a[i - 1] : WallAlign;
-            rects.Add(WallShape(pts[i - 1], pts[i], side));
+            rects.Add(WallShape(pts[i - 1], pts[i], side, thicknesses is { } th && i - 1 < th.Count && th[i - 1] > 0 ? th[i - 1] : null));
         }
         if (rects.Count == 0) return;
         Actions.ImportWalls(lv.Id, rects, NewWallHeight(lv)); Status = T("walls.added", rects.Count); Refresh();

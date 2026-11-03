@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
 using ImmoCad.Core.Model;
+using ImmoCad.Core.Networks;
 using ImmoCad.Core.Walk;
 using ImmoCad.Scene;
 
@@ -28,8 +29,20 @@ public sealed class RoomLabelsView : Control
 
     public override void Render(DrawingContext ctx)
     {
-        if (!_vm.IsWalk || !_vm.WalkRoomNames || _vm.Walk is not { } w) return;
-        var placed = _vm.WalkLabelCache.Place(w, _camera(), Bounds.Width, Bounds.Height); var taken = new List<Rect>();
+        if (!_vm.IsWalk || _vm.Walk is not { } w) return;
+        var taken = new List<Rect>();
+        foreach (var n in _vm.WalkLabelCache.PlaceNetwork(w, _camera(), Bounds.Width, Bounds.Height, _vm.FocusedNetworkId))
+        {   // the name of the network looked at (or picked in the tab) over each of its pipes and risers: first, so nothing covers it
+            var a = (byte)(255 * n.Alpha); var size = Math.Clamp(14 - n.Distance / 1000.0 * 0.25, 11, 14); var c = NetworkQueries.ColorOf(n.Type);
+            var text = new FormattedText(n.Text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, new Typeface(Typeface.Default.FontFamily, FontStyle.Normal, FontWeight.Bold), size, new SolidColorBrush(Color.FromArgb(a, 255, 255, 255)));
+            var plate = new Rect(n.X - text.Width / 2 - 20, n.Y - text.Height / 2 - 5, text.Width + 32, text.Height + 10);
+            if (taken.Any(r => r.Intersects(plate))) continue; taken.Add(plate);
+            ctx.DrawRectangle(new SolidColorBrush(Color.FromArgb((byte)(215 * n.Alpha), 22, 24, 30)), new Pen(new SolidColorBrush(Color.FromArgb(a, c.R, c.G, c.B)), 2), plate, 8, 8);
+            ctx.DrawEllipse(new SolidColorBrush(Color.FromArgb(a, c.R, c.G, c.B)), null, new Point(plate.X + 13, plate.Center.Y), 4.5, 4.5);
+            ctx.DrawText(text, new Point(plate.X + 24, plate.Y + 5));
+        }
+        if (!_vm.WalkRoomNames) return;
+        var placed = _vm.WalkLabelCache.Place(w, _camera(), Bounds.Width, Bounds.Height);
         foreach (var l in placed)
         {
             var size = Math.Clamp(15 - l.Distance / 1000.0 * 0.3, 11, 15); var a = (byte)(255 * l.Alpha);

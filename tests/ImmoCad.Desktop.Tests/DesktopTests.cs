@@ -627,6 +627,39 @@ public class RoomToolsTests
         vm.CommitPipe([new(rx - 2000, ry), new(rx, ry)]); answer!(null); Assert.Equal(2, vm.Building.Networks[0].Segments.Count);                            // dismissed: nothing added
     }, CancellationToken.None);
 
+    [Fact] public Task The_networks_tab_filters_and_sorts_and_new_columns_are_named_by_their_type_code() => f.Session.Dispatch(() =>
+    {
+        var vm = Basement(); var l = vm.Building.Levels[0];
+        vm.Actions.AddRiserTemplate(new(500, 500), 100, [ImmoCad.Core.Model.NetworkType.ColdWater, ImmoCad.Core.Model.NetworkType.DomesticHotWater, ImmoCad.Core.Model.NetworkType.Drainage], 0, 2700); vm.Refresh();
+        Assert.Equal(["EF", "ECS", "EV"], vm.Networks.Select(n => n.Name));                                                         // French: the codes a plumber writes
+        vm.NetworkFilter = "ec"; Assert.Equal("ECS", Assert.Single(vm.Networks).Name);
+        vm.NetworkFilter = "zzz"; Assert.Empty(vm.Networks); Assert.True(vm.NoNetworkShown);
+        vm.NetworkFilter = ""; Assert.Equal(3, vm.Networks.Count);
+        vm.CycleNetworkSortCommand.Execute(null); Assert.Equal(["ECS", "EF", "EV"], vm.Networks.Select(n => n.Name));              // by name
+        vm.Actions.RenameNetwork(vm.Building.Networks[0].Id, "R10"); vm.Actions.RenameNetwork(vm.Building.Networks[1].Id, "R2"); vm.Refresh();
+        Assert.Equal(["EV", "R2", "R10"], vm.Networks.Select(n => n.Name));                                                         // R2 before R10
+    }, CancellationToken.None);
+
+    [Fact] public Task The_name_of_the_selected_column_is_in_its_properties_and_can_be_renamed_from_there() => f.Session.RunAsync(async () =>
+    {
+        var vm = Basement(); var dlg = (FakeDialogService)vm.Dialogs;
+        var net = vm.Actions.AddRiserTemplate(new(500, 500), 100, [ImmoCad.Core.Model.NetworkType.ColdWater], 0, 2700)[0]; vm.Refresh();
+        var seg = vm.Building.Networks.Single(n => n.Id == net.Id).Segments[0]; vm.SelectSegment(net.Id, seg.Id);
+        Assert.True(vm.ShowPipeProps); Assert.Equal("EF", vm.SelectedNetworkName);                                                   // the code of its type, in French
+        dlg.PromptAnswers.Enqueue("EF cuisine"); await vm.RenameSelectedNetworkCommand.ExecuteAsync(null);
+        Assert.Equal("EF cuisine", vm.SelectedNetworkName); Assert.Equal("EF cuisine", Assert.Single(vm.Networks).Name);
+        dlg.PromptAnswers.Enqueue(null); await vm.RenameSelectedNetworkCommand.ExecuteAsync(null); Assert.Equal("EF cuisine", net.Name);   // cancelled: unchanged
+    }, CancellationToken.None);
+
+    [Fact] public Task A_selected_column_is_painted_selected_in_the_3d_scene() => f.Session.Dispatch(() =>
+    {
+        var vm = Basement(); var net = vm.Actions.AddRiserTemplate(new(500, 500), 100, [ImmoCad.Core.Model.NetworkType.ColdWater], 0, 2700)[0]; vm.Refresh();
+        var seg = vm.Building.Networks.Single(n => n.Id == net.Id).Segments[0]; var riser = ImmoCad.Core.Networks.NetworkQueries.All(vm.Building).First(r => r.Segment.Id == seg.Id);
+        vm.SelectRisers([riser], false); Assert.Contains(seg.Id, vm.SceneSelection());
+        var objs = ImmoCad.Scene.SceneBuilder.Build(ImmoCad.Core.SceneMapper.Map(vm.Building), new ImmoCad.Scene.SceneOptions(vm.CurrentLevel!.Id, ImmoCad.Scene.LevelFilter.WholeBuilding, Selection: vm.SceneSelection()));
+        Assert.True(objs.First(o => o.Id == seg.Id).Highlight);                                                                    // orange, like the selected walls
+    }, CancellationToken.None);
+
     [Fact] public Task The_type_of_a_selected_pipe_changes_for_its_whole_connected_run() => f.Session.Dispatch(() =>
     {
         var vm = Basement(); var net = vm.Actions.AddNetwork("N", ImmoCad.Core.Model.NetworkType.ColdWater);
@@ -2090,6 +2123,21 @@ public class WalkUiTests
             w.Close();
         }
         ImmoCad.Core.Translations.Language = "fr";
+    }, CancellationToken.None);
+
+    [Fact] public Task In_the_walk_Escape_first_lets_go_of_the_selection_and_leaves_only_when_nothing_is_selected() => f.Session.Dispatch(() =>
+    {
+        var before = MainWindow.UseOpenGL; MainWindow.UseOpenGL = true;
+        try
+        {
+            var vm = new MainViewModel { Settings = new() }; var w = new MainWindow { DataContext = vm, Width = 1200, Height = 800 }; w.Show();
+            w.RaiseEvent(new Avalonia.Input.KeyEventArgs { RoutedEvent = Avalonia.Input.InputElement.KeyDownEvent, Key = Avalonia.Input.Key.G }); Assert.True(vm.IsWalk);
+            vm.SelectWalls([vm.Building.Levels[0].Walls[0].Id], false); Assert.True(vm.HasSelection);
+            void Esc() => w.RaiseEvent(new Avalonia.Input.KeyEventArgs { RoutedEvent = Avalonia.Input.InputElement.KeyDownEvent, Key = Avalonia.Input.Key.Escape, PhysicalKey = Avalonia.Input.PhysicalKey.Escape });
+            Esc(); Assert.False(vm.HasSelection); Assert.True(vm.IsWalk);                                                                    // still walking
+            Esc(); Assert.False(vm.IsWalk); w.Close();
+        }
+        finally { MainWindow.UseOpenGL = before; }
     }, CancellationToken.None);
 
     [Fact] public Task The_R_key_toggles_the_names_while_walking() => f.Session.Dispatch(() =>

@@ -93,4 +93,18 @@ public class RepairedShapeTests
         var square = new ImmoCad.Core.Geometry.Shape([new(0, 0), new(2000, 0), new(2000, 2000), new(0, 2000)], []);
         Assert.Same(square, Assert.Single(ImmoCad.Core.Geometry.PolygonOps.Repaired(square)));
     }
+
+    [Fact] public void A_bay_turned_twenty_degrees_with_slanted_ends_is_found_from_a_photo_plan_ring_of_lines()
+    {   // P21 of plan-126 (SS1): the sides run at -22° while the strongest direction around is -18°, and the end lines are not square to the sides
+        var l = new Level(); var P = (int x, int y) => new PointMm(x, y);
+        l.Markings.Add(new FloorMarking
+        {
+            Outline = [P(36020, 30326), P(32513, 31774), P(31694, 29790), P(36460, 27822), P(37285, 29820), P(36121, 30300)],
+            Holes = [[P(32571, 31596), P(31858, 29846), P(36402, 27994), P(37115, 29744)]],
+        });
+        var bay = new ParkingBays(l).Find(P(34500, 29800));
+        Assert.NotNull(bay); Assert.InRange(SpaceFinder.AreaMm2(bay) / 1e6, 8.5, 9.5);                                                  // the inside of the ring
+        Assert.Contains(bay, p => Math.Abs(p.X - 32571) < 120 && Math.Abs(p.Y - 31596) < 120);                                        // its corners are the ring's inner corners
+        Assert.Contains(bay, p => Math.Abs(p.X - 37115) < 120 && Math.Abs(p.Y - 29744) < 120);
+    }
 }

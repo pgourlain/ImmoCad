@@ -75,6 +75,10 @@ public partial class MainViewModel
     // sections of the Properties panel: only the ones the selected object has (the background picture when nothing is selected)
     public bool ShowWallProps => WallsSelected;
     public bool ShowPipeProps => SelectedSegment != null;
+    /// <summary>The name of the network of the selected pipe or column, shown at the top of its properties (double-click a column, or ✎, to rename it).</summary>
+    public string SelectedNetworkName => SelectedSegment is { } sg && Building.Networks.FirstOrDefault(n => n.Id == sg.NetworkId) is { } n ? NetworkText(n) : "";
+    private static string NetworkText(ImmoCad.Core.Model.Network n) => ImmoCad.Core.Walk.WalkLabels.NetworkText(n);
+    [RelayCommand] private async Task RenameSelectedNetworkAsync() { if (SelectedSegment is { } sg) await RenameNetworkAsync(sg.NetworkId); }
     public bool ShowEquipmentProps => EquipmentSelected;
     public bool ShowBackgroundProps => !HasSelection;
     private void NotifyToolGroups()
@@ -103,7 +107,7 @@ public partial class MainViewModel
     {
         base.OnPropertyChanged(e);
         if (e.PropertyName == nameof(SelectionText))
-            foreach (var n in new[] { nameof(HasSelection), nameof(ShowSelectionActions), nameof(WallsSelected), nameof(MarkingsSelected), nameof(EquipmentSelected), nameof(ShowWallProps), nameof(ShowPipeProps), nameof(ShowEquipmentProps), nameof(ShowBackgroundProps) })
+            foreach (var n in new[] { nameof(HasSelection), nameof(ShowSelectionActions), nameof(WallsSelected), nameof(MarkingsSelected), nameof(EquipmentSelected), nameof(ShowWallProps), nameof(ShowPipeProps), nameof(SelectedNetworkName), nameof(ShowEquipmentProps), nameof(ShowBackgroundProps) })
                 base.OnPropertyChanged(new System.ComponentModel.PropertyChangedEventArgs(n));
     }
 

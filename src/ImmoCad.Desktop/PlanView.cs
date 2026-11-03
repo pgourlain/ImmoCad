@@ -70,7 +70,7 @@ public partial class PlanView : Control
     public void Invalidate()
     {
         if (Vm is not { IsSelectTool: true, SelectPolygon: true }) _selPoly = null;
-        if (Vm is { IsDrawTool: true }) { if (_chainKind != ToolKind.DrawWall) { DrawTool = new DrawChainTool(pts => Vm.CommitWalls(pts, DrawTool!.SegmentTags)) { Tag = (int)Vm.WallAlign }; _chainKind = ToolKind.DrawWall; } }
+        if (Vm is { IsDrawTool: true }) { if (_chainKind != ToolKind.DrawWall) { DrawTool = new DrawChainTool(pts => Vm.CommitWalls(pts, DrawTool!.SegmentTags, DrawTool.SegmentValues)) { Tag = (int)Vm.WallAlign, Value = Vm.WallThicknessMm }; _chainKind = ToolKind.DrawWall; } }
         else if (Vm is { IsPipeTool: true }) { if (_chainKind != ToolKind.DrawPipe || _chainSide != Vm.IsSidePlane) { DrawTool = new DrawChainTool(Vm.IsSidePlane ? Vm.CommitPipeSide : Vm.CommitPipe); _chainKind = ToolKind.DrawPipe; _chainSide = Vm.IsSidePlane; } }
         else { DrawTool = null; _chainKind = null; }
         InvalidateVisual();
@@ -326,6 +326,7 @@ public partial class PlanView : Control
         if (HitRiser(p) is { } riser)
         {   // a column: click selects it (Shift adds), and dragging moves every selected column like walls
             var shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+            if (e.ClickCount >= 2 && !shift) { vm.SelectRisers([riser], false); vm.RenameNetworkCommand.Execute(riser.Network.Id); InvalidateVisual(); return; }      // double-click: straight to its name
             if (!(vm.IsRiserSelected(riser) && !shift)) vm.SelectRisers([riser], shift);
             _start = _now = p; _startMm = ToMm(p); _delta = (0, 0); _gesture = Gesture.Move; e.Pointer.Capture(this); InvalidateVisual(); return;
         }
@@ -470,7 +471,7 @@ public partial class PlanView : Control
 
     /// <summary>Space pressed while a toolbar control has the focus: the plan handles it as if it had it (turn the riser row, change the wall side).</summary>
     /// <summary>The wall side in force is stamped on the segments placed from now on, never on those already placed.</summary>
-    private void SyncWallSide() { if (DrawTool != null && Vm is { IsDrawTool: true } vm) DrawTool.Tag = (int)vm.WallAlign; }
+    private void SyncWallSide() { if (DrawTool != null && Vm is { IsDrawTool: true } vm) { DrawTool.Tag = (int)vm.WallAlign; DrawTool.Value = vm.WallThicknessMm; } }
 
     private List<PointMm>? _selPoly;
     private void FinishSelPoly() { if (_selPoly is { } poly) { _selPoly = null; Vm?.SelectInPolygon(poly, _addToSelection); } InvalidateVisual(); }
@@ -499,6 +500,7 @@ public partial class PlanView : Control
         }
         if (DrawTool != null && IsChain)
         {
+            if (e.Key is Key.Up or Key.Down && vm.IsDrawTool) { vm.NudgeWallThickness(e.Key == Key.Up ? 1 : -1, e.KeyModifiers.HasFlag(KeyModifiers.Shift)); SyncWallSide(); InvalidateVisual(); e.Handled = true; return; }
             if (e.Key == Key.Space && vm.IsDrawTool) { vm.CycleWallAlign(); SyncWallSide(); InvalidateVisual(); e.Handled = true; return; }
             var ch = e.Key >= Key.D0 && e.Key <= Key.D9 ? (char)('0' + (e.Key - Key.D0)) : e.Key >= Key.NumPad0 && e.Key <= Key.NumPad9 ? (char)('0' + (e.Key - Key.NumPad0)) : e.Key is Key.OemPeriod or Key.OemComma or Key.Decimal ? '.' : e.Key == Key.OemMinus ? '-' : '\0';
             if (ch != '\0' && DrawTool.Points.Count > 0) { if (_chainField == 0) _chainTyped += ch; else _chainAngle += ch; InvalidateVisual(); e.Handled = true; return; }
@@ -684,14 +686,14 @@ public partial class PlanView : Control
     private void DrawWallPreview(DrawingContext ctx, DrawChainTool t)
     {
         var vm = Vm!; var fill = new SolidColorBrush(Color.FromArgb(40, 255, 120, 0)); var dash = new Pen(Brushes.OrangeRed, 1.3, DashStyle.Dash);
-        void One(PointMm a, PointMm b, ImmoCad.Core.Geometry.WallAlign side)
+        void One(PointMm a, PointMm b, ImmoCad.Core.Geometry.WallAlign side, int? thickness = null)
         {
-            var r = vm.WallShape(a, b, side).Select(ToScreen).ToList(); if (r.Count < 4) return;
+            var r = vm.WallShape(a, b, side, thickness).Select(ToScreen).ToList(); if (r.Count < 4) return;
             ctx.DrawGeometry(fill, dash, Poly(r.ToArray()));
         }
-        for (var i = 1; i < t.Points.Count; i++) One(t.Points[i - 1], t.Points[i], i - 1 < t.SegmentTags.Count ? (ImmoCad.Core.Geometry.WallAlign)t.SegmentTags[i - 1] : vm.WallAlign);
+        for (var i = 1; i < t.Points.Count; i++) One(t.Points[i - 1], t.Points[i], i - 1 < t.SegmentTags.Count ? (ImmoCad.Core.Geometry.WallAlign)t.SegmentTags[i - 1] : vm.WallAlign, i - 1 < t.SegmentValues.Count && t.SegmentValues[i - 1] > 0 ? t.SegmentValues[i - 1] : null);
         if (t.Preview is { } pv && t.Points.Count > 0) One(t.Points[^1], pv, vm.WallAlign);
-        var label = Txt(T("align." + vm.WallAlign.ToString().ToLowerInvariant()) + "  ·  " + T("align.hint"), 12, Brushes.OrangeRed);
+        var label = Txt(T("align." + vm.WallAlign.ToString().ToLowerInvariant()) + "  ·  " + T("align.hint") + "  ·  " + T("thickness.hint", vm.WallThicknessMm), 12, Brushes.OrangeRed);
         ctx.DrawText(label, new Point(12, Bounds.Height - 44));
     }
 

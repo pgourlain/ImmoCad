@@ -38,7 +38,7 @@ public sealed class WalkDriver
         if (e.KeyModifiers.HasFlag(MenuFactory.CommandModifiers)) return false;                    // ⌘/Ctrl combinations (save…) are not ours
         switch (e.Key)
         {
-            case Key.Escape: _vm.LeaveWalkCommand.Execute(null); return true;
+            case Key.Escape: if (_vm.HasSelection) { _vm.ClearSelection(); Touch(); } else _vm.LeaveWalkCommand.Execute(null); return true;      // the first Esc lets go of the selection, the next leaves
             case Key.Up or Key.Down or Key.Left or Key.Right: _arrows.Add(e.Key); _tappedArrows.Add(e.Key); return true;
             case Key.Home: _vm.Walk?.ResetEye(); Touch(); return true;
             case Key.PageUp: _vm.LevelUpCommand.Execute(null); Touch(); return true;

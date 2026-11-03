@@ -61,7 +61,7 @@ public sealed class BuildingTools(McpSession s)
     [McpServerTool, Description("Add a vertical riser (pipe) at XY mm between two altitudes in a new network. Returns the network id.")]
     public string AddRiser(string type, int xMm, int yMm, int fromZMm, int toZMm, int diameterMm = 20)
     {
-        var n = s.Actions.AddNetwork("Riser", Enum.Parse<NetworkType>(type, true));
+        var n = s.Actions.AddNetwork(Translations.NetworkCodeToken(Enum.Parse<NetworkType>(type, true)), Enum.Parse<NetworkType>(type, true));
         s.Actions.AddPipeRun(n.Id, [new(xMm, yMm, fromZMm), new(xMm, yMm, toZMm)], diameterMm);
         return n.Id.ToString();
     }
@@ -74,7 +74,7 @@ public sealed class BuildingTools(McpSession s)
     public string AddPipeRun(string type, string[] points, int diameterMm = 20)
     {
         var pts = points.Select(p => p.Split(',').Select(int.Parse).ToArray()).Select(a => new PointMm3(a[0], a[1], a[2])).ToList();
-        var n = s.Actions.AddNetwork("Run", Enum.Parse<NetworkType>(type, true));
+        var n = s.Actions.AddNetwork(Translations.NetworkCodeToken(Enum.Parse<NetworkType>(type, true)), Enum.Parse<NetworkType>(type, true));
         s.Actions.AddPipeRun(n.Id, pts, diameterMm);
         return n.Id.ToString();
     }

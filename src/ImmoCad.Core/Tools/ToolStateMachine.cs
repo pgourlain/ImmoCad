@@ -60,8 +60,12 @@ public sealed class DrawChainTool(Action<IReadOnlyList<PointMm>> commit) : ToolS
     private readonly List<int> _tags = new();
     /// <summary>The tag of every segment placed so far (one per segment); still readable from the commit callback.</summary>
     public IReadOnlyList<int> SegmentTags => _tags;
-    private void AddPoint(PointMm p) { _pts.Add(p); if (_pts.Count > 1) _tags.Add(Tag); }
-    private void RemoveLastPoint() { _pts.RemoveAt(_pts.Count - 1); if (_tags.Count > _pts.Count - 1 && _tags.Count > 0) _tags.RemoveAt(_tags.Count - 1); }
+    /// <summary>A second caller-defined value stamped the same way (the wall thickness, in mm): changed while a segment is being drawn, it only affects that segment and the next ones.</summary>
+    public int Value { get; set; }
+    private readonly List<int> _values = new();
+    public IReadOnlyList<int> SegmentValues => _values;
+    private void AddPoint(PointMm p) { _pts.Add(p); if (_pts.Count > 1) { _tags.Add(Tag); _values.Add(Value); } }
+    private void RemoveLastPoint() { _pts.RemoveAt(_pts.Count - 1); if (_tags.Count > _pts.Count - 1 && _tags.Count > 0) { _tags.RemoveAt(_tags.Count - 1); _values.RemoveAt(_values.Count - 1); } }
 
     protected override void OnStart(ToolPointer p) { if (_pts.Count == 0) AddPoint(p.Mm); }
     protected override void OnPlace(ToolPointer p)
@@ -74,9 +78,9 @@ public sealed class DrawChainTool(Action<IReadOnlyList<PointMm>> commit) : ToolS
     {
         if (State == ToolState.Dragging) AddPoint(p.Mm);
         if (_pts.Count >= 2) commit(_pts.ToList());
-        _pts.Clear(); _tags.Clear(); Preview = null;
+        _pts.Clear(); _tags.Clear(); _values.Clear(); Preview = null;
     }
-    protected override void OnCancel() { _pts.Clear(); _tags.Clear(); Preview = null; }
+    protected override void OnCancel() { _pts.Clear(); _tags.Clear(); _values.Clear(); Preview = null; }
 
     public void Backspace() { if (_pts.Count > 1) RemoveLastPoint(); }
 

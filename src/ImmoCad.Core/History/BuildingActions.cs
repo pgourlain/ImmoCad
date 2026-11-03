@@ -430,6 +430,10 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
             var n = new Network { Name = name, Type = type }; building.Networks.Add(n); return n;
         }, n => n.Id);
 
+    /// <summary>Gives a network (a riser and every pipe joined to it) a name the user can find it by: in the Networks tab, and in the walk view.</summary>
+    public void RenameNetwork(Guid networkId, string name) =>
+        Edit("Rename network", BuildingEventKind.NetworkChanged, () => { Net(networkId).Name = name.Trim(); return networkId; }, i => i);
+
     public Node AddNode(Guid networkId, PointMm3 p) =>
         Edit("Add node", BuildingEventKind.NetworkChanged, () =>
         {
@@ -524,7 +528,7 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
     public Network AddVerticalPipe(Geometry.ElevationPlane plane, double u, NetworkType type, int zFromMm, int zToMm, int diameterMm, Guid? networkId = null) =>
         Edit("Add vertical pipe", BuildingEventKind.NetworkChanged, () =>
         {
-            var net = networkId is { } id ? Net(id) : new Network { Name = type.ToString(), Type = type };
+            var net = networkId is { } id ? Net(id) : new Network { Name = Translations.NetworkCodeToken(type), Type = type };
             if (networkId == null) building.Networks.Add(net);
             var p = plane.ToPlan(u);
             var a = new Node { Position = new(p.X, p.Y, Math.Min(zFromMm, zToMm)) }; var b2 = new Node { Position = new(p.X, p.Y, Math.Max(zFromMm, zToMm)) };
@@ -675,7 +679,7 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
                 grew = false;
                 foreach (var sg in src.Segments.Where(x => !run.Contains(x.Id) && (nodes.Contains(x.A) || nodes.Contains(x.B)))) { run.Add(sg.Id); nodes.Add(sg.A); nodes.Add(sg.B); grew = true; }
             }
-            var dst = building.Networks.FirstOrDefault(n => n.Type == type && !n.Locked && n != src) ?? new Network { Name = type.ToString(), Type = type };
+            var dst = building.Networks.FirstOrDefault(n => n.Type == type && !n.Locked && n != src) ?? new Network { Name = Translations.NetworkCodeToken(type), Type = type };
             if (!building.Networks.Contains(dst)) building.Networks.Add(dst);
             dst.Nodes.AddRange(src.Nodes.Where(n => nodes.Contains(n.Id))); dst.Segments.AddRange(src.Segments.Where(x => run.Contains(x.Id)));
             src.Nodes.RemoveAll(n => nodes.Contains(n.Id)); src.Segments.RemoveAll(x => run.Contains(x.Id));
@@ -868,7 +872,7 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
             var res = new List<Network>(); var (sx, sy) = Tools.RiserSnap.RowStep(quarterTurns);
             for (var i = 0; i < types.Count; i++)
             {
-                var n = new Network { Name = "Riser " + types[i], Type = types[i] };
+                var n = new Network { Name = Translations.NetworkCodeToken(types[i]), Type = types[i] };
                 var a = new Node { Position = new(origin.X + sx * i * spacingMm, origin.Y + sy * i * spacingMm, zFromMm) };
                 var b = new Node { Position = new(origin.X + sx * i * spacingMm, origin.Y + sy * i * spacingMm, zToMm) };
                 n.Nodes.Add(a); n.Nodes.Add(b); n.Segments.Add(new Segment { A = a.Id, B = b.Id, DiameterMm = diameterMm });
