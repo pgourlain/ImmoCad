@@ -61,5 +61,7 @@ public static class BuildingJson
 }
 
 [System.Text.Json.Serialization.JsonSerializable(typeof(Building))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(List<VersionMeta>))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(Dictionary<string, string>))]
 [System.Text.Json.Serialization.JsonSourceGenerationOptions(WriteIndented = false, IncludeFields = false)]
 public partial class BuildingJsonContext : System.Text.Json.Serialization.JsonSerializerContext { }

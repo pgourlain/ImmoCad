@@ -21,12 +21,18 @@ public sealed record StepItem(WorkStep Step, int Number, string Label, bool IsCu
 /// <summary>One entry of the command palette (⌘K): a menu command, a tool, a step or an object of the catalog.</summary>
 public sealed record CommandEntry(string Title, string Group, Action Run);
 
+/// <summary>Side-panel tab indices, in the exact order of the &lt;TabItem&gt;s in MainWindow.axaml. Keep this in sync when a tab is added, moved or removed — every other index silently points at the wrong tab otherwise.</summary>
+public static class PanelTabs
+{
+    public const int Palette = 0, Options = 1, Networks = 2, History = 3, Versions = 4, Site = 5, Spaces = 6, Properties = 7;
+}
+
 public partial class MainViewModel
 {
     // ---- Guided steps ----
     [ObservableProperty] private WorkStep _step = WorkStep.Plan;
-    /// <summary>Index of the side panel tab (Palette, Options, Networks, History, Site, Spaces, Properties); each step opens its own.</summary>
-    [ObservableProperty] private int _panelTab = 6;
+    /// <summary>Index of the side panel tab (see <see cref="PanelTabs"/>); each step opens its own.</summary>
+    [ObservableProperty] private int _panelTab = PanelTabs.Properties;
     /// <summary>Expert mode: every tool and every action stays visible whatever the step (remembered in the settings).</summary>
     [ObservableProperty] private bool _expertMode;
     public ObservableCollection<StepItem> Steps { get; } = new();
@@ -38,7 +44,7 @@ public partial class MainViewModel
     partial void OnStepChanged(WorkStep value)
     {
         Tool = ToolKind.Select;
-        PanelTab = value switch { WorkStep.Plan => 6, WorkStep.Rooms => 5, WorkStep.Equip => 0, WorkStep.Connect => 2, _ => 3 };
+        PanelTab = value switch { WorkStep.Plan => PanelTabs.Properties, WorkStep.Rooms => PanelTabs.Spaces, WorkStep.Equip => PanelTabs.Palette, WorkStep.Connect => PanelTabs.Networks, _ => PanelTabs.History };
         if (value == WorkStep.Result) RequestMode(ViewMode.Solid); else if (Mode != ViewMode.Plan) RequestMode(ViewMode.Plan);
         Hint = T("step.hint." + value.ToString().ToLowerInvariant());
         RebuildSteps(); NotifyToolGroups(); RebuildPalette();
@@ -100,7 +106,7 @@ public partial class MainViewModel
         return m == 0 ? T("walls.selected", Math.Max(n, SelectedWalls.Count)) : n == 0 ? T("markings.selected", m) : T("walls.markings.selected", n, m);
     }
     public bool EquipmentSelected => SelectedEquipmentId != null;
-    [RelayCommand] private void ShowProperties() => PanelTab = 6;
+    [RelayCommand] private void ShowProperties() => PanelTab = PanelTabs.Properties;
     [RelayCommand] private void RotateSelectedEquipment() { if (SelectedEquipmentId == null) return; EqRotation = (EqRotation + 90) % 360; ApplyEquipmentCommand.Execute(null); }
 
     protected override void OnPropertyChanged(System.ComponentModel.PropertyChangedEventArgs e)

@@ -29,15 +29,19 @@ public sealed class Doc
     public BuildingHistory History { get; set; } = new();
     public BuildingActions Actions { get; set; } = null!;
     public Dictionary<string, byte[]> Images { get; set; } = new();
+    /// <summary>Tagged checkpoints saved inside the file (see <see cref="VersionStore"/>), separate from <see cref="History"/>, which is lost when the document closes.</summary>
+    public VersionStore Versions { get; set; } = new();
     public string? FilePath { get; set; }
     public Guid CurrentLevelId { get; set; }
     public string Title => FilePath != null ? Path.GetFileNameWithoutExtension(FilePath) : (Building.Name.Length > 0 ? Building.DisplayName : T("untitled"));
 }
 public sealed record TabItem(int Index, string Title, bool IsActive, bool IsDirty);
 public sealed record HistoryRow(int Index, string Name, bool IsCurrent, bool IsFuture);
+public sealed record VersionRow(Guid Id, string Label, string Note, string When, bool IsAuto, string KindText);
 public sealed record SpaceItem(Guid LevelId, Guid Id, string Name, string Number, string Kind, string Lot, string Area, bool IsCommon, PointMm Center);
 public sealed record NetworkItem(Guid Id, string Name, string Type, bool Visible, bool Locked, string ColorHex, string Where = "", string Back = "Transparent");
 public sealed record PaletteItem(string Id, string Category, string Name, string Glyph, string Description = "");
+public sealed record PaletteGroup(string Category, IReadOnlyList<PaletteItem> Items);
 public sealed record LevelItem(Guid Id, string Name, string Altitude, bool IsCurrent, int WallCount, string Tooltip = "", bool Hidden = false)
 {
     public string BasementSpec => $"{Id}:Basement"; public string GroundSpec => $"{Id}:Ground"; public string StandardSpec => $"{Id}:Standard";
@@ -53,8 +57,10 @@ public partial class MainViewModel : ObservableObject
     public Building Building => Active.Building;
     public BuildingHistory History => Active.History;
     public BuildingActions Actions => Active.Actions;
+    public VersionStore Versions => Active.Versions;
     public ObservableCollection<TabItem> Tabs { get; } = new();
     public ObservableCollection<HistoryRow> HistoryRows { get; } = new();
+    public ObservableCollection<VersionRow> VersionRows { get; } = new();
     public ObservableCollection<string> RecentFiles { get; } = new();
     public bool HasDocument => ActiveIndex >= 0;
     public bool ShowWelcome => ActiveIndex < 0;
@@ -67,6 +73,8 @@ public partial class MainViewModel : ObservableObject
     public SpaceKind[] SpaceKinds { get; } = Enum.GetValues<SpaceKind>();
     public LevelKind[] LevelKinds { get; } = Enum.GetValues<LevelKind>();
     public ObservableCollection<PaletteItem> Palette { get; } = new();
+    /// <summary>Same items as <see cref="Palette"/>, grouped by category for display (so the panel reads as sections, not one flat list repeating its category on every row).</summary>
+    public ObservableCollection<PaletteGroup> PaletteGroups { get; } = new();
     public ObservableCollection<string> Recent { get; } = new();
     public NetworkType[] NetworkTypes { get; } = Enum.GetValues<NetworkType>();
     public string[] RiserTemplates { get; } = ["tpl.simple", "tpl.dhw", "tpl.loop", "tpl.heating", "tpl.all", "tpl.drain"];   // keys: shown translated
@@ -331,6 +339,8 @@ public partial class MainViewModel : ObservableObject
         int Rank(string category) => Step == WorkStep.Connect ? (category == "Valves" ? 0 : 1) : category == "Valves" ? 1 : 0;
         foreach (var e in EquipmentCatalog.Default.Where(e => Search.Length == 0 || e.Name.Contains(Search, StringComparison.OrdinalIgnoreCase) || T("cat." + e.Category).Contains(Search, StringComparison.OrdinalIgnoreCase)).OrderBy(e => Rank(e.Category)))
             Palette.Add(new PaletteItem(e.Id, T("cat." + e.Category), e.Name, e.Inline ? "⊗" : e.Category == "Sanitary" ? "◍" : "▤", Has("desc." + e.Id, Language) ? T("desc." + e.Id) : ""));
+        PaletteGroups.Clear();
+        foreach (var g in Palette.GroupBy(p => p.Category)) PaletteGroups.Add(new PaletteGroup(g.Key, g.ToList()));
     }
 
     // ---- The plan canvas seen on another plane (XY = plan, XZ / YZ = side views, Z always up). Same tools and selection as the plan. ----
@@ -410,9 +420,13 @@ public partial class MainViewModel : ObservableObject
 
     // ---- Doors, windows, rooms, cellars, measure ----
     [ObservableProperty] private int _openingWidth;                 // 0 = default (800 apartments, 700 cellars, 1200 windows)
-    [ObservableProperty] private string _cellarPrefix = T("cellar.prefix");
+    /// <summary>Empty by default: NumberSpaces then names each pick "Cave N" (etc) as a token, which follows the language. Typing a prefix overrides that with a literal (it is the user's own text, so it does not need to follow the language).</summary>
+    [ObservableProperty] private string _cellarPrefix = "";
     [ObservableProperty] private int _cellarStart = 1;
     [ObservableProperty] private SpaceKind _newSpaceKind = SpaceKind.Room;
+    /// <summary>Text typed above the list of spaces: keeps those whose name, kind, lot or number contain it.</summary>
+    [ObservableProperty] private string _spaceFilter = "";
+    partial void OnSpaceFilterChanged(string value) => RebuildSpaceItems();
     [ObservableProperty] private int _propThickness;
     public List<PointMm> MeasurePoints { get; } = new();
     public List<Guid> NumberPending { get; } = new();
@@ -525,10 +539,25 @@ public partial class MainViewModel : ObservableObject
         var probe = SpaceHover is { Outline: { } ho } h && SpaceFinder.Contains(ho, click) ? h : ProbeRoom(GridFor(l), click);
         SpaceHover = null;
         if (probe.Outline == null) { Status = T("space.open", SpaceGapMm / 1000.0); return; }
-        var n = l.Spaces.Count + 1; var sp = Actions.AddSpace(l.Id, probe.Outline, Token("space.default.name", n), NewSpaceKind);
+        var n = l.Spaces.Count(s => s.Kind == NewSpaceKind) + 1;   // numbered within its own kind: the 3rd corridor is "Corridor 3" even if there are already 5 rooms
+        var sp = Actions.AddSpace(l.Id, probe.Outline, Token(SpaceKindNameKey(NewSpaceKind), n), NewSpaceKind);
         Refresh(); SelectSpace(sp.Id);
         Status = probe.Leaks.Count > 0 ? T("space.added.gaps", SpaceFinder.AreaMm2(sp.Outline) / 1e6, probe.Leaks.Count) : T("space.added", SpaceFinder.AreaMm2(sp.Outline) / 1e6);
     }
+
+    /// <summary>The token key for "{0}" → "<kind> {0}", one per <see cref="SpaceKind"/> so a space's default name reflects the type being declared, not always "Room N".</summary>
+    private static string SpaceKindNameKey(SpaceKind kind) => kind switch
+    {
+        SpaceKind.Cellar => "cellar.name",
+        SpaceKind.Corridor => "space.name.corridor",
+        SpaceKind.BoilerRoom => "space.name.boilerroom",
+        SpaceKind.BikeRoom => "space.name.bikeroom",
+        SpaceKind.Parking => "space.name.parking",
+        SpaceKind.ServiceShaft => "space.name.serviceshaft",
+        SpaceKind.Stairwell => "space.name.stairwell",
+        SpaceKind.Apartment => "space.name.apartment",
+        _ => "space.default.name",
+    };
 
     // ---- parking bays: found between the white lines, numbered P1, P2… ----
     private const long BayMaxAreaMm2 = 25_000_000;
@@ -649,6 +678,7 @@ public partial class MainViewModel : ObservableObject
     {
         var l = Building.Levels.FirstOrDefault(x => x.Id == id); if (l == null) return;
         var name = l.DisplayName; var next = Building.Levels.Where(x => x.Id != id).OrderBy(x => Math.Abs(x.AltitudeMm - l.AltitudeMm)).FirstOrDefault();
+        AutoTag("version.auto.delete_level");
         Actions.DeleteLevel(id); SelectedWalls.Clear(); SelectedSegment = null;
         if (CurrentLevelId == id && next != null) CurrentLevelId = next.Id;
         Status = T("level.deleted", name); Refresh();
@@ -893,7 +923,7 @@ public partial class MainViewModel : ObservableObject
     public bool IsNumberTool => Tool == ToolKind.NumberCellars;
     public bool IsStraightenTool => Tool == ToolKind.Straighten;
     /// <summary>The Options tab only shows what the active tool has; a tool without options says so.</summary>
-    public bool HasToolOptions => Tool is ToolKind.DrawWall or ToolKind.Riser or ToolKind.DrawPipe or ToolKind.Align or ToolKind.Straighten or ToolKind.Space or ToolKind.PaintZone or ToolKind.Select or ToolKind.CutWall;
+    public bool HasToolOptions => Tool is ToolKind.DrawWall or ToolKind.Riser or ToolKind.DrawPipe or ToolKind.Align or ToolKind.Straighten or ToolKind.Space or ToolKind.PaintZone or ToolKind.Select or ToolKind.CutWall or ToolKind.NumberCellars;
     public bool HasNoToolOptions => !HasToolOptions;
     public bool IsStretchTool => Tool == ToolKind.Stretch;
     public string SelectionText => SelectedEquipment is { } se ? T("eq.selected", EquipmentCatalog.Find(se.CatalogId)?.Name ?? se.CatalogId) : SelectedSpaceId != null ? T("space.selected") : SelectedOpening != null ? T("opening.selected") : SelectedSegment != null ? T("pipe.selected") : SelectedWalls.Count == 0 ? T("no.selection") : WallsAndMarkingsText();
@@ -924,12 +954,12 @@ public partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(HasDocument)); OnPropertyChanged(nameof(ShowWelcome)); Refresh();
     }
 
-    partial void OnModeChanged(ViewMode value) { if (value != ViewMode.Walk) EndWalk(); else PanelTab = 2; OnPropertyChanged(nameof(IsWalk)); OnPropertyChanged(nameof(NotWalk)); OnPropertyChanged(nameof(ShowSelectionActions)); if (value == ViewMode.Site) { FocusSite(); PanelTab = 4; } OnPropertyChanged(nameof(ShowSideControls)); OnPropertyChanged(nameof(Is3D)); OnPropertyChanged(nameof(ShowPlan)); OnPropertyChanged(nameof(Show3D)); OnPropertyChanged(nameof(IsPlan)); OnPropertyChanged(nameof(IsSite)); Changed?.Invoke(); }
+    partial void OnModeChanged(ViewMode value) { if (value != ViewMode.Walk) EndWalk(); else PanelTab = PanelTabs.Networks; OnPropertyChanged(nameof(IsWalk)); OnPropertyChanged(nameof(NotWalk)); OnPropertyChanged(nameof(ShowSelectionActions)); if (value == ViewMode.Site) { FocusSite(); PanelTab = PanelTabs.Site; } OnPropertyChanged(nameof(ShowSideControls)); OnPropertyChanged(nameof(Is3D)); OnPropertyChanged(nameof(ShowPlan)); OnPropertyChanged(nameof(Show3D)); OnPropertyChanged(nameof(IsPlan)); OnPropertyChanged(nameof(IsSite)); Changed?.Invoke(); }
     partial void OnToolChanged(ToolKind value)
     {
         OnPropertyChanged(nameof(IsSelectTool)); OnPropertyChanged(nameof(IsDrawTool)); OnPropertyChanged(nameof(IsAlignTool)); OnPropertyChanged(nameof(IsRiserTool)); OnPropertyChanged(nameof(IsPipeTool)); OnPropertyChanged(nameof(IsPlaceTool)); OnPropertyChanged(nameof(IsDoorTool)); OnPropertyChanged(nameof(IsWindowTool)); OnPropertyChanged(nameof(IsSpaceTool)); OnPropertyChanged(nameof(IsMeasureTool)); OnPropertyChanged(nameof(IsNumberTool)); OnPropertyChanged(nameof(IsStraightenTool)); OnPropertyChanged(nameof(IsStretchTool)); OnPropertyChanged(nameof(IsCutWallTool)); OnPropertyChanged(nameof(IsMergeRegionTool)); OnPropertyChanged(nameof(IsPaintTool)); PaintClear(); CutPoints.Clear(); CutAwaitSide = false; MeasurePoints.Clear(); NumberPending.Clear(); SpaceHover = null;
         Hint = value switch { ToolKind.DrawWall => T("hint.draw.wall"), ToolKind.Riser => T("hint.riser"), ToolKind.DrawPipe => T("hint.draw.pipe"), ToolKind.Place => T("hint.place"), ToolKind.Align => T("hint.align"), ToolKind.Door => T("hint.door"), ToolKind.Window => T("hint.window"), ToolKind.Space => T("hint.space"), ToolKind.Measure => T("hint.measure"), ToolKind.NumberCellars => T("hint.number"), ToolKind.Straighten => T("hint.straighten"), ToolKind.Stretch => T("hint.stretch"), ToolKind.CutWall => T("hint.cutwall"), ToolKind.MergeRegion => T("hint.mergeregion"), ToolKind.PaintZone => T("hint.paint"), _ => T("hint.select") }; if (value != ToolKind.Align) AlignCancel();
-        OnPropertyChanged(nameof(HasToolOptions)); OnPropertyChanged(nameof(HasNoToolOptions)); if (HasToolOptions && value != ToolKind.Select) PanelTab = 1;       // choosing a tool shows its options
+        OnPropertyChanged(nameof(HasToolOptions)); OnPropertyChanged(nameof(HasNoToolOptions)); if (HasToolOptions && value != ToolKind.Select) PanelTab = PanelTabs.Options;       // choosing a tool shows its options
         Changed?.Invoke();
     }
 
@@ -939,6 +969,10 @@ public partial class MainViewModel : ObservableObject
     private int _networkSort;
     public string NetworkSortLabel => T("net.sort", T("net.sort." + _networkSort));
     public bool NoNetworkShown => Networks.Count == 0 && Building.Networks.Count > 0;
+    public bool NoVersions => VersionRows.Count == 0;
+    /// <summary>50 MB: a soft threshold, not a hard cap — the point is to surface the cost so the user can prune old versions, not to block anything.</summary>
+    public bool VersionsSizeWarning => Versions.EstimatedBytes > 50 * 1024 * 1024;
+    public string VersionsSizeText => T(VersionsSizeWarning ? "version.size.warning" : "version.size", (Versions.EstimatedBytes / 1024.0 / 1024.0).ToString("0.0"));
     partial void OnNetworkFilterChanged(string value) => RebuildNetworks();
     [RelayCommand] private void CycleNetworkSort() { _networkSort = (_networkSort + 1) % 3; RebuildNetworks(); }
 
@@ -965,12 +999,33 @@ public partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(NetworkSortLabel)); OnPropertyChanged(nameof(NoNetworkShown)); OnPropertyChanged(nameof(SelectedNetworkName));
     }
 
+    public bool NoSpaceShown => SpaceItems.Count == 0 && Building.Levels.Any(l => l.Spaces.Count > 0);
+    /// <summary>The Spaces tab: every room on every level, filtered by <see cref="SpaceFilter"/> (name, kind, lot or number).</summary>
+    private void RebuildSpaceItems()
+    {
+        SpaceItems.Clear(); if (ActiveIndex < 0) { OnPropertyChanged(nameof(NoSpaceShown)); return; }
+        var filter = SpaceFilter.Trim();
+        foreach (var lv in Building.Levels.AsEnumerable().Reverse())
+            foreach (var sp in lv.Spaces)
+            {
+                var name = sp.DisplayName; var number = sp.Number ?? ""; var kind = Enum_(sp.Kind); var lot = sp.Lot ?? "";
+                if (filter.Length > 0 && !new[] { name, kind, lot, number }.Any(t => t.Contains(filter, StringComparison.CurrentCultureIgnoreCase))) continue;
+                var c = new PointMm((int)sp.Outline.Average(p => p.X), (int)sp.Outline.Average(p => p.Y));
+                SpaceItems.Add(new SpaceItem(lv.Id, sp.Id, name, number, kind, lot.Length > 0 ? T("space.lot.fmt", lot) : "", T("space.area.fmt", (SpaceFinder.AreaMm2(sp.Outline) / 1e6).ToString("0.0")), sp.Stability == Stability.Common, c));
+            }
+        OnPropertyChanged(nameof(NoSpaceShown));
+    }
+
     /// <summary>Rebuild derived state after any model change.</summary>
     public void Refresh()
     {
         Tabs.Clear(); for (var i = 0; i < Docs.Count; i++) Tabs.Add(new TabItem(i, Docs[i].Title, i == ActiveIndex, Docs[i].History.IsDirty));
         OnPropertyChanged(nameof(Title)); WalkSync();
-        if (ActiveIndex < 0) { Levels.Clear(); Networks.Clear(); HistoryRows.Clear(); Changed?.Invoke(); return; }
+        if (ActiveIndex < 0) { Levels.Clear(); Networks.Clear(); HistoryRows.Clear(); VersionRows.Clear(); Changed?.Invoke(); return; }
+        VersionRows.Clear();
+        foreach (var v in Versions.Versions.OrderByDescending(v => v.Created))
+            VersionRows.Add(new VersionRow(v.Id, v.Kind == VersionKind.Auto ? T(v.Label) : v.Label, v.Note, v.Created.ToLocalTime().ToString("yyyy-MM-dd HH:mm"), v.Kind == VersionKind.Auto, v.Kind == VersionKind.Auto ? T("version.kind.auto") : ""));
+        OnPropertyChanged(nameof(NoVersions)); OnPropertyChanged(nameof(VersionsSizeWarning)); OnPropertyChanged(nameof(VersionsSizeText));
         HistoryRows.Clear(); HistoryRows.Add(new HistoryRow(-1, T("history.initial"), History.Pointer == -1, false));
         for (var i = 0; i < History.Items.Count; i++) HistoryRows.Add(new HistoryRow(i, T("action." + History.Items[i].Name), i == History.Pointer, i > History.Pointer));
         SelectedWalls.IntersectWith((CurrentLevel?.Walls.Select(w => w.Id) ?? []).Concat(CurrentLevel?.Markings.Select(m => m.Id) ?? []));    // the set holds walls and floor markings
@@ -978,13 +1033,7 @@ public partial class MainViewModel : ObservableObject
         foreach (var l in Building.Levels.AsEnumerable().Reverse()) // top level first, like an elevator
             Levels.Add(new LevelItem(l.Id, l.DisplayName, $"{l.AltitudeMm / 1000.0:0.0} m", l.Id == CurrentLevel?.Id, l.Walls.Count, T("level.tooltip", l.DisplayName, Enum_(l.Kind), (l.AltitudeMm / 1000.0).ToString("0.00"), (l.HeightMm / 1000.0).ToString("0.00")), HiddenLevels.Contains(l.Id)));
         RebuildNetworks();
-        SpaceItems.Clear();
-        foreach (var lv in Building.Levels.AsEnumerable().Reverse())
-            foreach (var sp in lv.Spaces)
-            {
-                var c = new PointMm((int)sp.Outline.Average(p => p.X), (int)sp.Outline.Average(p => p.Y));
-                SpaceItems.Add(new SpaceItem(lv.Id, sp.Id, sp.DisplayName, sp.Number ?? "", Enum_(sp.Kind), sp.Lot ?? "", T("space.area.fmt", (SpaceFinder.AreaMm2(sp.Outline) / 1e6).ToString("0.0")), sp.Stability == Stability.Common, c));
-            }
+        RebuildSpaceItems();
         if (CurrentLevel is { } cl)
         {
             _bgOpacity = cl.BackgroundOpacity; _bgVisible = cl.BackgroundVisible; OnPropertyChanged(nameof(BgOpacity)); OnPropertyChanged(nameof(BgVisible));
@@ -1228,6 +1277,28 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand] private void SwitchTab(int index) { if (index >= 0 && index < Docs.Count) Activate(index); }
     [RelayCommand] private void JumpTo(int index) { History.JumpTo(Building, index); SelectedWalls.Clear(); Refresh(); }
 
+    // ---- Versions: permanent, named checkpoints saved inside the file (unlike the undo History, lost on close) ----
+    [RelayCommand] private async Task TagVersionAsync()
+    {
+        if (ActiveIndex < 0) return;
+        if (await Dialogs.PromptAsync(T("version.save.title"), T("version.save.label"), "") is not { Length: > 0 } label) return;
+        Versions.Tag(Building, Images, label);
+        Status = T("version.saved", label); Refresh();
+        if (Active.FilePath != null) await SaveActiveAsync(false);   // keep the file and its versions in sync; a brand-new document just keeps the tag in memory until the user saves
+    }
+    [RelayCommand] private void RestoreVersion(Guid id)
+    {
+        if (Versions.Get(id) is not { } v) return;
+        var label = v.Kind == VersionKind.Auto ? T(v.Label) : v.Label;
+        Versions.Tag(Building, Images, "version.auto.restore", kind: VersionKind.Auto);   // safety net; label is a translation key (see Refresh), like HistoryRows' "action." names
+        Actions.RestoreVersion(v);
+        foreach (var (name, data) in v.Images) Images[name] = data;   // the version's own background pictures, in case a later re-import overwrote that name with something else
+        Status = T("version.restored", label); Refresh();
+    }
+    [RelayCommand] private void DeleteVersion(Guid id) { Versions.Remove(id); Refresh(); }
+    /// <summary>Safety net before an operation that is undoable within the session but easy to regret after a save/reopen (import, bulk delete, restore). <paramref name="labelKey"/> is a translation key, like HistoryRows' "action." names.</summary>
+    private void AutoTag(string labelKey) { if (ActiveIndex >= 0) Versions.Tag(Building, Images, labelKey, kind: VersionKind.Auto); }
+
     [RelayCommand] private async Task OpenAsync()
     {
         try { if (await Dialogs.PickOpenAsync("Immeuble", "*.immeuble") is { } p) OpenFile(p); }
@@ -1239,6 +1310,18 @@ public partial class MainViewModel : ObservableObject
     }
     [RelayCommand] private async Task SaveAsync() { await SaveActiveAsync(false); }
     [RelayCommand] private async Task SaveAsAsync() { await SaveActiveAsync(true); }
+    /// <summary>A copy of the file with every tagged version stripped: for sharing a project without its history.</summary>
+    [RelayCommand] private async Task ExportWithoutVersionsAsync()
+    {
+        if (ActiveIndex < 0) return;
+        try
+        {
+            if (await Dialogs.PickSaveAsync("Immeuble", "*.immeuble", Active.Title + "-noversions.immeuble") is not { } path) return;
+            BuildingFile.Save(Building, path, Images);
+            Status = T("version.exported", Path.GetFileName(path));
+        }
+        catch (Exception ex) { await Fail(T("fail.save"), ex); }
+    }
     public async Task<bool> SaveActiveAsync(bool saveAs)
     {
         if (ActiveIndex < 0) return false;
@@ -1293,7 +1376,9 @@ public partial class MainViewModel : ObservableObject
         try
         {
             if (await Dialogs.PickOpenAsync("IFC", "*.ifc") is not { } path) return;
-            if (ActiveIndex < 0) AddDoc(new Doc());                                   // an empty building: the IFC brings its own storeys
+            var wasEmpty = ActiveIndex < 0;
+            if (wasEmpty) AddDoc(new Doc());                                   // an empty building: the IFC brings its own storeys
+            if (!wasEmpty) AutoTag("version.auto.import_ifc");                 // nothing to lose on a brand-new document
             var r = IfcImport.ImportInto(Actions, File.ReadAllText(path));
             CurrentLevelId = Building.Levels.FirstOrDefault()?.Id ?? CurrentLevelId; Status = T("ifc.done", r.Building.Levels.Count, r.Walls) + (r.Warnings.Count > 0 ? T("ifc.warnings", r.Warnings.Count) : ""); OnLog?.Invoke($"Imported IFC {Path.GetFileName(path)}: {r.Building.Levels.Count} levels, {r.Walls} walls, {r.Warnings.Count} warnings");
             Refresh(); ViewFitRequested?.Invoke();
@@ -1371,7 +1456,10 @@ public partial class MainViewModel : ObservableObject
 
     public void SaveTo(string path)
     {
-        BuildingFile.Save(Building, path, Images); History.MarkClean(); Active.FilePath = path; Status = T("saved", Path.GetFileName(path)); Remember(path); Refresh();
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        BuildingFile.Save(Building, path, Images, Versions.Versions);
+        OnLog?.Invoke($"Saved {Path.GetFileName(path)}: {sw.ElapsedMilliseconds} ms ({new FileInfo(path).Length / 1024 / 1024} MB, {Images.Count} images, {Versions.Versions.Count} versions)");
+        History.MarkClean(); Active.FilePath = path; Status = T("saved", Path.GetFileName(path)); Remember(path); Refresh();
     }
     private void Remember(string path)
     {
@@ -1381,14 +1469,16 @@ public partial class MainViewModel : ObservableObject
     public void OpenFile(string path)
     {
         var existing = Docs.FindIndex(d => d.FilePath == path); if (existing >= 0) { Activate(existing); return; }   // already open: switch to its tab
-        var (b, imgs) = BuildingFile.Load(path);
-        AddDoc(new Doc { Building = b, Images = imgs, FilePath = path }); Status = T("opened", Path.GetFileName(path)); Remember(path);
+        var (b, imgs, versions) = BuildingFile.LoadWithVersions(path);
+        var d = new Doc { Building = b, Images = imgs, FilePath = path }; d.Versions.LoadFrom(versions);
+        AddDoc(d); Status = T("opened", Path.GetFileName(path)); Remember(path);
     }
     public void LoadFrom(string path) => OpenFile(path);
     /// <summary>Applies a finished wizard to the current level: walls + background, one history step each.</summary>
     public int ApplyWizard(ImportWizardViewModel w)
     {
         if (CurrentLevel is not { } l) return 0;
+        AutoTag("version.auto.import_plan");   // this level's background picture is about to be replaced
         var n = w.Apply(Actions, l, Images); Status = T("import.done", n); Refresh(); ViewFitRequested?.Invoke(); return n;
     }
 

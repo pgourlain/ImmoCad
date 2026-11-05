@@ -48,6 +48,10 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
     public void SetWorldFrame(RectMm? frame) =>
         Edit("Set world frame", BuildingEventKind.LevelChanged, () => { building.WorldFrame = frame; return Guid.Empty; }, _ => null);
 
+    /// <summary>Replaces the whole building with a tagged <see cref="BuildingVersion"/>'s snapshot. One history step, like any other edit: Ctrl+Z undoes the restore.</summary>
+    public void RestoreVersion(BuildingVersion version) =>
+        Edit("Restore version", BuildingEventKind.Reset, () => { BuildingJson.Restore(building, version.Snapshot); return Guid.Empty; }, _ => null);
+
     // ---- floor markings (paint on the floor: never a wall) ----
 
     /// <summary>Whole walls become floor markings (the selection). Returns how many.</summary>
@@ -810,7 +814,7 @@ public sealed class BuildingActions(Building building, BuildingHistory history, 
             var l = Find(levelId); var n = start;
             foreach (var id in spaceIds)
             {
-                var sp = l.Spaces.First(x => x.Id == id); sp.Number = n.ToString(); sp.Name = prefix == null || prefix == Translations.T("cellar.prefix") ? Translations.Token("cellar.name", n) : prefix + n;
+                var sp = l.Spaces.First(x => x.Id == id); sp.Number = n.ToString(); sp.Name = string.IsNullOrEmpty(prefix) ? Translations.Token("cellar.name", n) : prefix + n;
                 foreach (var w in l.Walls)
                     foreach (var o in w.Openings.Where(o => o.Kind == OpeningKind.Door && IsOnOutline(w, o, sp)))
                         o.Label = sp.Name;

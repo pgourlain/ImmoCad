@@ -328,6 +328,25 @@ public class ActionTests
         Assert.Equal(["Cave 12", "Cave 13", "Cave 14"], b.Levels[0].Spaces.Select(s => s.DisplayName));
     }
 
+    [Fact] public void Numbering_with_no_prefix_follows_the_language_a_typed_prefix_does_not()
+    {
+        var before = Translations.Language; Translations.Language = "fr";
+        try
+        {
+            var (b, a, _) = New(); var l = a.AddLevel("Cave", -2700, 2500, LevelKind.Basement);
+            var id1 = a.AddSpace(l.Id, [new(0, 0), new(1800, 0), new(1800, 2000), new(0, 2000)], "", SpaceKind.Cellar).Id;
+            var id2 = a.AddSpace(l.Id, [new(2000, 0), new(3800, 0), new(3800, 2000), new(2000, 2000)], "", SpaceKind.Cellar).Id;
+            a.NumberSpaces(l.Id, [id1], null, 1);          // no prefix: a token ("@cellar.name:1"), not a baked-in string
+            a.NumberSpaces(l.Id, [id2], "Sous-sol ", 2);   // typed prefix: a literal, as the user asked
+            Assert.Equal("Cave 1", b.Levels[0].Spaces[0].DisplayName);
+            Assert.Equal("Sous-sol 2", b.Levels[0].Spaces[1].DisplayName);
+            Translations.Language = "en";
+            Assert.Equal("Cellar 1", b.Levels[0].Spaces[0].DisplayName);       // follows the language switch
+            Assert.Equal("Sous-sol 2", b.Levels[0].Spaces[1].DisplayName);     // the user's own text: stays as typed
+        }
+        finally { Translations.Language = before; }
+    }
+
     [Fact] public void Door_defaults_by_level_kind_and_flip()
     {
         var (b, a, h) = New(); var l = a.AddLevel("Cave", 0, 2500, LevelKind.Basement); var w = a.AddWall(l.Id, [new(0, 0), new(2000, 0), new(2000, 200), new(0, 200)]);

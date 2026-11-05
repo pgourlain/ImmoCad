@@ -38,6 +38,8 @@ public static class MenuFactory
                 MenuItemSpec.Separator,
                 new(T("menu.save"), vm.SaveCommand, Key: Key.S, UseCommandKey: true),
                 new(T("menu.saveas"), vm.SaveAsCommand, Key: Key.S, Extra: KeyModifiers.Shift, UseCommandKey: true),
+                new(T("menu.saveversion"), vm.TagVersionCommand),
+                new(T("menu.exportnoversions"), vm.ExportWithoutVersionsCommand),
                 new(T("menu.close"), vm.CloseTabCommand, -1, Key: Key.W, UseCommandKey: true),
                 MenuItemSpec.Separator,
                 new((vm.AllowAgents ? "✓ " : "") + T("menu.agents.allow"), vm.ToggleAllowAgentsCommand),

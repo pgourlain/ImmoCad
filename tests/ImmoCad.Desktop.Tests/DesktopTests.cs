@@ -13,6 +13,16 @@ using Xunit;
 
 namespace ImmoCad.Desktop.Tests;
 
+public class ConverterTests
+{
+    [Fact] public void WarnIf_false_is_UnsetValue_not_null_so_it_falls_back_to_the_normal_brush()
+    {
+        // A plain null here would set Foreground to no brush at all — the text would render but be invisible, not merely "not orange".
+        Assert.Same(Avalonia.AvaloniaProperty.UnsetValue, Converters.WarnIf.Convert(false, typeof(object), null, System.Globalization.CultureInfo.InvariantCulture));
+        Assert.Equal(Avalonia.Media.Brushes.OrangeRed, Converters.WarnIf.Convert(true, typeof(object), null, System.Globalization.CultureInfo.InvariantCulture));
+    }
+}
+
 public sealed class HeadlessFixture
 {
     // Test classes run in parallel: the Avalonia platform must be initialised exactly once.
@@ -498,6 +508,33 @@ public class RoomToolsTests
         Assert.Equal(15, vm.CellarStart);
     }, CancellationToken.None);
 
+    [Fact] public Task Space_filter_keeps_rooms_whose_name_kind_lot_or_number_match() => f.Session.Dispatch(() =>
+    {
+        var vm = Basement();
+        vm.NewSpaceKind = SpaceKind.Room; vm.PlaceSpace(new(1000, 1200));
+        vm.NewSpaceKind = SpaceKind.Corridor; vm.PlaceSpace(new(3000, 1200));
+        vm.NewSpaceKind = SpaceKind.Cellar; vm.PlaceSpace(new(5000, 1200));
+        vm.Actions.SetSpaceProperties(vm.CurrentLevel!.Id, vm.CurrentLevel!.Spaces.First(s => s.Kind == SpaceKind.Cellar).Id, "Cave 1", SpaceKind.Cellar, "12", "A");
+        vm.Refresh();
+        Assert.Equal(3, vm.SpaceItems.Count);
+        vm.SpaceFilter = "couloir"; Assert.Equal("Couloir 1", Assert.Single(vm.SpaceItems).Name);                          // matches the (translated) kind
+        vm.SpaceFilter = "12"; Assert.Equal("Cave 1", Assert.Single(vm.SpaceItems).Name);                                  // matches the number
+        vm.SpaceFilter = "zzz"; Assert.Empty(vm.SpaceItems); Assert.True(vm.NoSpaceShown);
+        vm.SpaceFilter = ""; Assert.Equal(3, vm.SpaceItems.Count); Assert.False(vm.NoSpaceShown);
+    }, CancellationToken.None);
+
+    [Fact] public Task Space_default_name_and_numbering_follow_the_kind_being_declared() => f.Session.Dispatch(() =>
+    {
+        var vm = Basement();
+        vm.NewSpaceKind = SpaceKind.Room; vm.PlaceSpace(new(1000, 1200));                 // bay 1: a room
+        vm.NewSpaceKind = SpaceKind.Corridor; vm.PlaceSpace(new(3000, 1200));             // bay 2: a corridor — its own counter, starts at 1
+        vm.NewSpaceKind = SpaceKind.Room; vm.PlaceSpace(new(5000, 1200));                 // bay 3: a second room — "Room 2", unaffected by the corridor in between
+        string NameAt(int x, int y) => vm.CurrentLevel!.Spaces.First(s => ImmoCad.Core.Geometry.SpaceFinder.Contains(s.Outline, new(x, y))).DisplayName;
+        Assert.Equal("Pièce 1", NameAt(1000, 1200));
+        Assert.Equal("Couloir 1", NameAt(3000, 1200));
+        Assert.Equal("Pièce 2", NameAt(5000, 1200));
+    }, CancellationToken.None);
+
     [Fact] public Task Measure_adds_nothing_and_level_menu_actions_work_with_30_levels() => f.Session.RunAsync(async () =>
     {
         var dlg = new FakeDialogService(); var vm = Basement(); vm.Dialogs = dlg; var steps = vm.History.Items.Count;
@@ -681,10 +718,10 @@ public class RoomToolsTests
 
     [Fact] public Task Choosing_a_tool_shows_the_options_of_that_tool_only() => f.Session.Dispatch(() =>
     {
-        var vm = Basement(); vm.PanelTab = 6;
-        vm.SetToolCommand.Execute("DrawWall"); Assert.Equal(1, vm.PanelTab); Assert.True(vm.IsDrawTool && vm.HasToolOptions && !vm.IsPipeTool && !vm.IsRiserTool);
+        var vm = Basement(); vm.PanelTab = PanelTabs.Properties;
+        vm.SetToolCommand.Execute("DrawWall"); Assert.Equal(PanelTabs.Options, vm.PanelTab); Assert.True(vm.IsDrawTool && vm.HasToolOptions && !vm.IsPipeTool && !vm.IsRiserTool);
         vm.SetToolCommand.Execute("DrawPipe"); Assert.True(vm.IsPipeTool && !vm.IsDrawTool);
-        vm.PanelTab = 6; vm.SetToolCommand.Execute("Measure"); Assert.True(vm.HasNoToolOptions); Assert.Equal(6, vm.PanelTab);                  // no options: the tab stays
+        vm.PanelTab = PanelTabs.Properties; vm.SetToolCommand.Execute("Measure"); Assert.True(vm.HasNoToolOptions); Assert.Equal(PanelTabs.Properties, vm.PanelTab);                  // no options: the tab stays
     }, CancellationToken.None);
 
     [Fact] public Task A_scene_rebuild_keeps_the_3d_pan_and_zoom_and_a_level_change_only_moves_it_vertically() => f.Session.Dispatch(() =>
@@ -762,11 +799,11 @@ public class RoomToolsTests
     [Fact] public Task Each_step_shows_its_tools_and_panel_and_expert_mode_shows_everything() => f.Session.Dispatch(() =>
     {
         var vm = Basement(); vm.ExpertMode = false; vm.SetStepCommand.Execute("Plan");
-        Assert.True(vm.ShowPlanTools && vm.ShowWallTools); Assert.False(vm.ShowRiserTool || vm.ShowPipeTool || vm.ShowRoomTools); Assert.Equal(6, vm.PanelTab);
-        vm.NextStepCommand.Execute(null); Assert.Equal(WorkStep.Rooms, vm.Step); Assert.True(vm.ShowRoomTools); Assert.Equal(5, vm.PanelTab);
-        vm.SetStepCommand.Execute("Equip"); Assert.True(vm.ShowRiserTool); Assert.False(vm.ShowPipeTool); Assert.Equal(0, vm.PanelTab);
+        Assert.True(vm.ShowPlanTools && vm.ShowWallTools); Assert.False(vm.ShowRiserTool || vm.ShowPipeTool || vm.ShowRoomTools); Assert.Equal(PanelTabs.Properties, vm.PanelTab);
+        vm.NextStepCommand.Execute(null); Assert.Equal(WorkStep.Rooms, vm.Step); Assert.True(vm.ShowRoomTools); Assert.Equal(PanelTabs.Spaces, vm.PanelTab);
+        vm.SetStepCommand.Execute("Equip"); Assert.True(vm.ShowRiserTool); Assert.False(vm.ShowPipeTool); Assert.Equal(PanelTabs.Palette, vm.PanelTab);
         Assert.All(vm.Palette, p => Assert.False(string.IsNullOrWhiteSpace(p.Description), p.Id));                                      // every object explains itself in one sentence
-        vm.SetStepCommand.Execute("Connect"); Assert.True(vm.ShowPipeTool); Assert.Equal(2, vm.PanelTab); Assert.Equal(ImmoCad.Core.Translations.T("cat.Valves"), vm.Palette[0].Category);   // valves first while connecting
+        vm.SetStepCommand.Execute("Connect"); Assert.True(vm.ShowPipeTool); Assert.Equal(PanelTabs.Networks, vm.PanelTab); Assert.Equal(ImmoCad.Core.Translations.T("cat.Valves"), vm.Palette[0].Category);   // valves first while connecting
         Assert.Equal(3, vm.Steps.Count(s => s.IsDone)); Assert.True(vm.Steps.Single(s => s.IsCurrent).Step == WorkStep.Connect);
         vm.ExpertMode = true; Assert.True(vm.ShowPlanTools && vm.ShowWallTools && vm.ShowRoomTools && vm.ShowRiserTool && vm.ShowPipeTool && vm.ShowExpertActions);
         vm.ExpertMode = false; vm.SetStepCommand.Execute("Result"); Assert.Equal(ViewMode.Solid, vm.Mode); Assert.False(vm.HasNextStep);
@@ -798,7 +835,7 @@ public class RoomToolsTests
         vm.SetStepCommand.Execute("Equip"); vm.SelectEquipment(eq.Id); w.UpdateLayout(); w.CaptureRenderedFrame()!.Save(Path.Combine(AppContext.BaseDirectory, "screenshots", "action-bar.png"));
         Assert.True(vm.EquipmentSelected); Assert.False(vm.WallsSelected); Assert.Contains(ImmoCad.Core.Catalog.EquipmentCatalog.Find("radiator")!.Name, vm.SelectionText);
         var rot = eq.RotationDeg; vm.RotateSelectedEquipmentCommand.Execute(null); Assert.Equal((rot + 90) % 360, vm.Building.Equipment.First(e => e.Id == eq.Id).RotationDeg);
-        vm.ShowPropertiesCommand.Execute(null); Assert.Equal(6, vm.PanelTab);
+        vm.ShowPropertiesCommand.Execute(null); Assert.Equal(PanelTabs.Properties, vm.PanelTab);
         vm.DeleteSelectionCommand.Execute(null); Assert.False(vm.HasSelection); Assert.DoesNotContain(vm.Building.Equipment, e => e.Id == eq.Id);
         w.Close();
     }, CancellationToken.None);
@@ -1267,10 +1304,10 @@ public class SiteUiTests
     [Fact] public Task Searching_an_address_or_choosing_a_background_shows_the_map_and_its_tab() => f.Session.RunAsync(async () =>
     {
         var vm = Make(out _); vm.SetStepCommand.Execute("Equip"); Assert.Equal(ViewMode.Plan, vm.Mode);
-        vm.MapLayer = 2; Assert.Equal(ViewMode.Site, vm.Mode); Assert.Equal(4, vm.PanelTab);                                   // cadastre chosen: the map shows, the Site tab opens
-        vm.SetModeCommand.Execute("Plan"); vm.PanelTab = 0;
+        vm.MapLayer = 2; Assert.Equal(ViewMode.Site, vm.Mode); Assert.Equal(PanelTabs.Site, vm.PanelTab);                                   // cadastre chosen: the map shows, the Site tab opens
+        vm.SetModeCommand.Execute("Plan"); vm.PanelTab = PanelTabs.Palette;
         vm.SiteAddress = "1 place Bellecour, Lyon"; await vm.SearchAddressCommand.ExecuteAsync(null);
-        Assert.Equal(ViewMode.Site, vm.Mode); Assert.Equal(4, vm.PanelTab); Assert.NotEmpty(vm.Footprints);
+        Assert.Equal(ViewMode.Site, vm.Mode); Assert.Equal(PanelTabs.Site, vm.PanelTab); Assert.NotEmpty(vm.Footprints);
     });
 
     [Fact] public Task Several_selected_parcels_make_one_building_with_one_anchor() => f.Session.RunAsync(async () =>
@@ -1886,7 +1923,7 @@ public class RoomSensitivityTests
         List<PointMm> R(int x0, int y0, int x1, int y1) => [new(x0, y0), new(x1, y0), new(x1, y1), new(x0, y1)];
         vm.Actions.ImportWalls(l.Id, new[] { R(0, 0, 2000, 200), R(3500, 0, 6000, 200), R(0, 4800, 6000, 5000), R(0, 0, 200, 5000), R(5800, 0, 6000, 5000) });          // a 1.5 m opening in the south wall
         vm.SelectLevelCommand.Execute(l.Id); vm.SetToolCommand.Execute("Space");
-        Assert.True(vm.HasToolOptions); Assert.False(vm.HasNoToolOptions); Assert.Equal(1, vm.PanelTab);                                       // choosing the tool shows its options
+        Assert.True(vm.HasToolOptions); Assert.False(vm.HasNoToolOptions); Assert.Equal(PanelTabs.Options, vm.PanelTab);                                       // choosing the tool shows its options
         Assert.Equal(2000, vm.SpaceGapMm); Assert.Equal(2000, vm.Settings.SpaceGapMm);
         Assert.NotNull((await vm.ProbeSpaceAsync(new(3000, 2500)))?.Outline);                                                                    // default: the 1.5 m bay is closed
         vm.SpaceGapMm = 1000; Assert.Null((await vm.ProbeSpaceAsync(new(3000, 2500)))?.Outline); Assert.Null(vm.SpacePreview(new(3000, 2500)));      // ordinary doors only: not closed

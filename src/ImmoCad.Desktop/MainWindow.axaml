@@ -142,20 +142,28 @@
           <DockPanel>
             <TextBox DockPanel.Dock="Top" vm:L.Watermark="wm.search" Text="{Binding Search}" Margin="0,4,0,6" />
             <ScrollViewer>
-              <ItemsControl ItemsSource="{Binding Palette}">
+              <ItemsControl ItemsSource="{Binding PaletteGroups}">
                 <ItemsControl.ItemTemplate>
-                  <DataTemplate x:DataType="vm:PaletteItem">
-                    <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,4" Padding="8,8" CornerRadius="8"
-                            Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).SelectPaletteCommand}" CommandParameter="{Binding Id}">
-                      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
-                        <vm:SymbolIcon CatalogId="{Binding Id}" Width="56" Height="44" VerticalAlignment="Top" />
-                        <StackPanel Grid.Column="1" Spacing="2">
-                          <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextWrapping="Wrap" />
-                          <TextBlock Text="{Binding Description}" TextWrapping="Wrap" FontSize="11.5" Opacity="0.75" />
-                          <TextBlock Text="{Binding Category}" Classes="caption" />
-                        </StackPanel>
-                      </Grid>
-                    </Button>
+                  <DataTemplate x:DataType="vm:PaletteGroup">
+                    <StackPanel Margin="0,0,0,10" Spacing="4">
+                      <TextBlock Text="{Binding Category}" Classes="caption" FontWeight="SemiBold" />
+                      <ItemsControl ItemsSource="{Binding Items}">
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate x:DataType="vm:PaletteItem">
+                            <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,4" Padding="8,8" CornerRadius="8"
+                                    Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).SelectPaletteCommand}" CommandParameter="{Binding Id}">
+                              <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                                <vm:SymbolIcon CatalogId="{Binding Id}" Width="56" Height="44" VerticalAlignment="Top" />
+                                <StackPanel Grid.Column="1" Spacing="2">
+                                  <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                  <TextBlock Text="{Binding Description}" TextWrapping="Wrap" FontSize="11.5" Opacity="0.75" />
+                                </StackPanel>
+                              </Grid>
+                            </Button>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </StackPanel>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
@@ -181,7 +189,7 @@
             <TextBlock vm:L.Text="opt.riser" Classes="caption" />
             <ComboBox ItemsSource="{Binding RiserTemplates}" SelectedItem="{Binding RiserTemplate}" HorizontalAlignment="Stretch"><ComboBox.ItemTemplate><DataTemplate x:DataType="x:String"><TextBlock Text="{Binding, Converter={x:Static vm:Converters.Loc}}" /></DataTemplate></ComboBox.ItemTemplate></ComboBox>
             <ComboBox ItemsSource="{Binding NetworkTypes}" SelectedItem="{Binding RiserType}" HorizontalAlignment="Stretch"><ComboBox.ItemTemplate><DataTemplate x:DataType="x:Object"><StackPanel Orientation="Horizontal" Spacing="8"><Ellipse Width="14" Height="14" Fill="{Binding, Converter={x:Static vm:Converters.NetworkBrush}}" Stroke="#66000000" StrokeThickness="1" VerticalAlignment="Center" /><TextBlock Text="{Binding, Converter={x:Static vm:Converters.EnumName}}" VerticalAlignment="Center" /></StackPanel></DataTemplate></ComboBox.ItemTemplate></ComboBox>
-            <NumericUpDown Value="{Binding RiserDiameter}" Minimum="8" Maximum="200" vm:L.Format="fmt.mm" />
+            <NumericUpDown Value="{Binding RiserDiameter}" Minimum="8" Maximum="200" vm:L.Format="fmt.diameter" />
             <NumericUpDown Value="{Binding RiserSpacing}" Minimum="50" Maximum="1000" vm:L.Format="fmt.spacing" />
             <CheckBox vm:L.Content="site.wholebuilding" IsChecked="{Binding RiserWholeBuilding}" />
             </StackPanel>
@@ -209,9 +217,18 @@
               <TextBlock vm:L.Text="paint.help" Classes="caption" TextWrapping="Wrap" />
             </StackPanel>
             <StackPanel Spacing="6" IsVisible="{Binding IsSpaceTool}">
-              <TextBlock vm:L.Text="opt.space" Classes="caption" />
+              <TextBlock vm:L.Text="opt.space.kind" Classes="caption" />
+              <ComboBox ItemsSource="{Binding SpaceKinds}" SelectedItem="{Binding NewSpaceKind}" HorizontalAlignment="Stretch" vm:L.Tip="opt.space.kind.tip">
+                <ComboBox.ItemTemplate><DataTemplate x:DataType="x:Object"><TextBlock Text="{Binding, Converter={x:Static vm:Converters.EnumName}}" /></DataTemplate></ComboBox.ItemTemplate>
+              </ComboBox>
+              <TextBlock vm:L.Text="opt.space" Classes="caption" Margin="0,6,0,0" />
               <NumericUpDown Value="{Binding SpaceGapMm}" Minimum="0" Maximum="5000" Increment="100" vm:L.Format="fmt.spacegap" />
               <TextBlock vm:L.Text="opt.space.help" Classes="caption" TextWrapping="Wrap" />
+            </StackPanel>
+            <StackPanel Spacing="6" IsVisible="{Binding IsNumberTool}">
+              <TextBlock vm:L.Text="cellar.numbering" Classes="caption" />
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6"><TextBox Text="{Binding CellarPrefix}" vm:L.Watermark="cellar.prefix" /><NumericUpDown Grid.Column="1" Value="{Binding CellarStart}" Minimum="0" Width="100" /></Grid>
+              <TextBlock vm:L.Text="hint.number" Classes="caption" TextWrapping="Wrap" />
             </StackPanel>
             <StackPanel Spacing="6" IsVisible="{Binding IsStraightenTool}">
             <TextBlock vm:L.Text="opt.straighten" Classes="caption" />
@@ -222,7 +239,7 @@
             <StackPanel Spacing="6" IsVisible="{Binding IsPipeTool}">
             <TextBlock vm:L.Text="opt.pipe" Classes="caption" />
             <ComboBox ItemsSource="{Binding NetworkTypes}" SelectedItem="{Binding PipeType}" HorizontalAlignment="Stretch"><ComboBox.ItemTemplate><DataTemplate x:DataType="x:Object"><StackPanel Orientation="Horizontal" Spacing="8"><Ellipse Width="14" Height="14" Fill="{Binding, Converter={x:Static vm:Converters.NetworkBrush}}" Stroke="#66000000" StrokeThickness="1" VerticalAlignment="Center" /><TextBlock Text="{Binding, Converter={x:Static vm:Converters.EnumName}}" VerticalAlignment="Center" /></StackPanel></DataTemplate></ComboBox.ItemTemplate></ComboBox>
-            <NumericUpDown Value="{Binding PipeDiameter}" Minimum="8" Maximum="200" vm:L.Format="fmt.mm" />
+            <NumericUpDown Value="{Binding PipeDiameter}" Minimum="8" Maximum="200" vm:L.Format="fmt.diameter" />
             <NumericUpDown Value="{Binding PipeElevation}" Minimum="0" Maximum="6000" Increment="50" vm:L.Format="fmt.height" />
             </StackPanel>
           </StackPanel></ScrollViewer>
@@ -243,14 +260,14 @@
                             Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).FocusNetworkCommand}" CommandParameter="{Binding Id}">
                       <StackPanel Orientation="Horizontal">
                         <Border Width="12" Height="12" CornerRadius="6" Background="{Binding ColorHex}" Margin="0,0,8,0" VerticalAlignment="Center" />
-                        <StackPanel><TextBlock Text="{Binding Name}" /><TextBlock Text="{Binding Type}" Classes="caption" /><TextBlock Text="{Binding Where}" Classes="caption" TextWrapping="Wrap" /></StackPanel>
+                        <StackPanel><TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" /><TextBlock Text="{Binding Type}" Classes="caption" /><TextBlock Text="{Binding Where}" Classes="caption" TextWrapping="Wrap" /></StackPanel>
                       </StackPanel>
                     </Button>
                     <Button Grid.Column="1" Content="✎" Padding="6,2" Margin="4,0,0,0" vm:L.Tip="tip.rename.net"
                             Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).RenameNetworkCommand}" CommandParameter="{Binding Id}" />
-                    <Button Grid.Column="2" Content="{Binding Visible}" ContentTemplate="{x:Null}" Padding="6,2" Margin="4,0,0,0" vm:L.Tip="tip.togglenet"
+                    <Button Grid.Column="2" Content="👁" Padding="6,2" Margin="4,0,0,0" vm:L.Tip="tip.togglenet" Opacity="{Binding !Visible, Converter={x:Static vm:Converters.DimIf}}"
                             Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ToggleNetworkCommand}" CommandParameter="{Binding Id}" />
-                    <Button Grid.Column="3" Content="{Binding Locked}" Padding="6,2" Margin="4,0,0,0" vm:L.Tip="tip.lock"
+                    <Button Grid.Column="3" Content="🔒" Padding="6,2" Margin="4,0,0,0" vm:L.Tip="tip.lock" Opacity="{Binding !Locked, Converter={x:Static vm:Converters.DimIf}}"
                             Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).LockNetworkCommand}" CommandParameter="{Binding Id}" />
                   </Grid>
                 </DataTemplate>
@@ -260,8 +277,10 @@
           </DockPanel>
         </TabItem>
         <TabItem vm:L.Header="tab.history">
-          <ScrollViewer>
-            <ItemsControl ItemsSource="{Binding HistoryRows}" Margin="0,6">
+          <DockPanel>
+            <TextBlock DockPanel.Dock="Top" vm:L.Text="history.help" Classes="caption" TextWrapping="Wrap" Margin="0,6,0,4" />
+            <ScrollViewer>
+            <ItemsControl ItemsSource="{Binding HistoryRows}" Margin="0,0,0,6">
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="vm:HistoryRow">
                   <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="8,4" Margin="0,0,0,2" Background="Transparent"
@@ -273,6 +292,33 @@
               </ItemsControl.ItemTemplate>
             </ItemsControl>
           </ScrollViewer>
+          </DockPanel>
+        </TabItem>
+        <TabItem vm:L.Header="tab.versions">
+          <DockPanel>
+            <TextBlock DockPanel.Dock="Top" vm:L.Text="version.help" Classes="caption" TextWrapping="Wrap" Margin="0,6,0,4" />
+            <Button DockPanel.Dock="Top" vm:L.Content="version.save" Margin="0,0,0,6" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                    Command="{Binding TagVersionCommand}" />
+            <TextBlock DockPanel.Dock="Top" vm:L.Text="version.none" Classes="caption" IsVisible="{Binding NoVersions}" />
+            <TextBlock DockPanel.Dock="Top" Text="{Binding VersionsSizeText}" Classes="caption" TextWrapping="Wrap" Margin="0,0,0,4" IsVisible="{Binding !NoVersions}"
+                       Foreground="{Binding VersionsSizeWarning, Converter={x:Static vm:Converters.WarnIf}}" />
+            <ScrollViewer>
+              <ItemsControl ItemsSource="{Binding VersionRows}" Margin="0,0,0,6">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:VersionRow">
+                    <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,4" Opacity="{Binding IsAuto, Converter={x:Static vm:Converters.DimIf}}">
+                      <Button Grid.Column="0" Padding="8,4" Background="Transparent" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" vm:L.Tip="version.restore.tip"
+                              Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).RestoreVersionCommand}" CommandParameter="{Binding Id}">
+                        <StackPanel><TextBlock Text="{Binding Label}" /><TextBlock Text="{Binding When}" Classes="caption" /><TextBlock Text="{Binding KindText}" Classes="caption" IsVisible="{Binding IsAuto}" FontStyle="Italic" /></StackPanel>
+                      </Button>
+                      <Button Grid.Column="1" Content="🗑" Padding="6,2" Margin="4,0,0,0" vm:L.Tip="version.delete.tip"
+                              Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).DeleteVersionCommand}" CommandParameter="{Binding Id}" />
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </DockPanel>
         </TabItem>
         <TabItem vm:L.Header="tab.site">
           <ScrollViewer><StackPanel Spacing="6" Margin="0,6">
@@ -288,8 +334,12 @@
               </DataTemplate></ItemsControl.ItemTemplate>
             </ItemsControl>
             <Button vm:L.Content="site.create" Command="{Binding CreateFromFootprintCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+            <Separator />
+            <TextBlock vm:L.Text="site.section.parcels" Classes="caption" />
             <Button vm:L.Content="site.parcel.add" Command="{Binding AddParcelCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
             <Button vm:L.Content="site.parcel.remove" Command="{Binding RemoveParcelCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+            <Separator />
+            <TextBlock vm:L.Text="site.section.place" Classes="caption" />
             <Button vm:L.Content="site.place" Command="{Binding BeginPlacementCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
             <StackPanel Spacing="6" IsVisible="{Binding Placing}">
               <TextBlock vm:L.Text="site.place.rotate" Classes="caption" />
@@ -317,9 +367,8 @@
         <TabItem vm:L.Header="tab.spaces">
           <DockPanel>
             <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,6">
-              <TextBlock vm:L.Text="cellar.numbering" Classes="caption" />
-              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6"><TextBox Text="{Binding CellarPrefix}" /><NumericUpDown Grid.Column="1" Value="{Binding CellarStart}" Minimum="0" Width="100" /></Grid>
-              <ComboBox ItemsSource="{Binding SpaceKinds}" SelectedItem="{Binding NewSpaceKind}" HorizontalAlignment="Stretch"><ComboBox.ItemTemplate><DataTemplate x:DataType="x:Object"><TextBlock Text="{Binding, Converter={x:Static vm:Converters.EnumName}}" /></DataTemplate></ComboBox.ItemTemplate></ComboBox>
+              <TextBox vm:L.Watermark="wm.space.filter" Text="{Binding SpaceFilter}" />
+              <TextBlock vm:L.Text="space.none" Classes="caption" IsVisible="{Binding NoSpaceShown}" />
             </StackPanel>
             <ScrollViewer>
               <ItemsControl ItemsSource="{Binding SpaceItems}">
@@ -328,7 +377,7 @@
                     <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,2">
                       <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="8,4" Background="Transparent"
                               Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).FocusSpaceCommand}" CommandParameter="{Binding Id}">
-                        <Grid ColumnDefinitions="*,Auto"><StackPanel><TextBlock Text="{Binding Name}" FontWeight="SemiBold" /><TextBlock Text="{Binding Kind}" Classes="caption" /></StackPanel>
+                        <Grid ColumnDefinitions="*,Auto"><StackPanel><TextBlock Text="{Binding Name}" FontWeight="SemiBold" /><TextBlock Text="{Binding Kind}" Classes="caption" /><TextBlock Text="{Binding Lot}" Classes="caption" IsVisible="{Binding Lot, Converter={x:Static vm:Converters.NotEmpty}}" /></StackPanel>
                           <TextBlock Grid.Column="1" Text="{Binding Area}" VerticalAlignment="Center" Classes="caption" /></Grid>
                       </Button>
                       <Button Grid.Column="1" vm:L.Content="walk.space" Margin="4,0,0,0" VerticalAlignment="Center" IsEnabled="{Binding $parent[Window].((vm:MainViewModel)DataContext).CanWalk}"
@@ -345,6 +394,7 @@
             <TextBlock Text="{Binding SelectionText}" FontWeight="SemiBold" />
             <!-- each section only when it concerns the selection (all of them in expert mode) -->
             <StackPanel Spacing="6" IsVisible="{Binding ShowWallProps}">
+              <TextBlock vm:L.Text="wall.title" Classes="caption" />
               <TextBox vm:L.Watermark="wm.label" Text="{Binding PropLabel}" />
               <NumericUpDown Value="{Binding PropHeight}" Minimum="0" Maximum="10000" Increment="50" vm:L.Format="fmt.height.level" />
               <Button vm:L.Content="btn.apply" Command="{Binding ApplyPropertiesCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
